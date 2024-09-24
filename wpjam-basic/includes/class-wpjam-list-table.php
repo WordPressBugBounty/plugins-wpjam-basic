@@ -327,7 +327,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		if(explode('-', $date)[1] == $this->month){
 			$class	= $date == wpjam_date('Y-m-d') ? ['day', 'today'] : ['day'];
 			$item	= $this->render_date_by_model($item, $date);
-			$links	= wpjam_reduce($this->get_row_actions($date), fn($tag, $v, $k)=> $tag->append('span', [$k], $v), wpjam_tag('div', ['row-actions', 'alignright']));
+			$links	= wpjam_tag('div', ['row-actions', 'alignright'])->append(wpjam_map($this->get_row_actions($date), fn($v, $k)=> ['span', [$k], $v]));
 		}else{
 			$class	= ['day'];
 			$links	= '';
@@ -386,7 +386,6 @@ class WPJAM_List_Table extends WP_List_Table{
 			$actions	= [...($sortable ? ['move_item'] : []), ...($args['actions'] ?? ['add_item', 'edit_item', 'del_item'])];
 			$has_add	= in_array('add_item', $actions);
 			$actions	= array_diff($actions, ['add_item']);
-			$result		= wpjam_tag();
 
 			foreach($items as $i => $item){
 				$value	= $item[$key] ?: '';
@@ -400,14 +399,17 @@ class WPJAM_List_Table extends WP_List_Table{
 					$value	= ($value ? wpjam_tag('img', ['src'=>wpjam_get_thumbnail($value, $width*2, $height*2), 'style'=>$style]) : ' ').(!empty($item['title']) ? wpjam_tag('span', ['item-title'], $item['title']) : '');
 				}
 
-				$tag->append($this->get_row_action('move_item', $_args+['style'=>['color'=>$item['color'] ?? null], 'title'=>$value, 'fallback'=>true]))->append('span', ['row-actions'], implode('', array_map(fn($k)=> $this->get_row_action($k, $_args+['wrap'=>wpjam_tag('span', [$k])]), $actions)))->append_to($result);
+				$append[]	= $tag->append([
+					$this->get_row_action('move_item', $_args+['style'=>['color'=>$item['color'] ?? null], 'title'=>$value, 'fallback'=>true]),
+					['span', ['row-actions'], implode('', array_map(fn($k)=> $this->get_row_action($k, $_args+['wrap'=>wpjam_tag('span', [$k])]), $actions))]
+				]);
 			}
 
 			if($has_add && (empty($args['max_items']) || count($items) <= $args['max_items'])){
-				$result->append($this->get_row_action('add_item', ['id'=>$id, 'class'=>'add-item item']+($type == 'image' ? ['dashicon'=>'plus-alt2', 'style'=>$style] : [])));
+				$append[]	= $this->get_row_action('add_item', ['id'=>$id, 'class'=>'add-item item']+($type == 'image' ? ['dashicon'=>'plus-alt2', 'style'=>$style] : []));
 			}
 
-			$value	= $result->wrap('div', ['class'=>['items', $type.'-list', $sortable], 'style'=>wpjam_get($args, 'style')])->style(empty($args['per_row']) ? '' : 'width:'.($args['per_row']*($width+30)).'px');
+			$value	= wpjam_tag('div', ['class'=>['items', $type.'-list', $sortable], 'style'=>wpjam_get($args, 'style')])->style(empty($args['per_row']) ? '' : 'width:'.($args['per_row']*($width+30)).'px')->append($append);
 		}else{
 			$value	= '';
 		}
@@ -461,22 +463,21 @@ class WPJAM_List_Table extends WP_List_Table{
 			$pad	= calendar_week_mod(date('w', $ts) - $start);
 			$days	= date('t', $ts);
 			$days	= $days+(($days+$pad) % 7 ? (7 - (($days+$pad) % 7)) : 0);
-			$row	= wpjam_tag('tr');
 
 			for($day=(0-$pad); $day<=$days; ++$day){
 				$date	= date('Y-m-d', $ts+$day*DAY_IN_SECONDS);
 				$item	= $this->ob_get_single_date($this->items[$date] ?? [], $date);
 
-				$row->append('td', ['id'=>'date-'.$date, 'class'=>in_array($pad+$start, [0, 6, 7]) ? 'weekend' : 'weekday'], $item);
+				$cells[]= ['td', ['id'=>'date-'.$date, 'class'=>in_array($pad+$start, [0, 6, 7]) ? 'weekend' : 'weekday'], $item];
 
 				if($day >= 0){
 					$pad++;
 				}
 
 				if($pad == 7){
-					echo $row;
+					echo wpjam_tag('tr')->append($cells);
 
-					$row	= $row->empty();
+					$cells	= [];
 					$pad	= 0;
 				}
 			}
@@ -507,18 +508,18 @@ class WPJAM_List_Table extends WP_List_Table{
 
 	public function pagination($which){
 		if($this->layout == 'calendar'){
-			echo array_reduce([
+			echo wpjam_tag('span', ['pagination-links'])->append(array_map(function($args){
+				[$type, $text, [$year, $month]]	= $args;
+
+				return "\n".$this->get_filter_link(['year'=>$year, 'month'=>$month], $text, [
+					'class'	=> [$type.'-month', 'button'],
+					'title'	=> sprintf(__('%1$s %2$d'), $GLOBALS['wp_locale']->get_month($month), $year)
+				]);
+			}, [
 				['prev',	'&lsaquo;',	($this->month == 1 ? [$this->year-1, 12] : [$this->year, $this->month-1])],
 				['current',	'今日',		array_map('wpjam_date', ['Y', 'm'])],
 				['next',	'&rsaquo;',	($this->month == 12 ? [$this->year+1, 1] : [$this->year, $this->month+1])],
-			], function($tag, $args){
-				[$type, $text, [$year, $month]]	= $args;
-
-				return $tag->append("\n".$this->get_filter_link(['year'=>$year, 'month'=>$month], $text, [
-					'class'	=> [$type.'-month', 'button'],
-					'title'	=> sprintf(__('%1$s %2$d'), $GLOBALS['wp_locale']->get_month($month), $year)
-				]));
-			}, wpjam_tag('span', ['pagination-links']))->wrap('div', ['tablenav-pages']);
+			]))->wrap('div', ['tablenav-pages']);
 		}else{
 			parent::pagination($which);
 		}
@@ -547,12 +548,12 @@ class WPJAM_List_Table extends WP_List_Table{
 			return $this->get_filter_link(['left_paged'=>$left_paged], $text, ['title'=>$title, 'class'=>['button', $type.'-page', ($is ? 'disabled' : '')]]);
 		});
 
-		echo wpjam_tag('span', ['left-pagination-links'])->data('total_pages', $total)
-		->append($links['prev'])
-		->append($paged.' / '.number_format_i18n($total), 'span')
-		->append($links['next'])
-		->append(wpjam_tag('input', ['type'=>'text', 'value'=>$paged, 'size'=>strlen($total), 'class'=>'current-page'])->after('a', ['button', 'goto'], '&#10132;')->wrap('span'))
-		->wrap('div', ['tablenav-pages'])->wrap('div', ['tablenav', 'bottom']);
+		echo wpjam_tag('span', ['left-pagination-links'])->data('total_pages', $total)->append([
+			$links['prev'],
+			['span', [], $paged.' / '.number_format_i18n($total)],
+			$links['next'],
+			wpjam_tag('input', ['type'=>'text', 'value'=>$paged, 'size'=>strlen($total), 'class'=>'current-page'])->after('a', ['button', 'goto'], '&#10132;')->wrap('span')
+		])->wrap('div', ['tablenav-pages'])->wrap('div', ['tablenav', 'bottom']);
 	}
 
 	public function page_load(){
@@ -812,29 +813,29 @@ class WPJAM_List_Table_Action extends WPJAM_Admin_Action{
 				$cb	= [$this->model, $this->method];
 
 				if($cb[1] == 'insert' || $this->overall || $this->response == 'add'){
-					$cb	= is_callable($cb) ? $cb : null;
-
 					array_shift($cb_args);
-				}elseif(method_exists(...$cb)){
-					if($this->direct && is_null($args['data'])){
-						array_pop($cb_args);
+				}else{
+					if(method_exists(...$cb)){
+						if($this->direct && is_null($args['data'])){
+							array_pop($cb_args);
+						}
+					}elseif($this->meta_type || !method_exists($cb[0], '__callStatic')){
+						$cb[1]	= 'update_callback';
+
+						if(!method_exists(...$cb)){
+							array_unshift($cb_args, get_screen_option('meta_type'));
+
+							if(!$cb_args[0]){
+								wp_die('「'.$cb[0].'->'.$this->name.'」未定义');
+							}
+
+							$cb	= 'wpjam_update_metadata';
+						}
+
+						if($cb && $args['fields']){
+							$cb_args[]	= $args['fields']->get_defaults();
+						}
 					}
-				}elseif($this->meta_type || !method_exists($cb[0], '__callStatic')){
-					$cb[1]	= 'update_callback';
-
-					if(!method_exists(...$cb)){
-						array_unshift($cb_args, get_screen_option('meta_type'));
-
-						$cb	= $cb_args[0] ? 'wpjam_update_metadata' : null;
-					}
-
-					if($cb && $args['fields']){
-						$cb_args[]	= $args['fields']->get_defaults();
-					}
-				}
-
-				if(!$cb){
-					wp_die('「'.$cb[0].'」未定义相应的操作');
 				}
 
 				return wpjam_try($cb, ...$cb_args) ?? true ;
@@ -1009,7 +1010,7 @@ class WPJAM_List_Table_Action extends WPJAM_Admin_Action{
 
 		if(!$by_callback || is_null($data)){
 			$cb		= [$this->model, 'get'];
-			$data	= !is_callable($cb) ? wp_die(implode('->', $cb),' 未定义') : wpjam_try($cb, $id);
+			$data	= !is_callable($cb) ? wp_die(implode('->', $cb).' 未定义') : wpjam_try($cb, $id);
 			$data	= (!$data && $id) ? wp_die('无效的 ID「'.$id.'」') : $data;
 			$data	= $data instanceof WPJAM_Register ? $data->to_array() : $data;
 		}
@@ -1056,7 +1057,7 @@ class WPJAM_List_Table_Action extends WPJAM_Admin_Action{
 			'data'	=> $prev->generate_data_attr($args)
 		]) : '').$object->get_submit_button($args);
 
-		return $button ? $form->append($button, 'p', ['submit']) : $form;
+		return $button ? $form->append('p', ['submit'], $button) : $form;
 	}
 
 	public function get_fields($args, $include_prev=false, $output=''){

@@ -205,6 +205,18 @@ class WPJAM_Tag extends WPJAM_Attr{
 				if(count($args) > 1){
 					$value	= is_array($args[1])? new self(...$args) : new self($args[1], ($args[2] ?? []), $args[0]);
 				}else{
+					if(is_array($args[0])){
+						foreach(array_filter($args[0]) as $item){
+							if(is_array($item)){
+								$this->$method(...$item);
+							}else{
+								$this->$method($item);
+							}
+						}
+
+						return $this;
+					}
+
 					$value	= $args[0];
 				}
 
@@ -753,7 +765,7 @@ class WPJAM_Field extends WPJAM_Attr{
 			}
 		}
 
-		return $field->before($label)->wrap($tag, ['class'=>$class, 'data'=>$data, 'id'=>$tag.'_'.esc_attr($this->id)])->add_class($this->wrap_class)->add_class(wpjam_get($args, 'wrap_class'));
+		return $field->before($label)->wrap($tag, ['class'=>$class, 'id'=>$tag.'_'.esc_attr($this->id)])->data($data)->add_class($this->wrap_class)->add_class(wpjam_get($args, 'wrap_class'));
 	}
 
 	public function render($args=[], $to_string=true){
@@ -786,7 +798,7 @@ class WPJAM_Field extends WPJAM_Attr{
 			}
 
 			if($this->description){
-				$tag->after($this->description, 'p', ['description']);
+				$tag->after('p', ['description'], $this->description);
 			}
 
 			if($this->is('fieldset')){
@@ -891,14 +903,14 @@ class WPJAM_Field extends WPJAM_Attr{
 	}
 
 	public static function get_icon($name){
-		return array_reduce(wp_parse_list($name), fn($i, $n)=> $i->after(...([
+		return array_reduce(wp_parse_list($name), fn($i, $n)=> wpjam_tag(...([
 			'sortable'	=> ['span', ['dashicons', 'dashicons-menu']],
 			'multiply'	=> ['span', ['dashicons', 'dashicons-no-alt']],
 			'dismiss'	=> ['span', ['dashicons', 'dashicons-dismiss']],
-			'del_btn'	=> ['删除', 'a', ['button', 'del-item']],
+			'del_btn'	=> ['a', ['button', 'del-item'], '删除'],
 			'del_icon'	=> ['a', ['dashicons', 'dashicons-no-alt', 'del-item']],
 			'del_img'	=> ['a', ['dashicons', 'dashicons-no-alt', 'del-img']],
-		][$n])), wpjam_tag());
+		][$n]))->before($i), '');
 	}
 
 	public static function add_pattern($key, $args){
@@ -1235,7 +1247,7 @@ class WPJAM_Image_Field extends WPJAM_Field{
 		}else{
 			$title	= '选择'.($this->is('image') ? '图片' : '文件');
 
-			return $this->tag(['type'=>'url'])->after($title, 'a', ['class'=>'button', 'data'=>['item_type'=>$this->item_type]])->wrap('div', ['wpjam-file']);
+			return $this->tag(['type'=>'url'])->after('a', ['class'=>'button', 'data'=>['item_type'=>$this->item_type]], $title)->wrap('div', ['wpjam-file']);
 		}
 	}
 }
@@ -1246,15 +1258,12 @@ class WPJAM_Uploader extends WPJAM_Field{
 			$this->attr('disabled', 'disabled');
 		}
 
-		$class		= ['hide-if-no-js', 'plupload'];
+		$component	= wpjam_tag('div', ['id'=>'plupload_container__'.$this->key, 'class'=>['hide-if-no-js', 'plupload']])->data('key', $this->key);
 		$mime_types	= $this->mime_types ?: ['title'=>'图片', 'extensions'=>'jpeg,jpg,gif,png'];
-		$btn_id		= 'plupload_button__'.$this->key;
-		$btn_text	= $this->button_text ?: __('Select Files');
-		$btn_attr	= ['type'=>'button', 'class'=>'button', 'id'=>$btn_id, 'value'=>$btn_text];
-		$container	= 'plupload_container__'.$this->key;
+		$btn_attr	= ['type'=>'button', 'class'=>'button', 'id'=>'plupload_button__'.$this->key, 'value'=>($this->button_text ?: __('Select Files'))];
 		$plupload	= [
-			'browse_button'		=> $btn_id,
-			'container'			=> $container,
+			'browse_button'		=> $btn_attr['id'],
+			'container'			=> $component->attr('id'),
 			'file_data_name'	=> $this->key,
 			'filters'			=> [
 				'mime_types'	=> wp_is_numeric_array($mime_types) ? $mime_types : [$mime_types],
@@ -1267,25 +1276,22 @@ class WPJAM_Uploader extends WPJAM_Field{
 			]
 		];
 
-		$data	= ['key'=>$this->key, 'plupload'=>&$plupload];
 		$title	= $this->value ? array_slice(explode('/', $this->value), -1)[0] : '';
 		$tag	= $this->tag(['type'=>'hidden'])->after($this->query_label($title))->before('input', $btn_attr);
 
 		if($this->drap_drop && !wp_is_mobile()){
 			$dd_id		= 'plupload_drag_drop__'.$this->key;
 			$plupload	+= ['drop_element'=>$dd_id];
-			$class[]	= 'drag-drop';
 
-			$tag->wrap('p', ['drag-drop-buttons'])
-			->before('p', [], _x('or', 'Uploader: Drop files here - or - Select Files'))
-			->before('p', ['drag-drop-info'], __('Drop files to upload'))
-			->wrap('div', ['drag-drop-inside'])
-			->wrap('div', ['id'=>$dd_id, 'class'=>'plupload-drag-drop']);
+			$component->add_class('drag-drop');
+
+			$tag->wrap('p', ['drag-drop-buttons'])->before([
+				['p', [], _x('or', 'Uploader: Drop files here - or - Select Files')],
+				['p', ['drag-drop-info'], __('Drop files to upload')]
+			])->wrap('div', ['drag-drop-inside'])->wrap('div', ['id'=>$dd_id, 'class'=>'plupload-drag-drop']);
 		}
 
-		$progress	= wpjam_tag('div', ['progress', 'hidden'], ['div', ['percent']])->append('div', ['bar']);
-
-		return $tag->after($progress)->wrap('div', ['id'=>$container, 'class'=>$class, 'data'=>$data]);
+		return $component->data('plupload', $plupload)->append([$tag, wpjam_tag('div', ['progress', 'hidden'])->append([['div', ['percent']], ['div', ['bar']]])]);
 	}
 
 	public static function ajax_response($data){
@@ -1406,7 +1412,7 @@ class WPJAM_MU_Field extends WPJAM_Field{
 	}
 }
 
-class WPJAM_Fields extends WPJAM_Attr{
+class WPJAM_Fields{
 	private $fields		= [];
 	private $creator	= null;
 
@@ -1464,17 +1470,10 @@ class WPJAM_Fields extends WPJAM_Attr{
 	}
 
 	public function validate($values=null, $for=''){
+		$data	= [];
 		$values	??= wpjam_get_post_parameter();
 
-		if($this->creator && isset($this->creator->_if)){
-			$if_values	= $this->creator->_if[0];
-			$if_show	= $this->creator->_if[1];
-		}else{
-			$if_values	= $this->get_show_if_values($values);
-			$if_show	= true;
-		}
-
-		$data	= [];
+		[$if_values, $if_show]	= ($this->creator && $this->creator->_if) ? $this->creator->_if : [$this->get_show_if_values($values), true];
 
 		foreach($this->fields as $field){
 			if(!$field->_editable){
@@ -1509,8 +1508,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 		return $data;
 	}
 
-	public function render($args=null, $to_string=false){
-		$args		??= $this->get_args();
+	public function render($args=[], $to_string=false){
 		$creator	= $args['creator'] = $this->creator;
 
 		if($creator){

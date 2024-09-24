@@ -855,8 +855,10 @@ class WPJAM_Plugin_Page extends WPJAM_Menu_Page{
 
 	public function render(){
 		$tag	= wpjam_tag(($this->tab_page ? 'h2' : 'h1'), ['wp-heading-inline'], ($this->page_title ?? $this->title));
-		$tag	= $this->page_title_action ? $tag->after('span', ['page-title-action-wrap'], $this->page_title_action) : $tag;
-		$tag	= $tag->after('hr', ['wp-header-end']);
+		$tag	= $tag->after([
+			['span', ['page-title-action-wrap'], $this->page_title_action ?: ''],
+			['hr', ['wp-header-end']]
+		]);
 
 		$summary	= $this->summary;
 
@@ -869,7 +871,7 @@ class WPJAM_Plugin_Page extends WPJAM_Menu_Page{
 				$summary	= wpjam_get_file_summary($summary);
 			}
 
-			$tag->after($summary, 'p');
+			$tag->after('p', [], $summary);
 		}
 
 		if($this->is_tab){
@@ -880,10 +882,7 @@ class WPJAM_Plugin_Page extends WPJAM_Menu_Page{
 			}
 
 			if(count($this->tabs) > 1){
-				$nav	= wpjam_tag('nav', ['nav-tab-wrapper', 'wp-clearfix']);
-				$nav	= array_reduce($this->tabs, fn($nav, $tab)=> $nav->append(($tab->tab_title ?: $tab->title), 'a', ['class'=>['nav-tab', $GLOBALS['current_tab'] == $tab->name ? 'nav-tab-active' : ''], 'href'=>$tab->admin_url]), $nav);
-
-				$tag->after($nav);
+				$tag->after(wpjam_tag('nav', ['nav-tab-wrapper', 'wp-clearfix'])->append(array_map(fn($tab)=> ['a', ['class'=>['nav-tab', $GLOBALS['current_tab'] == $tab->name ? 'nav-tab-active' : ''], 'href'=>$tab->admin_url], ($tab->tab_title ?: $tab->title)], $this->tabs)));
 			}
 		}
 
@@ -1012,8 +1011,6 @@ class WPJAM_Builtin_Page{
 
 	public static function on_edit_form($post){	// 下面代码 copy 自 do_meta_boxes
 		$meta_boxes	= $GLOBALS['wp_meta_boxes'][$post->post_type]['wpjam'] ?? [];
-		$title		= wpjam_tag('ul');
-		$content	= wpjam_tag('div', ['inside']);
 		$count		= 0;
 
 		foreach(wpjam_slice($meta_boxes, ['high', 'core', 'default', 'low']) as $_meta_boxes){
@@ -1024,8 +1021,8 @@ class WPJAM_Builtin_Page{
 
 				$count++;
 
-				$title->append('li', [], wpjam_tag('a', ['class'=>'nav-tab', 'href'=>'#tab_'.$meta_box['id']], $meta_box['title']));
-				$content->append('div', ['id'=>'tab_'.$meta_box['id']], wpjam_ob_get_contents($meta_box['callback'], $post, $meta_box));
+				$title[]	= ['a', ['class'=>'nav-tab', 'href'=>'#tab_'.$meta_box['id']], $meta_box['title']];
+				$content[]	= ['div', ['id'=>'tab_'.$meta_box['id']], wpjam_ob_get_contents($meta_box['callback'], $post, $meta_box)];
 			}
 		}
 
@@ -1034,12 +1031,12 @@ class WPJAM_Builtin_Page{
 		}
 
 		if($count == 1){
-			$title	= wpjam_tag('h2', ['hndle'], strip_tags($title))->wrap('div', ['postbox-header']);
+			$title	= wpjam_tag('h2', ['hndle'], $title[0][2])->wrap('div', ['postbox-header']);
 		}else{
-			$title->wrap('h2', ['nav-tab-wrapper']);
+			$title	= wpjam_tag('ul')->append(array_map(fn($v)=> wpjam_tag(...$v)->wrap('li'), $title))->wrap('h2', ['nav-tab-wrapper']);
 		}
 
-		echo $title->after($content)->wrap('div', ['id'=>'wpjam', 'class'=>['postbox','tabs']])->wrap('div', ['id'=>'wpjam-sortables']);
+		echo wpjam_tag('div', ['inside'])->append($content)->before($title)->wrap('div', ['id'=>'wpjam', 'class'=>['postbox','tabs']])->wrap('div', ['id'=>'wpjam-sortables']);
 	}
 
 	public static function call_post_options($method, ...$args){
@@ -1373,7 +1370,7 @@ class WPJAM_Chart extends WPJAM_Args{
 				$tbody->append(self::row('avg', $avg, $args));
 			}
 
-			$thead->after($tbody)->after($tfoot)->wrap('table', ['class'=>'wp-list-table widefat striped'])->append_to($tag);
+			$thead->after([$tbody, $tfoot])->wrap('table', ['class'=>'wp-list-table widefat striped'])->append_to($tag);
 		}
 
 		return $tag;
@@ -1419,7 +1416,7 @@ class WPJAM_Chart extends WPJAM_Args{
 				$tbody->append(self::row('total', $args['total'], $args+['label'=>'所有']));
 			}
 
-			$thead->after($tbody)->wrap('table', ['wp-list-table', 'widefat', 'striped'])->append_to($tag);
+			$tag->append('table', ['wp-list-table', 'widefat', 'striped'], implode('', [$thead, $tbody]));
 		}
 
 		return $tag->wrap('div', ['class'=>'donut-chart-wrap']);
@@ -1448,25 +1445,19 @@ class WPJAM_Chart extends WPJAM_Args{
 			}
 		}else{
 			if($key == 'head'){
-				if($args['show_line_num']){
-					$row->append('排名', 'th', ['style'=>'width:40px;']);
-				}
-
-				$row->append($args['title'], 'th')->append('数量', 'th');
-
-				if($args['total']){
-					$row->append('比例', 'th');
-				}
+				$row->append([
+					$args['show_line_num'] ? ['th', ['style'=>'width:40px;'], '排名'] : '',
+					['th', [], $args['title']],
+					['th', [], '数量'],
+					$args['total'] ? ['th', [], '比例'] : ''
+				]);
 			}else{
-				if($args['show_line_num']){
-					$row->append($key == 'total' ? '' : $key, 'td');
-				}
-
-				$row->append($args['label'], 'td')->append($data, 'td');
-
-				if($args['total']){
-					$row->append(round($data / $args['total'] * 100, 2).'%', 'td');
-				}
+				$row->append([
+					$args['show_line_num'] ? ['td', [], $key == 'total' ? '' : $key] : '',
+					['td', [], $args['label']],
+					['td', [], $data],
+					$args['total'] ? ['td', [], round($data / $args['total'] * 100, 2).'%'] : ''
+				]);
 			}
 		}
 

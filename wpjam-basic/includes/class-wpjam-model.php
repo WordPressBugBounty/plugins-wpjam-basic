@@ -502,16 +502,11 @@ class WPJAM_DB extends WPJAM_Args{
 			}
 
 			if(!$this->cache_object){
-				$global	= false;
 				$group	= $this->cache_group;
 
-				if(is_array($group)){
-					[$group, $global]	= [$group[0], ($group[1] ?? false)];
-				}
-
 				$this->cache_object	= WPJAM_Cache::create([
-					'group'		=> $group,
-					'global'	=> $global,
+					'group'		=> is_array($group) ? $group[0] : $group,
+					'global'	=> is_array($group) ? $group[1] : false,
 					'prefix'	=> $this->cache_prefix,
 					'time'		=> $this->cache_time
 				]);
@@ -1561,7 +1556,7 @@ class WPJAM_Items extends WPJAM_Args{
 
 		if($method == 'insert'){
 			if($type == 'array'){
-				$items	= $this->last ? array_replace($item, [$id=>$item]) : ([$id=>$item]+$items);
+				$items	= $this->last ? array_replace($items, [$id=>$item]) : ([$id=>$item]+$items);
 			}else{
 				$cb	= 'array_'.($this->last ? 'push' : 'unshift');
 
@@ -1751,56 +1746,87 @@ class WPJAM_Items extends WPJAM_Args{
 
 class WPJAM_Lazyloader{
 	public static function queue($name, $ids){
-		$items	= self::get_pending($name);
+		if(is_array($name)){
+			if(wp_is_numeric_array($name)){
+				array_walk($name, fn($n)=> self::queue($n, $ids));
+			}else{
+				array_walk($name, fn($n, $k)=> self::queue($n, array_column($ids, $k)));
+			}
 
-		if(!$items){
-			self::add_filter($name);
+			return;
 		}
 
-		self::update_pending($name, array_merge($items, $ids));
+		$ids	= array_unique($ids);
+		$ids	= array_filter($ids);
+
+		if(!$ids){
+			return;
+		}
+
+		if(in_array($name, ['blog', 'site'])){
+			_prime_site_caches($ids);
+		}elseif($name == 'post'){
+			_prime_post_caches($ids, false, false);
+
+			self::queue('post_meta', $ids);
+		}elseif($name == 'term'){
+			_prime_term_caches($ids);
+		}elseif($name == 'comment'){
+			_prime_comment_caches($ids);
+		}elseif(in_array($name, ['term_meta', 'comment_meta', 'blog_meta'])){
+			wp_metadata_lazyloader()->queue_objects(wpjam_remove_postfix($name, '_meta'), $ids);
+		}else{
+			self::call_pending('add', $name, $ids);
+		}
 	}
 
 	public static function add($name, $args){
 		wpjam_add_item('lazyloader', $name, $args);
 	}
 
-	public static function get_pending($name){
-		return array_unique(wpjam_get_items('lazyloader', $name));
-	}
+	public static function call_pending($action, $name, ...$args){
+		$items	= array_unique(wpjam_get_items('lazyloader', $name));
 
-	public static function update_pending($name, $items){
+		if($action == 'load'){
+			if($items){
+				if($args){
+					$args[0]($items, $name);
+				}else{
+					self::remove_filter($name, $items);
+				}
+			}
+
+			$items	= [];
+		}elseif($action == 'add'){
+			if(!$items){
+				self::add_filter($name);
+			}
+
+			$items	= array_merge($items, $args[0]);
+		}
+
 		wpjam_update_items('lazyloader', $items, $name);
 	}
 
 	public static function __callStatic($method, $args){
-		if($method == 'add_filter'){
+		if(str_ends_with($method, 'filter')){
 			$name		= $args[0];
 			$setting	= wpjam_get_item('lazyloader', $name);
+			$filter		= $setting ? $setting['filter'] : (str_ends_with($name, '_meta') ? 'get_'.$name.'data' : '');
 
-			if($setting){
-				add_filter($setting['filter'],	[self::class, 'callback_'.$name]);
-			}elseif(str_ends_with($name, '_meta')){
-				add_filter('get_'.$name.'data',	[self::class, 'callback_'.$name]);
-			}
-		}else{
-			$name	= str_replace('callback_', '', $method);
-			$items	= self::get_pending($name);
-
-			if($items){
-				$setting	= wpjam_get_item('lazyloader', $name);
-
-				if($setting){
-					call_user_func($setting['callback'], $items);
-
-					remove_filter($setting['filter'], [self::class, $method]);
-				}elseif(str_ends_with($name, '_meta')){
-					update_meta_cache(wpjam_remove_postfix($name, '_meta'), $items);
-
-					remove_filter('get_'.$name.'data', [self::class, $method]);
+			if($filter){
+				if($method == 'remove_filter'){
+					if($filter == 'get_'.$name.'data'){
+						update_meta_cache(wpjam_remove_postfix($name, '_meta'), $args[1]);
+					}else{
+						$setting['callback']($args[1]);
+					}
 				}
 
-				self::update_pending($name, []);
+				$method($filter, [self::class, 'callback_'.$name]);
 			}
+		}elseif(str_starts_with($method, 'callback_')){
+			self::call_pending('load', wpjam_remove_prefix($method, 'callback_'));
 
 			return array_shift($args);
 		}

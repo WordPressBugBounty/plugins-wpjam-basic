@@ -581,13 +581,11 @@ class WPJAM_Post{
 		$wp_query	= $GLOBALS['wp_query'];
 		$wp_query->query($args);
 
-		foreach($wp_query->posts as $post){
-			$date	= explode(' ', $post->post_date)[0];
+		return array_reduce($wp_query->posts, function($carry, $post){
+			$carry[explode(' ', $post->post_date)[0]][]	= $post;
 
-			$items[$date][]	= $post;
-		}
-
-		return $items ?? [];
+			return $carry;
+		}, []);
 	}
 
 	public static function get_filterable_fields(){
@@ -597,13 +595,13 @@ class WPJAM_Post{
 	public static function get_views(){
 		if(get_current_screen()->base != 'edit'){
 			$post_type	= static::get_current_post_type();
-			$counts		= $post_type ? wp_count_posts($post_type) : [];
+			$counts		= $post_type ? array_filter((array)wp_count_posts($post_type)) : [];
 
 			if($counts){
-				$views		= ['all'=>['filter'=>['status'=>null, 'show_sticky'=>null], 'label'=>'全部', 'count'=>array_sum((array)$counts)]];
-				$objects	= wpjam_slice(get_post_stati(['show_in_admin_status_list'=>true], 'objects'), array_keys((array)$counts));
+				$views		= ['all'=>['filter'=>['status'=>null, 'show_sticky'=>null], 'label'=>'全部', 'count'=>array_sum($counts)]];
+				$statuses	= wpjam_slice(get_post_stati(['show_in_admin_status_list'=>true], 'objects'), array_keys($counts));
 
-				return $views+wpjam_map($objects, fn($object, $status)=> ['filter'=>['status'=>$status], 'label'=>$object->label, 'count'=>$counts->$status]);
+				return $views+wpjam_map($statuses, fn($object, $status)=> ['filter'=>['status'=>$status], 'label'=>$object->label, 'count'=>$counts[$status]]);
 			}
 		}
 	}
@@ -883,16 +881,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		$name		= $labels['name'];
 		$search		= $this->hierarchical ? ['撰写新', '写文章', '页面', 'page', 'Page'] : ['撰写新', '写文章', '文章', 'post', 'Post'];
 		$replace	= ['添加', '添加'.$name, $name, $name, ucfirst($name)];
-
-		foreach($labels as $key => &$label){
-			if($key == 'all_items'){
-				$label	= '所有'.$name;
-			}elseif($key == 'archives'){
-				$label	= $name.'归档';
-			}elseif($label && $label != $name){
-				$label	= str_replace($search, $replace, $label);
-			}
-		}
+		$labels		= wpjam_map($labels, fn($v, $k)=> ['all_items'=>'所有'.$name, 'archives'=>$name.'归档'][$k] ?? (($v && $v != $name) ? str_replace($search, $replace, $v) : $v));
 
 		return array_merge($labels, (array)($this->labels ?? []));
 	}
@@ -1003,35 +992,22 @@ class WPJAM_Posts{
 	public static function render($query, $args=[]){
 		$output	= '';
 		$query	= is_object($query) ? $query : self::query($query, $args);
+		$get_cb	= fn($name, &$args)=> (($value = wpjam_pull($args, $name)) && is_callable($value)) ? $value : [self::class, $name];
 
-		if($query){
-			$callback	= [];
+		$item_callback	= $get_cb('item_callback', $args);
+		$wrap_callback	= $get_cb('wrap_callback', $args);
+		$title_number	= wpjam_pull($args, 'title_number');
+		$threshold		= strlen(count($query->posts));
 
-			foreach(['item_callback', 'wrap_callback'] as $name){
-				$value	= wpjam_pull($args, $name);
+		while($query->have_posts()){
+			$query->the_post();
 
-				$callback[$name]	= ($value && is_callable($value)) ? $value : [self::class, $name];
-			}
-
-			$title_number	= wpjam_pull($args, 'title_number');
-			$total_number	= count($query->posts);
-
-			while($query->have_posts()){
-				$query->the_post();
-
-				if($title_number){
-					$args['title_number']	= zeroise($query->current_post+1, strlen($total_number));
-				}
-
-				$output .= $callback['item_callback'](get_the_ID(), $args);
-			}
-
-			wp_reset_postdata();
-
-			$output	= $callback['wrap_callback']($output, $args);
+			$output .= $item_callback(get_the_ID(), array_merge($args, $title_number ? ['title_number'=>zeroise($query->current_post+1, $threshold)] : []));
 		}
 
-		return $output;
+		wp_reset_postdata();
+
+		return $wrap_callback($output, $args);
 	}
 
 	public static function item_callback($post_id, $args){
@@ -1063,7 +1039,7 @@ class WPJAM_Posts{
 			}
 		}
 
-		$item->wrap('a', ['href'=>get_permalink($post_id), 'title'=>strip_tags($title)], $item);
+		$item->wrap('a', ['href'=>get_permalink($post_id), 'title'=>strip_tags($title)]);
 
 		if($args['wrap_tag']){
 			$item->wrap($args['wrap_tag']);
@@ -1088,21 +1064,19 @@ class WPJAM_Posts{
 		$output	= wpjam_wrap($output);
 
 		if($args['wrap_tag']){
-			$args['class']	= (array)$args['class'];
+			$output->wrap($args['wrap_tag'])->add_class($args['class']);
 
 			if($args['thumb']){
-				$args['class'][]	= 'has-thumb';
+				$output->add_class('has-thumb');
 			}
-
-			$output->wrap($args['wrap_tag'], $args['class']);
 		}
 
 		if($args['title']){
-			$output->before('h3', [], $args['title']);
+			$output->before($args['title'], 'h3');
 		}
 
 		if($args['div_id']){
-			$output->wrap('div', ['id'=>$args['div_id']], $output);
+			$output->wrap('div', ['id'=>$args['div_id']]);
 		}
 
 		return $output->render();

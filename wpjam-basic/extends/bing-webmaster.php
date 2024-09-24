@@ -117,10 +117,10 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 		$err_args	= ['errcode'=>'ErrorCode', 'errmsg'=>'Message'];
 
 		return wpjam_remote_request($api_url, [
-			'json_encode_required'	=> true,
-			'sslverify'	=> false,
-			'blocking'	=> false,
-			'body'		=> ['siteUrl'=>$site_url, 'urlList'=>$urls]
+			'json_encode'	=> true,
+			'sslverify'		=> false,
+			'blocking'		=> false,
+			'body'			=> ['siteUrl'=>$site_url, 'urlList'=>$urls]
 		], $err_args);
 	}
 

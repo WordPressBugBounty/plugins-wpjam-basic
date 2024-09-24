@@ -218,10 +218,6 @@ function wpjam_hex2rgba($color, $opacity=null){
 	return 'rgb('.$rgb.')';
 }
 
-function wpjam_get_callback_parameters($callback){
-	return WPJAM_Callback::get_parameters($callback);
-}
-
 function wpjam_get_current_priority($name=null){
 	$name	= $name ?: current_filter();
 	$hook	= $GLOBALS['wp_filter'][$name] ?? null;
@@ -641,6 +637,10 @@ function wpjam_validate_post($post_id, $post_type=null){
 	return WPJAM_Post::validate($post_id, $post_type);
 }
 
+function wpjam_related_posts($args=[]){
+	echo wpjam_get_related_posts(null, $args, false);
+}
+
 function wpjam_new_posts($args=[]){
 	echo wpjam_get_new_posts($args);
 }
@@ -653,10 +653,6 @@ function wpjam_get_post_type_fields($post_type){
 	$object	= WPJAM_Post_Type::get($post_type);
 
 	return $object ? $object->get_fields() : [];
-}
-
-function wpjam_get_attachment_value($id, $field='file'){
-	return WPJAM_File::convert($id, 'id', $field);
 }
 
 function wpjam_attachment_url_to_postid($url){
@@ -908,6 +904,7 @@ function_alias('wp_cache_get_multiple', 'wp_cache_get_multi');
 
 add_action('wpjam_loaded', function(){
 	function_alias('wpjam_if', 'wpjam_show_if');
+	function_alias('wpjam_strip_control_chars', 'wpjam_strip_control_characters');
 
 	function_alias('wpjam_merge', 'wpjam_array_merge');
 	function_alias('wpjam_filter', 'wpjam_array_filter');
@@ -1000,6 +997,51 @@ add_filter('rewrite_rules_array', fn($rules)=> array_merge(apply_filters('wpjam_
 // 		'load_callback'	=>[$instance, 'load_plugin_page']
 // 	]);
 // });
+
+class WPJAM_Crypt extends WPJAM_Args{
+	public function __construct(...$args){
+		if($args && is_string($args[0])){
+			$key	= $args[0];
+			$args	= $args[1] ?? [];
+			$args	= array_merge($args, ['key'=>$key]);
+		}else{
+			$args	= $args[0] ?? [];
+		}
+
+		$this->args	= $args+[
+			'method'	=> 'aes-256-cbc',
+			'key'		=> '',
+			'iv'		=> '',
+			'options'	=> OPENSSL_ZERO_PADDING,	
+		];
+	}
+
+	public function encrypt($text){
+		return wpjam_encrypt($text, $this->args);
+	}
+
+	public function decrypt($text){
+		return wpjam_decrypt($text, $this->args);
+	}
+
+	public static function pad($text, $type, ...$args){
+		return wpjam_pad($text, $type, ...$args);
+	}
+
+	public static function unpad($text, $type, ...$args){
+		return wpjam_unpad($text, $type, ...$args);
+	}
+
+	public static function generate_signature(...$args){
+		return wpjam_generate_signature('sha1', ...$args);
+	}
+}
+
+class WPJAM_Http{
+	public static function request($url, $args=[], $err=[]){
+		return WPJAM_API::request($url, $args, $err);
+	}
+}
 
 class WPJAM_Option_Items extends WPJAM_Items{
 	public function __construct($option_name, $args=[]){

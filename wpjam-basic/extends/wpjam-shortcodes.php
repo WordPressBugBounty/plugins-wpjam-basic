@@ -15,7 +15,7 @@ class WPJAM_Shortcode{
 
 			return antispambot($content, $attr['mailto']);
 		}elseif(in_array($tag, ['bilibili', 'youku', 'tudou', 'qqv', 'sohutv'])){
-			return WPJAM_Video::render($content, $attr) ?: wp_video_shortcode(array_merge($attr, ['src'=>$content]));
+			return wpjam_video($content, $attr) ?: wp_video_shortcode(array_merge($attr, ['src'=>$content]));
 		}elseif($tag == 'code'){
 			$attr	= shortcode_atts(['type'=>'php'], $attr);
 			$type	= $attr['type'] == 'html' ? 'markup' : $attr['type'];

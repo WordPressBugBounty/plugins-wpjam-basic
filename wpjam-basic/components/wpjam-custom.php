@@ -138,8 +138,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 			}
 
 			$type	= ($type == 'login' || ($type && isset($objects[$type]))) ? $type : array_key_first($objects);
-			$tag	= wpjam_tag('p', ['class'=>'types', 'data'=>['action'=>$action]]);
-
+	
 			foreach($objects as $name => $object){
 				if($name == 'login'){
 					$data	= ['type'=>'login'];
@@ -153,12 +152,12 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 					}
 				}
 
-				$tag->append($title, 'a', ['class'=>($type == $name ? 'current' : ''), 'data'=>$data]);
+				$append[]	= ['a', ['class'=>($type == $name ? 'current' : ''), 'data'=>$data], $title];
 			}
 
 			wp_enqueue_script('wpjam-login', wpjam_url(dirname(__DIR__).'/static/login.js'), ['wpjam-ajax']);
 
-			add_action('login_form',	fn()=> wpjam_echo($tag));
+			add_action('login_form', fn()=> wpjam_echo(wpjam_tag('p')->add_class('types')->data('action', $action)->append($append)));
 		}
 
 		wp_add_inline_style('login', join("\n", [
