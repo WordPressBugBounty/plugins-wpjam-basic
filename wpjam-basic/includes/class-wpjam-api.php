@@ -135,7 +135,7 @@ class WPJAM_API{
 			]);
 		}else{
 			$headers	= &$args['headers'];
-			$headers	= wpjam_array($headers, 'strtolower');
+			$headers	= wpjam_array($headers, fn($k)=> strtolower($k));
 
 			if((!empty($headers['content-type']) && str_contains($headers['content-type'], 'application/json')) 
 				|| wpjam_at(wpjam_pull($args, ['json_encode', 'json_encode_required', 'need_json_encode']), 0)
@@ -1413,7 +1413,7 @@ class WPJAM_Platform extends WPJAM_Register{
 		$page_key	= wpjam_pull($args, 'page_key'.$postfix);
 
 		if($page_key == 'none'){
-			return ($video = $args['video'] ?? '') ? ['type'=>'video', 'video'=>$video, 'vide'=>wpjam_get_qqv_id($video)] : ['type'=>'none'];
+			return ($video = $args['video'] ?? '') ? ['type'=>'video', 'video'=>wpjam_get_qqv_id($video) ?: $video] : ['type'=>'none'];
 		}elseif($this->get_item($page_key)){
 			$args	= $postfix ? wpjam_map($this->get_fields($page_key), fn($v, $k)=> $args[$k.$postfix] ?? null) : $args;
 			$path	= $this->get_path($page_key, $args);

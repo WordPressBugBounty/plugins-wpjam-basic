@@ -113,9 +113,8 @@ function wpjam_pad($text, $type, ...$args){
 function wpjam_unpad($text, $type, ...$args){
 	if($type == 'pkcs7'){
 		$pad	= ord(substr($text, -1));
-		$pad	= ($pad < 1 || $pad > $args[0]) ? 0 : $pad;
 
-		return substr($text, 0, -1 * $pad);
+		return ($pad > 0 && $pad < $args[0]) ? substr($text, 0, -1 * $pad) : $text;
 	}elseif($type == 'weixin'){
 		$text	= substr($text, 16);
 		$length	= (unpack("N", substr($text, 0, 4)))[1];
@@ -164,7 +163,7 @@ function wpjam_parse_user_agent($user_agent=null, $referer=null){
 		['BlackBerry',		'BlackBerry'],
 		['BB10',			'BlackBerry'],
 		['Symbian',			'Symbian'],
-	], fn($rule) => stripos($user_agent, $rule[0]));
+	], fn($rule)=> stripos($user_agent, $rule[0]));
 
 	if($rule){
 		$os	= $rule[1];
@@ -182,15 +181,8 @@ function wpjam_parse_user_agent($user_agent=null, $referer=null){
 		if(preg_match('/Android ([0-9\.]{1,}?); (.*?) Build\/(.*?)[\)\s;]{1}/i', $user_agent, $matches)){
 			if(!empty($matches[1]) && !empty($matches[2])){
 				$os_version	= trim($matches[1]);
-
-				if(strpos($matches[2],';')!==false){
-					$device	= substr($matches[2], strpos($matches[2],';')+1, strlen($matches[2])-strpos($matches[2],';'));
-				}else{
-					$device	= $matches[2];
-				}
-
-				$device	= trim($device);
-				// $build	= trim($matches[3]);
+				$device		= trim($matches[2]);
+				$device		= str_contains($device, ';') ? explode(';', $device)[1] : $device;
 			}
 		}
 	}
@@ -247,12 +239,10 @@ function wpjam_parse_ip($ip=''){
 			$fp		= fopen(WP_CONTENT_DIR.'/uploads/17monipdb.dat', 'rb');
 			$offset	= unpack('Nlen', fread($fp, 4));
 			$index	= fread($fp, $offset['len'] - 4);
-			$object	= new WPJAM_Args(['fp'=>$fp, 'offset'=>$offset, 'index'=>$index]);
-		
 
 			register_shutdown_function(fn()=> fclose($fp));
 
-			return $object;
+			return new WPJAM_Args(['fp'=>$fp, 'offset'=>$offset, 'index'=>$index]);
 		});
 
 		$nip	= gethostbyname($ip);
@@ -261,6 +251,8 @@ function wpjam_parse_ip($ip=''){
 		if($ipdot[0] < 0 || $ipdot[0] > 255 || count($ipdot) !== 4){
 			return $default;
 		}
+
+		static $cached	= [];
 
 		if(isset($cached[$nip])){
 			return $cached[$nip];
@@ -320,9 +312,7 @@ function wpjam_scandir($dir, $callback=null){
 	if($callback && is_callable($callback)){
 		$output	= [];
 
-		foreach($files as $file){
-			$callback($file, $output);
-		}
+		array_walk($files, fn($file)=> $callback($file, $output));
 
 		return $output;
 	}
@@ -331,7 +321,7 @@ function wpjam_scandir($dir, $callback=null){
 }
 
 function wpjam_import($file, $columns=[]){
-	$file	= $file ? wp_get_upload_dir()['basedir'].$file : '';
+	$file	= $file ? wpjam_fix('add', 'prefix', $file, wp_get_upload_dir()['basedir']) : '';
 
 	if(!$file || !file_exists($file)){
 		return new WP_Error('file_not_exists', '文件不存在');
@@ -390,7 +380,7 @@ function wpjam_export($file, $data, $columns=[]){
 		fwrite($handle, chr(0xEF).chr(0xBB).chr(0xBF));
 
 		if($columns){
-			fputcsv($handle, $columns);	
+			fputcsv($handle, $columns);
 			array_walk($data, fn($item)=> fputcsv($handle, wpjam_map($columns, fn($v, $k)=> $item[$k] ?? '')));
 		}else{
 			array_walk($data, fn($item)=> fputcsv($handle, $item));
@@ -470,11 +460,11 @@ function wpjam_if($item, $args){
 	$key		= wpjam_get($args, 'key');
 	$value		= wpjam_get($item, $key);
 
-	if(wpjam_get($args, 'callable') && is_callable($value)){
+	if(!empty($args['callable']) && is_callable($value)){
 		return $value($value2, $item);
 	}
 
-	if(is_null($compare) && isset($args['if_null']) && is_null($value)){
+	if(isset($args['if_null']) && is_null($compare) && is_null($value)){
 		return $args['if_null'];
 	}
 
@@ -842,7 +832,7 @@ function wpjam_set($arr, $key, $value){
 
 			return $arr;
 		}
-		
+
 		$key	= explode('.', $key);
 	}
 
@@ -883,7 +873,7 @@ if(!function_exists('diff_deep')){
 	}
 }
 
-function_alias('wpjam_is_array_accessible',	'array_accessible');	
+function_alias('wpjam_is_array_accessible',	'array_accessible');
 function_alias('wpjam_array',	'array_wrap');
 function_alias('wpjam_get',		'array_get');
 function_alias('wpjam_set',		'array_set');
@@ -995,8 +985,8 @@ function wpjam_unserialize($serialized, $callback=null){
 }
 
 // 去掉非 utf8mb4 字符
-function wpjam_strip_invalid_text($text, $charset='utf8mb4'){
-	return $text ? preg_replace_callback('/./us', fn($matches)=> $matches[0], $text) : '';
+function wpjam_strip_invalid_text($text){
+	return $text ? iconv('UTF-8', 'UTF-8//IGNORE', $text) : '';
 }
 
 // 去掉 4字节 字符
@@ -1013,14 +1003,7 @@ function wpjam_strip_control_chars($text){
 
 //获取纯文本
 function wpjam_get_plain_text($text){
-	if($text){
-		$text	= wp_strip_all_tags($text);
-		$text	= str_replace(['"', '\'', "\r\n", "\n"], ['', '', ' ', ' '], $text);
-		$text	= preg_replace('/\s+/', ' ', $text);
-		$text	= trim($text);
-	}
-
-	return $text;
+	return $text ? trim(preg_replace('/\s+/', ' ', str_replace(['"', '\'', "\r\n", "\n"], ['', '', ' ', ' '], wp_strip_all_tags($text)))) : $text;
 }
 
 //获取第一段
@@ -1037,7 +1020,7 @@ function wpjam_zh_urlencode($url){
 }
 
 function wpjam_format($value, $format){
-	if(is_numeric($value)){	
+	if(is_numeric($value)){
 		if($format == '%'){
 			return round($value * 100, 2).'%';
 		}elseif($format == ','){
@@ -1050,11 +1033,7 @@ function wpjam_format($value, $format){
 
 // 检查非法字符
 function wpjam_blacklist_check($text, $name='内容'){
-	if(!$text){
-		return false;
-	}
-
-	$pre	= apply_filters('wpjam_pre_blacklist_check', null, $text, $name);
+	$pre	= $text ? apply_filters('wpjam_pre_blacklist_check', null, $text, $name) : false;
 
 	if(!is_null($pre)){
 		return $pre;
@@ -1102,9 +1081,7 @@ function wpjam_get_current_page_url(){
 
 // Date
 function wpjam_date($format, $timestamp=null){
-	$timestamp	??= time();
-
-	return is_numeric($timestamp) ? date_create('@'.$timestamp)->setTimezone(wp_timezone())->format($format) : false;
+	return date_create('@'.($timestamp ?? time()))->setTimezone(wp_timezone())->format($format);
 }
 
 function wpjam_strtotime($string){
@@ -1119,19 +1096,9 @@ function wpjam_human_date_diff($from, $to=0){
 	$zone	= wp_timezone();
 	$to		= $to ? date_create($to, $zone) : current_datetime();
 	$from	= date_create($from, $zone);
-	$diff	= $to->diff($from);
-	$days	= (int)$diff->format('%R%a');
-	$day	= [0=>'今天', -1=>'昨天', -2=>'前天', 1=>'明天', 2=>'后天'][$days] ?? '';
+	$day	= [0=>'今天', -1=>'昨天', -2=>'前天', 1=>'明天', 2=>'后天'][(int)$to->diff($from)->format('%R%a')] ?? '';
 
-	if($day){
-		return $day;
-	}
-
-	if($from->format('W') - $to->format('W') == 0){
-		return __($from->format('l'));
-	}else{
-		return $from->format('m月d日');
-	}
+	return $day ?: ($from->format('W') == $to->format('W') ? __($from->format('l')) : $from->format('m月d日'));
 }
 
 // Video
@@ -1139,81 +1106,78 @@ function wpjam_get_video_mp4($id_or_url){
 	if(filter_var($id_or_url, FILTER_VALIDATE_URL)){
 		if(preg_match('#http://www.miaopai.com/show/(.*?).htm#i',$id_or_url, $matches)){
 			return 'http://gslb.miaopai.com/stream/'.esc_attr($matches[1]).'.mp4';
-		}elseif(preg_match('#https://v.qq.com/x/page/(.*?).html#i',$id_or_url, $matches)){
-			return wpjam_get_qqv_mp4($matches[1]);
-		}elseif(preg_match('#https://v.qq.com/x/cover/.*/(.*?).html#i',$id_or_url, $matches)){
-			return wpjam_get_qqv_mp4($matches[1]);
-		}else{
-			return wpjam_zh_urlencode($id_or_url);
 		}
-	}else{
-		return wpjam_get_qqv_mp4($id_or_url);
+
+		$vid	= wpjam_get_qqv_id($id_or_url);
+
+		return $vid ? wpjam_get_qqv_mp4($vid) : wpjam_zh_urlencode($id_or_url);
 	}
+
+	return wpjam_get_qqv_mp4($id_or_url);
 }
 
 function wpjam_get_qqv_mp4($vid, $cache=true){
 	if(strlen($vid) > 20){
-		return new WP_Error('error', '无效的腾讯视频');
+		wpjam_throw('error', '无效的腾讯视频');
 	}
 
 	if($cache){
 		return wpjam_transient('qqv_mp4:'.$vid, fn()=> wpjam_get_qqv_mp4($vid, false), HOUR_IN_SECONDS*6);
 	}
 
-	$response	= wpjam_remote_request('http://vv.video.qq.com/getinfo?otype=json&platform=11001&vid='.$vid, ['timeout'=>4]);
-
-	if(is_wp_error($response)){
-		return $response;
-	}
-
+	$response	= wpjam_remote_request('http://vv.video.qq.com/getinfo?otype=json&platform=11001&vid='.$vid, ['timeout'=>4, 'throw'=>true]);
 	$response	= trim(substr($response, strpos($response, '{')),';');
 	$response	= wpjam_try('wpjam_json_decode', $response);
 
 	if(empty($response['vl'])){
-		return new WP_Error('error', '腾讯视频不存在或者为收费视频！');
+		wpjam_throw('error', '腾讯视频不存在或者为收费视频！');
 	}
 
 	$u	= $response['vl']['vi'][0];
-	$p0	= $u['ul']['ui'][0]['url'];
-	$p1	= $u['fn'];
-	$p2	= $u['fvkey'];
 
-	return $p0.$p1.'?vkey='.$p2;
+	return $u['ul']['ui'][0]['url'].$u['fn'].'?vkey='.$u['fvkey'];
 }
 
 function wpjam_get_qqv_id($id_or_url){
 	if(filter_var($id_or_url, FILTER_VALIDATE_URL)){
-		foreach([
+		return wpjam_find([
 			'#https://v.qq.com/x/page/(.*?).html#i',
 			'#https://v.qq.com/x/cover/.*/(.*?).html#i'
-		] as $pattern){
-			if(preg_match($pattern,$id_or_url, $matches)){
-				return $matches[1];
-			}
-		}
-
-		return '';
+		], fn($v)=> preg_match($pattern, $id_or_url, $matches) ? $matches[1] : '', 'result') ?: '';
 	}
 
 	return $id_or_url;
 }
 
 function wpjam_video($content, $attr){
-	if(preg_match('#//www.bilibili.com/video/(BV[a-zA-Z0-9]+)#i',$content, $matches)){
-		$src	= 'https://player.bilibili.com/player.html?bvid='.esc_attr($matches[1]);
-	}elseif(preg_match('#//v.qq.com/(.*)iframe/(player|preview).html\?vid=(.+)#i',$content, $matches)){
-		$src	= 'https://v.qq.com/'.esc_attr($matches[1]).'iframe/player.html?vid='.esc_attr($matches[3]);
-	}elseif(preg_match('#//v.youku.com/v_show/id_(.*?).html#i',$content, $matches)){
-		$src	= 'https://player.youku.com/embed/'.esc_attr($matches[1]);
-	}elseif(preg_match('#//www.tudou.com/programs/view/(.*?)#i',$content, $matches)){
-		$src	= 'https://www.tudou.com/programs/view/html5embed.action?code='.esc_attr($matches[1]);
-	}elseif(preg_match('#//tv.sohu.com/upload/static/share/share_play.html\#(.+)#i',$content, $matches)){
-		$src	= 'https://tv.sohu.com/upload/static/share/share_play.html#'.esc_attr($matches[1]);
-	}elseif(preg_match('#//www.youtube.com/watch\?v=([a-zA-Z0-9\_]+)#i',$content, $matches)){
-		$src	= 'https://www.youtube.com/embed/'.esc_attr($matches[1]);
-	}
+	$src	= wpjam_find([
+		[
+			'//www.bilibili.com/video/(BV[a-zA-Z0-9]+)',
+			fn($m)=> 'https://player.bilibili.com/player.html?bvid='.esc_attr($m[1])
+		],
+		[
+			'//v.qq.com/(.*)iframe/(player|preview).html\?vid=(.+)',
+			fn($m)=> 'https://v.qq.com/'.esc_attr($m[1]).'iframe/player.html?vid='.esc_attr($m[3])
+		],
+		[
+			'//v.youku.com/v_show/id_(.*?).html',
+			fn($m)=> 'https://player.youku.com/embed/'.esc_attr($m[1])
+		],
+		[
+			'//www.tudou.com/programs/view/(.*?)',
+			fn($m)=> 'https://www.tudou.com/programs/view/html5embed.action?code='.esc_attr($m[1])
+		],
+		[
+			'//tv.sohu.com/upload/static/share/share_play.html\#(.+)',
+			fn($m)=> 'https://tv.sohu.com/upload/static/share/share_play.html#'.esc_attr($m[1])
+		],
+		[
+			'//www.youtube.com/watch\?v=([a-zA-Z0-9\_]+)',
+			fn($m)=> 'https://www.youtube.com/embed/'.esc_attr($m[1])
+		],
+	], fn($v)=> preg_match('#'.$v[0].'#i', $content, $matches) ? $v[1]($matches) : '', 'result');
 
-	if(!empty($src)){
+	if($src){
 		$attr	= shortcode_atts(['width'=>0, 'height'=>0], $attr);
 		$attr	= ($attr['width'] || $attr['height']) ? image_hwstring($attr['width'], $attr['height']).' style="aspect-ratio:4/3;"' : 'style="width:100%; aspect-ratio:4/3;"';
 

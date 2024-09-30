@@ -345,11 +345,9 @@ function wpjam_add_post_type_field($post_type, ...$args){
 	$object	= WPJAM_Post_Type::get($post_type);
 
 	if($object){
-		if(is_array($args[0])){
-			array_walk($args[0], fn($field, $key)=> $object->add_item($key, $field, '_fields'));
-		}else{
-			$object->add_item($args[0], $args[1], '_fields');
-		}
+		$fields	= is_array($args[0]) ? $args[0] : [$args[0]=>$args[1]];
+
+		array_walk($fields, fn($v, $k)=> $object->add_item($k, $v, '_fields'));
 	}
 }
 
@@ -364,7 +362,7 @@ function wpjam_remove_post_type_field($post_type, $key){
 function wpjam_get_post_type_setting($post_type, $key, $default=null){
 	$object	= WPJAM_Post_Type::get($post_type);
 
-	return $object ? ($object->$key ?? $default) : $default;
+	return $object && isset($object->$key) ? $object->$key : $default;
 }
 
 function wpjam_update_post_type_setting($post_type, $key, $value){
@@ -420,12 +418,9 @@ function wpjam_get_post_object($post, $post_type=null){
 
 function wpjam_get_post($post, $args=[]){
 	$object	= wpjam_post($post);
+	$args	= is_a($args, 'WPJAM_Field') ? ($args->size ? ['thumbnal_size'=>$args->size] : []) : $args;
 
 	if($object){
-		if(is_a($args, 'WPJAM_Field')){
-			$args	= $args->size ? ['thumbnal_size'=>$args->size] : [];
-		}
-
 		return $object->parse_for_json($args);
 	}
 }
@@ -593,11 +588,9 @@ function wpjam_add_taxonomy_field($taxonomy, ...$args){
 	$object	= WPJAM_Taxonomy::get($taxonomy);
 
 	if($object){
-		if(is_array($args[0])){
-			wpjam_map($args[0], fn($field, $k)=> $object->add_item($k, $field, '_fields'));
-		}else{
-			$object->add_item($args[0], $args[1], '_fields');
-		}
+		$fields	= is_array($args[0]) ? $args[0] : [$args[0]=>$args[1]];
+
+		array_walk($fields, fn($v, $k)=> $object->add_item($k, $v, '_fields'));
 	}
 }
 
@@ -612,11 +605,7 @@ function wpjam_remove_taxonomy_field($taxonomy, $key){
 function wpjam_get_taxonomy_setting($taxonomy, $key, $default=null){
 	$object	= WPJAM_Taxonomy::get($taxonomy);
 
-	if($object && isset($object->$key)){
-		return $object->$key;
-	}
-
-	return $default;
+	return ($object && isset($object->$key)) ? $object->$key : $default;
 }
 
 function wpjam_update_taxonomy_setting($taxonomy, $key, $value){
@@ -695,8 +684,8 @@ function wpjam_get_term_object($term, $taxonomy=''){
 }
 
 function wpjam_get_term($term, $args=[]){
-	$args		= is_a($args, 'WPJAM_Field') ? ['taxonomy'=>$args->taxonomy] : (is_array($args) ? $args : ['taxonomy'=>$args]);
-	$taxonomy	= wpjam_pull($args, 'taxonomy');
+	[$taxonomy, $args]	= is_a($args, 'WPJAM_Field') ? [$args->taxonomy, []] : (is_array($args) ? [wpjam_pull($args, 'taxonomy'), $args] : [$args, []]);
+
 	$object		= WPJAM_Term::get_instance($term, $taxonomy, false);
 
 	return $object ? $object->parse_for_json($args) : null;
@@ -708,15 +697,9 @@ function wpjam_get_terms(...$args){
 	if(is_string($args[0]) || wp_is_numeric_array($args[0])){
 		$ids	= wp_parse_id_list(array_shift($args));
 		$terms	= WPJAM_Term::get_by_ids($ids);
-		$args	= array_shift($args);
+		$args	= array_shift($args) ?: [];
 
-		if(is_bool($args)){
-			$parse	= $args;
-			$args	= [];
-		}else{
-			$args	= is_array($args) ? $args : [];
-			$parse	= wpjam_pull($args, 'parse');
-		}
+		[$parse, $args]	= is_bool($args) ? [$args, []] : [wpjam_pull($args, 'parse'), $args];
 
 		return $parse ? array_map(fn($term)=> wpjam_get_term($term, $args), $terms) : $terms;
 	}else{
@@ -1008,7 +991,7 @@ function wpjam_get_thumbnail($img, ...$args){
 
 	$url	= remove_query_arg(['orientation', 'width', 'height'], wpjam_zh_urlencode($url));
 
-	if(!$args){	// 1. 无参数
+	if(!$args){// 1. 无参数
 		$size	= [];
 	}elseif(count($args) == 1){
 		// 2. ['width'=>100, 'height'=>100]	标准版
@@ -1016,7 +999,7 @@ function wpjam_get_thumbnail($img, ...$args){
 		// 4. 100x100
 		// 5. 100
 
-		$size	= wpjam_parse_size($args[0]);
+		$size	= $args[0] ? wpjam_parse_size($args[0]) : [];
 	}elseif(is_numeric($args[0])){
 		// 6. 100, 100, $crop=1
 
@@ -1050,7 +1033,7 @@ function wpjam_parse_size($size, ...$args){
 		$size	= array_merge($size, wpjam_fill(['width', 'height'], fn($k)=>(int)($size[$k] ?? 0)*$ratio));
 		$size	+= ['crop'=>($size['width'] && $size['height'])];
 	}elseif(is_numeric($size)){
-		$size	= ['crop'=> false, 'width'=>(int)$size*$ratio, 'height'=>0];
+		$size	= ['crop'=>false, 'width'=>(int)$size*$ratio, 'height'=>0];
 	}else{
 		$sep	= wpjam_find(['*', 'x', 'X'], fn($v)=> str_contains($size, $v));
 		$sizes	= wp_get_additional_image_sizes();
