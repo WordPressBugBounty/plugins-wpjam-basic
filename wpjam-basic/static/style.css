@@ -20,6 +20,13 @@ div.donut-chart-wrap{display:flex; align-items:flex-start; flex-wrap:wrap; gap:4
 div.donut-chart-wrap table{width:initial; border:none; background:none;}
 div.donut-chart-wrap .widefat thead td, div.donut-chart-wrap .widefat thead th{border:none;}
 
+.expandable-container{display: flex; flex-direction: column-reverse; align-items: flex-start;}
+.expandable-container .inner{max-height: 12em; margin-bottom: 1em; overflow: hidden; transition: max-height 1s ease;}
+.expandable-container input:checked + label + .inner{max-height: none; margin-bottom: 0;}
+.expandable-container input{display: none;}
+.expandable-container label::before{font-family: remixicon !important; font-style: normal; content: "展开\f2e0";}
+.expandable-container input:checked + label::before{content: "收起\f2ea";}
+
 input:placeholder{font-size:13px;}
 input.medium-text{width:100px;}
 input[type=number]{padding-right:0;}
@@ -119,17 +126,24 @@ input + span.query-title{display:none;}
 input.hidden + span.query-title{display:inline-block;}
 input.button ~ span.query-title{margin-left:6px;}
 
-input[type="checkbox"].switch{appearance:none; width:auto; height:auto; position:relative; border:0; outline:0; cursor:pointer; background:none; box-shadow:none;}
-input[type="checkbox"].switch:focus{box-shadow:none;}
-input[type="checkbox"].switch:after{content:''; font-size:8px; font-weight:400; line-height:18px; text-indent:-14px; color:#ffffff; width:36px; height:18px; display:inline-block; background-color:#a7aaad; border-radius:9px; box-shadow:0 0 12px rgb(0 0 0 / 15%) inset;}
-input[type="checkbox"].switch:before{content:''; width:14px; height:14px; display:block; position:absolute; top:2px; left:2px; margin:0; border-radius:50%; background-color:#ffffff;}
-input[type="checkbox"].switch:checked:before{left:20px; margin:0; background-color:#ffffff;}
-input[type="checkbox"].switch,
-input[type="checkbox"].switch:before,
+.switch{position:relative; cursor:pointer; vertical-align: middle; line-height:1; margin-right: 0.25rem;}
+.switch,
+.switch:before,
+.switch:after,
+.switch:checked:before,
+.switch:checked:after{display:inline-block; transition:ease .15s;}
+input[type="checkbox"].switch{appearance:none; width:auto; height:auto; border:0; outline:0; background:none; box-shadow:none;} 
+input[type="checkbox"].switch:focus,
+.switch:focus{box-shadow:none;}
 input[type="checkbox"].switch:after,
+.switch:after{content:''; font-size:8px; font-weight:400; line-height:18px; text-indent:-14px; color:#ffffff; width:36px; height:18px; background-color:#a7aaad; border-radius:9px; box-shadow:0 0 12px rgb(0 0 0 / 15%) inset;}
+input[type="checkbox"].switch:before,
+.switch:before{content:''; width:14px; height:14px; position:absolute; top:2px; left:2px; margin:0; border-radius:50%; background-color:#ffffff;}
 input[type="checkbox"].switch:checked:before,
-input[type="checkbox"].switch:checked:after{transition:ease .15s;}
-input[type="checkbox"].switch:checked:after{content:' '; background-color:#2271b1;}
+.switch.checked:before{left:20px; margin:0; background-color:#ffffff;}
+input[type="checkbox"].switch:checked:after,
+.switch.checked:after{content:' '; background-color:#2271b1;}
+
 
 .ui-autocomplete{z-index:1000000 !important;} /*要超过 TB z-index 才行，不然弹窗不行*/
 

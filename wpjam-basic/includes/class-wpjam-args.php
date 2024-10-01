@@ -396,6 +396,10 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 		}
 	}
 
+	public function try_method($method, ...$args){
+		return wpjam_throw_if_error($this->call_method($method, ...$args));
+	}
+
 	protected function call_property($property, ...$args){
 		$called	= $this->parse_method($property, 'property');
 
@@ -465,7 +469,7 @@ class WPJAM_Register extends WPJAM_Args{
 			foreach([
 				['hooks', 'add_hooks', true],
 				['init', 'init', $group->get_config('init')],
-			] as list($key, $method, $default)){
+			] as [$key, $method, $default]){
 				if(($args[$key] ?? $default) === true){
 					$args[$key]	= $this->parse_method($method, $model);
 				} 
@@ -1529,43 +1533,37 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 
 class WPJAM_Updater extends WPJAM_Args{
 	public function get_data($file){	// https://api.wordpress.org/plugins/update-check/1.1/
-		$response	= wpjam_transient('update_'.$this->plural.':'.$this->hostname, fn()=> wpjam_remote_request($this->url), MINUTE_IN_SECONDS);
+		$type		= $this->type;
+		$plural		= $type.'s';
+		$response	= wpjam_transient('update_'.$plural.':'.$this->hostname, fn()=> wpjam_remote_request($this->url), MINUTE_IN_SECONDS);
 
 		if(is_wp_error($response)){
 			return false;
 		}
 
-		$response	= $response['template']['table'] ?? $response[$this->plural];
+		$response	= $response['template']['table'] ?? $response[$plural];
 
 		if(isset($response['fields']) && isset($response['content'])){
 			$fields	= array_column($response['fields'], 'index', 'title');
-			$index	= $fields[$this->label];
+			$label	= $type == 'plugin' ? '插件' : '主题';
+			$item	= wpjam_find($response['content'], fn($item)=> $item['i'.$fields[$label]] == $file);
+			$data	= $item ? array_map(fn($index)=> $item['i'.$index] ?? '', $fields) : [];
 
-			foreach($response['content'] as $item){
-				if($item['i'.$index] == $file){
-					$data	= [];
-
-					foreach($fields as $name => $index){
-						$data[$name]	= $item['i'.$index] ?? '';
-					}
-
-					return [
-						$this->type		=> $file,
-						'url'			=> $data['更新地址'],
-						'package'		=> $data['下载地址'],
-						'icons'			=> [],
-						'banners'		=> [],
-						'banners_rtl'	=> [],
-						'new_version'	=> $data['版本'],
-						'requires_php'	=> $data['PHP最低版本'],
-						'requires'		=> $data['最低要求版本'],
-						'tested'		=> $data['最新测试版本'],
-					];
-				}
-			}
-		}else{
-			return $response[$file] ?? [];
+			return $data ? [
+				$type			=> $file,
+				'url'			=> $data['更新地址'],
+				'package'		=> $data['下载地址'],
+				'icons'			=> [],
+				'banners'		=> [],
+				'banners_rtl'	=> [],
+				'new_version'	=> $data['版本'],
+				'requires_php'	=> $data['PHP最低版本'],
+				'requires'		=> $data['最低要求版本'],
+				'tested'		=> $data['最新测试版本'],
+			] : [];
 		}
+
+		return $response[$file] ?? [];
 	}
 
 	public function filter_update($update, $data, $file, $locales){
@@ -1594,8 +1592,6 @@ class WPJAM_Updater extends WPJAM_Args{
 		if(in_array($type, ['plugin', 'theme'])){
 			$object	= new self([
 				'type'		=> $type,
-				'plural'	=> $type.'s',
-				'label'		=> $type == 'plugin' ? '插件' : '主题',
 				'hostname'	=> $hostname,
 				'url'		=> $url
 			]);

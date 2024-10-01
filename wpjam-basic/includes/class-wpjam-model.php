@@ -292,7 +292,7 @@ class WPJAM_Handler{
 			}elseif($method == 'query_items'){
 				if(is_array($args[0])){
 					$method	= 'query';
-					$args	= [$args[0], 'array'];
+					$args	= [$args[0], ($args[1] ?? 'array')];
 				}
 			}elseif(str_starts_with($method, 'cache_')){
 				$method	.= '_force';
@@ -323,8 +323,9 @@ class WPJAM_Handler{
 			}
 
 			$method	= ['get_ids'=>'get_by_ids', 'get_all'=>'get_results'][$method] ?? $method;
+			$cb		= [$object, $method];
 
-			return is_callable([$object, $method]) ? $object->$method(...$args) : new WP_Error('undefined_method', [$method]);
+			return is_callable($cb) ? $cb(...$args) : new WP_Error('undefined_method', [$method]);
 		}catch(Exception $e){
 			return wpjam_catch($e);
 		}

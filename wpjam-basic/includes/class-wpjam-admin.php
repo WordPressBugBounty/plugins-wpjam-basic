@@ -21,6 +21,40 @@ class WPJAM_Admin{
 		wp_localize_script('wpjam-script', 'wpjam_page_setting', $setting);
 	}
 
+	public static function on_admin_notices(){
+		$render	= function($type){
+			if($type == 'admin' && !current_user_can('manage_options')){
+				return;
+			}
+
+			$object	= WPJAM_Notice::get_instance($type);
+
+			foreach($object->get_items() as $key => $item){
+				$item	+= ['class'=>'is-dismissible', 'title'=>'', 'modal'=>0];
+				$notice	= trim($item['notice']);
+				$notice	.= !empty($item['admin_url']) ? (($item['modal'] ? "\n\n" : ' ').'<a style="text-decoration:none;" href="'.add_query_arg(['notice_key'=>$key, 'notice_type'=>$type], home_url($item['admin_url'])).'">点击查看<span class="dashicons dashicons-arrow-right-alt"></span></a>') : '';
+
+				$notice	= wpautop($notice).wpjam_get_page_button('delete_notice', ['data'=>['notice_key'=>$key, 'notice_type'=>$type]]);
+
+				if($item['modal']){
+					if(empty($modal)){	// 弹窗每次只显示一条
+						$modal	= $notice;
+						$title	= $item['title'] ?: '消息';
+
+						echo '<div id="notice_modal" class="hidden" data-title="'.esc_attr($title).'">'.$modal.'</div>';
+					}
+				}else{
+					echo '<div class="notice notice-'.$item['type'].' '.$item['class'].'">'.$notice.'</div>';
+				}
+			}
+		};
+
+		WPJAM_Notice::ajax_delete();
+
+		$render('user');
+		$render('admin');
+	}
+
 	public static function on_current_screen($screen){
 		$page	= $GLOBALS['plugin_page'];
 		$object = WPJAM_Plugin_Page::get_current();
@@ -153,7 +187,17 @@ class WPJAM_Admin{
 			add_action(self::get_prefix().'admin_menu',	fn()=> WPJAM_Menu_Page::init(true), 9);
 		}
 
-		add_action('current_screen', [self::class, 'on_current_screen'], 9);
+		wpjam_register_page_action('delete_notice', [
+			'button_text'	=> '删除',
+			'tag'			=> 'span',
+			'class'			=> 'hidden delete-notice',
+			'validate'		=> true,
+			'direct'		=> true,
+			'callback'		=> ['WPJAM_Notice', 'ajax_delete'],
+		]);
+
+		add_action('current_screen',	[self::class, 'on_current_screen'], 9);
+		add_action('admin_notices',		[self::class, 'on_admin_notices']);
 	}
 }
 
@@ -176,10 +220,7 @@ class WPJAM_Admin_Action extends WPJAM_Register{
 	}
 
 	private function parse_nonce_action($args=[]){
-		$name	= $this->name;
-		$name	= !empty($args['bulk']) ? 'bulk_'.$name : $name.(!empty($args['id']) ? '-'.$args['id'] : '');
-
-		return ($GLOBALS['plugin_page'] ?? $GLOBALS['current_screen']->id).'-'.$name;
+		return ($GLOBALS['plugin_page'] ?? $GLOBALS['current_screen']->id).'-'.wpjam_join('-', $this->name, $args['id'] ?? '');
 	}
 
 	public function create_nonce($args=[]){
@@ -857,7 +898,7 @@ class WPJAM_Plugin_Page extends WPJAM_Menu_Page{
 		$tag	= wpjam_tag(($this->tab_page ? 'h2' : 'h1'), ['wp-heading-inline'], ($this->page_title ?? $this->title));
 		$tag	= $tag->after([
 			['span', ['page-title-action-wrap'], $this->page_title_action ?: ''],
-			['hr', ['wp-header-end']]
+			$this->tab_page ? '' : ['hr', ['wp-header-end']]
 		]);
 
 		$summary	= $this->summary;
@@ -866,7 +907,7 @@ class WPJAM_Plugin_Page extends WPJAM_Menu_Page{
 			if(is_callable($summary)){
 				$summary	= $summary(...$this->cb_args);
 			}elseif(is_array($summary)){
-				$summary	= $summary[0].(!empty($summary[1]) ? '，详细介绍请点击：'.wpjam_tag('a', ['href'=>$summary[1], 'target'=>'_blank'], $this->menu_title) : '');
+				$summary	= $summary[0].(!empty($summary[1]) ? '，详细介绍请点击：'.wpjam_tag('a', ['href'=>$summary[1], 'target'=>'_blank'], $this->title ?: $this->menu_title) : '');
 			}elseif(is_file($summary)){
 				$summary	= wpjam_get_file_summary($summary);
 			}

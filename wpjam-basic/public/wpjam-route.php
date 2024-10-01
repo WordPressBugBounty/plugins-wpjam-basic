@@ -43,12 +43,20 @@ function wpjam_call($callback, ...$args){
 	}
 }
 
+function wpjam_call_array($callback, $args){
+	return wpjam_call($callback, ...$args);
+}
+
 function wpjam_try($callback, ...$args){
 	try{
 		return wpjam_throw_if_error(wpjam_call(wpjam_throw_if_error($callback), ...$args));
 	}catch(Throwable $e){
 		throw $e;
 	}
+}
+
+function wpjam_try_array($callback, $args){
+	return wpjam_try($callback, ...$args);
 }
 
 function wpjam_catch($callback, ...$args){
@@ -63,6 +71,10 @@ function wpjam_catch($callback, ...$args){
 	}catch(Exception $e){
 		return wpjam_catch($e);
 	}
+}
+
+function wpjam_catch_array($callback, $args){
+	return wpjam_catch($callback, ...$args);
 }
 
 function wpjam_throw($errcode, $errmsg=''){
@@ -300,8 +312,14 @@ function wpjam_throw_if_error($result){
 }
 
 // Var
-function wpjam_var($name, ...$args){
-	$object	= WPJAM_Var::get_instance();
+function wpjam_var($name=null, ...$args){
+	static $object;
+
+	$object	= $object ?? new WPJAM_Args(wpjam_parse_user_agent());
+
+	if(!$name){
+		return $object;
+	}
 
 	if($args){
 		$value	= $args[0];
@@ -349,7 +367,11 @@ function wpjam_get_current_user($required=false){
 }
 
 function wpjam_current_supports($feature){
-	return (WPJAM_Var::get_instance())->supports($feature);
+	$object	= wpjam_var();
+
+	if($feature == 'webp'){
+		return $object->browser == 'chrome' || $object->os == 'Android' || ($object->os == 'iOS' && version_compare($object->os_version, 14) >= 0);
+	}
 }
 
 function wpjam_get_device(){
@@ -452,7 +474,34 @@ function wpjam_remote_request($url='', $args=[], $err=[]){
 
 // Error
 function wpjam_parse_error($data){
-	return WPJAM_Error::parse($data);
+	if($data === true){
+		return ['errcode'=>0];
+	}
+
+	if($data === false || is_null($data)){
+		return ['errcode'=>'-1', 'errmsg'=>'系统数据错误或者回调函数返回错误'];
+	}
+
+	if(is_array($data)){
+		if(!$data || !wp_is_numeric_array($data)){
+			$data	+= ['errcode'=>0];
+		}
+	}elseif(is_wp_error($data)){
+		$errdata	= $data->get_error_data();
+		$data		= [
+			'errcode'	=> $data->get_error_code(),
+			'errmsg'	=> $data->get_error_message(),
+		];
+
+		if($errdata){
+			$errdata	= is_array($errdata) ? $errdata : ['errdata'=>$errdata];
+			$data 		= $data + $errdata;
+		}
+	}else{
+		return $data;
+	}
+
+	return empty($data['errcode']) ? $data : WPJAM_Error::filter($data);
 }
 
 function wpjam_register_error_setting($code, $message, $modal=[]){
@@ -601,7 +650,7 @@ if(is_admin()){
 			wpjam_var('admin_ajax', $args);
 
 			add_action('wp_ajax_'.$action, function(){
-				add_filter('wp_die_ajax_handler', ['WPJAM_JSON', 'filter_die_handler']);
+				add_filter('wp_die_ajax_handler', fn()=> ['WPJAM_Error', 'wp_die_handler']);
 
 				$args	= wpjam_var('admin_ajax');
 				$args	= wpjam_is_assoc_array($args) ? $args : ['callback'=>$args];
@@ -812,7 +861,6 @@ add_action('plugins_loaded',	['WPJAM_API', 'on_plugins_loaded'], 0);
 
 if(is_admin()){
 	add_action('plugins_loaded',	['WPJAM_Admin', 'on_plugins_loaded']);
-	add_action('plugins_loaded',	['WPJAM_Notice', 'on_plugins_loaded']);
 }
 
 if(wpjam_is_json_request()){

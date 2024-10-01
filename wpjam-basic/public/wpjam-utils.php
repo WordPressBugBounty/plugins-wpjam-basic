@@ -50,7 +50,7 @@ function wpjam_verify_jwt($token){
 }
 
 function wpjam_get_jwt($key='access_token', $required=false){
-	$header	= getallheaders()['Authorization'] ?? '';
+	$header	= $_SERVER['HTTP_AUTHORIZATION'] ?? '';
 
 	return ($header && str_starts_with($header, 'Bearer')) ? trim(wpjam_remove_prefix($header, 'Bearer')) : wpjam_get_parameter($key, ['required'=>$required]);
 }
@@ -92,7 +92,7 @@ function wpjam_decrypt($text, $args){
 	}
 
 	if($args['pad'] == 'weixin' && !empty($args['appid'])){
-		$text 	= wpjam_unpad($text, 'weixin', $args['appid']);
+		$text 	= wpjam_unpad($text, 'weixin', trim($args['appid']));
 	}
 
 	return $text;
@@ -119,8 +119,8 @@ function wpjam_unpad($text, $type, ...$args){
 		$text	= substr($text, 16);
 		$length	= (unpack("N", substr($text, 0, 4)))[1];
 
-		if($args && substr($text, $length + 4) != $args[0]){
-			return new WP_Error('invalid_appid', 'Appid 校验错误');
+		if($args && trim(substr($text, $length + 4)) != trim($args[0])){
+			return new WP_Error('invalid_appid', 'Appid 校验「'.substr($text, $length + 4).'」「'.$args[0].'」错误');
 		}
 
 		return substr($text, 4, $length);
@@ -312,7 +312,9 @@ function wpjam_scandir($dir, $callback=null){
 	if($callback && is_callable($callback)){
 		$output	= [];
 
-		array_walk($files, fn($file)=> $callback($file, $output));
+		foreach($files as $file){
+			$callback($file, $output);
+		}
 
 		return $output;
 	}
@@ -1049,6 +1051,18 @@ function wpjam_doing_debug(){
 		return $_GET['debug'] ? sanitize_key($_GET['debug']) : true;
 	}else{
 		return false;
+	}
+}
+
+function wpjam_expandable($str, $num=10, $name=null){
+	if(count(explode("\n", $str)) > $num){
+		static $index = 0;
+
+		$name	= 'expandable_'.($name ?? (++$index));
+
+		return '<div class="expandable-container"><input type="checkbox" id="'.esc_attr($name).'" /><label for="'.esc_attr($name).'" class="button"></label><div class="inner">'.$str.'</div></div>';
+	}else{
+		return $str;
 	}
 }
 

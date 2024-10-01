@@ -64,31 +64,26 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 	}
 
 	public static function get_avatar_data($id_or_email){
-		if(is_object($id_or_email) && isset($id_or_email->comment_ID)){
-			$id_or_email	= get_comment($id_or_email);
-		}
-
-		$user_id 	= 0;
-		$avatarurl	= '';
-		$email		= '';
-
 		if(is_numeric($id_or_email)){
 			$user_id	= $id_or_email;
 		}elseif(is_string($id_or_email)){
 			$email		= $id_or_email;
-		}elseif($id_or_email instanceof WP_User){
-			$user_id	= $id_or_email->ID;
-		}elseif($id_or_email instanceof WP_Post){
-			$user_id	= $id_or_email->post_author;
-		}elseif($id_or_email instanceof WP_Comment){
-			$user_id	= $id_or_email->user_id;
-			$email		= $id_or_email->comment_author_email;
-			$avatarurl	= get_comment_meta($id_or_email->comment_ID, 'avatarurl', true);
+		}elseif(is_object($id_or_email)){
+			if(isset($id_or_email->comment_ID)){
+				$comment	= get_comment($id_or_email);
+				$user_id	= $comment->user_id;
+				$email		= $comment->comment_author_email;
+				$avatarurl	= get_comment_meta($comment->comment_ID, 'avatarurl', true);
+			}elseif($id_or_email instanceof WP_User){
+				$user_id	= $id_or_email->ID;
+			}elseif($id_or_email instanceof WP_Post){
+				$user_id	= $id_or_email->post_author;
+			}
 		}
 
-		if(!$avatarurl && $user_id){
-			$avatarurl	= get_user_meta($user_id, 'avatarurl', true);
-		}
+		$user_id	??= 0;
+		$email		??= '';
+		$avatarurl	= !empty($avatarurl) ? $avatarurl : ($user_id ? get_user_meta($user_id, 'avatarurl', true) : '');
 
 		return $avatarurl ? ['avatarurl'=>$avatarurl] : ['user_id'=>$user_id, 'email'=>$email];
 	}
@@ -100,6 +95,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 	}
 
 	public static function add_hooks(){
+		$remove_filter		= $remove_action = fn($hook, $callback)=> remove_filter($hook, $callback, has_filter($hook, $callback));
 		$static_cdn			= self::get_setting('static_cdn');
 		$x_frame_options	= self::get_setting('x-frame-options');
 
@@ -111,7 +107,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			add_action('send_headers',	fn()=> header('X-Frame-Options: '.$x_frame_options));
 		}
 
-		add_filter('pre_get_avatar_data', fn($args, $id_or_email)=> WPJAM_Gravatar::filter_pre_data(array_merge($args, WPJAM_Basic::get_avatar_data($id_or_email))), 10, 2);
+		add_filter('pre_get_avatar_data', fn($args, $id_or_email)=> WPJAM_Gravatar::filter_pre_data(self::get_avatar_data($id_or_email)+$args), 10, 2);
 
 		add_action('wp_loaded',	fn()=> ob_start(fn($html)=> apply_filters('wpjam_html', WPJAM_Google_Font::filter_html($html))));
 
@@ -136,76 +132,59 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 
 		// 防止重名造成大量的 SQL 请求
 		if(self::get_setting('timestamp_file_name')){
-			wpjam_map(['sideload', 'upload'], fn($k)=> add_filter('wp_handle_'.$k.'_prefilter', fn($file)=> empty($file['md5_filename']) ? array_merge($file, ['name'=> time().'-'.$file['name']]) : $file));
+			array_map(fn($k)=> add_filter('wp_handle_'.$k.'_prefilter', fn($file)=> empty($file['md5_filename']) ? array_merge($file, ['name'=> time().'-'.$file['name']]) : $file), ['sideload', 'upload']);
 		}
 
 		//移除 WP_Head 无关紧要的代码
 		if(self::get_setting('remove_head_links', 1)){
-			add_filter('the_generator', '__return_empty_string');
+			add_filter('the_generator', fn()=> '');
 
-			remove_action( 'wp_head', 'rsd_link' );
-			remove_action( 'wp_head', 'wlwmanifest_link' );
+			array_map(fn($v)=> $remove_action('wp_head', $v), ['rsd_link', 'wlwmanifest_link', 'feed_links_extra', 'index_rel_link', 'parent_post_rel_link', 'start_post_rel_link', 'adjacent_posts_rel_link_wp_head', 'wp_shortlink_wp_head', 'rest_output_link_wp_head']);
 
-			remove_action( 'wp_head', 'feed_links_extra', 3 );
-			//remove_action( 'wp_head', 'feed_links', 2 );
+			array_map(fn($v)=> $remove_action('template_redirect', $v), ['wp_shortlink_header', 'rest_output_link_header']);
 
-			remove_action( 'wp_head', 'index_rel_link' );
-			remove_action( 'wp_head', 'parent_post_rel_link', 10);
-			remove_action( 'wp_head', 'start_post_rel_link', 10);
-			remove_action( 'wp_head', 'adjacent_posts_rel_link_wp_head', 10);
-
-			remove_action( 'wp_head', 'wp_shortlink_wp_head', 10, 0 );
-			remove_action( 'wp_head', 'rest_output_link_wp_head', 10);
-
-			remove_action( 'template_redirect',	'wp_shortlink_header', 11);
-			remove_action( 'template_redirect',	'rest_output_link_header', 11);
-
-			wpjam_map(['style', 'script'], fn($k)=> add_filter($k.'_loader_src', fn($src)=> $src ? preg_replace('/[\&\?]ver='.preg_quote($GLOBALS['wp_version']).'(&|$)/', '', $src) : $src));
+			array_map(fn($v)=> add_filter($v.'_loader_src', fn($src)=> $src ? preg_replace('/[\&\?]ver='.preg_quote($GLOBALS['wp_version']).'(&|$)/', '', $src) : $src), ['style', 'script']);
 		}
 
 		//让用户自己决定是否书写正确的 WordPress
 		if(self::get_setting('remove_capital_P_dangit', 1)){
-			remove_filter( 'the_content', 'capital_P_dangit', 11 );
-			remove_filter( 'the_title', 'capital_P_dangit', 11 );
-			remove_filter( 'wp_title', 'capital_P_dangit', 11 );
-			remove_filter( 'document_title', 'capital_P_dangit', 11 );
-			remove_filter( 'comment_text', 'capital_P_dangit', 31 );
-			remove_filter( 'widget_text_content', 'capital_P_dangit', 11 );
+			array_map(fn($v)=> $remove_filter($v, 'capital_P_dangit'), ['the_content', 'the_title', 'wp_title', 'document_title', 'comment_text', 'widget_text_content']);
 		}
 
 		// 屏蔽字符转码
 		if(self::get_setting('disable_texturize', 1)){
-			add_filter('run_wptexturize', '__return_false');
+			add_filter('run_wptexturize', fn()=> false);
 		}
 
 		//移除 admin bar
 		if(self::get_setting('remove_admin_bar')){
-			add_filter('show_admin_bar', '__return_false');
+			add_filter('show_admin_bar', fn()=> false);
 		}
 
 		//禁用 XML-RPC 接口
 		if(self::get_setting('disable_xml_rpc')){
-			add_filter('xmlrpc_enabled', '__return_false');
-			add_filter('xmlrpc_methods', '__return_empty_array');
+			add_filter('xmlrpc_enabled', fn()=> false);
+			add_filter('xmlrpc_methods', fn()=> []);
+
 			remove_action('xmlrpc_rsd_apis', 'rest_output_rsd');
 		}
 
 		// 屏蔽古腾堡编辑器
 		if(self::get_setting('disable_block_editor')){
-			remove_action('wp_enqueue_scripts', 'wp_common_block_scripts_and_styles');
-			remove_action('admin_enqueue_scripts', 'wp_common_block_scripts_and_styles');
+			array_map(fn($v)=> $remove_action($v, 'wp_common_block_scripts_and_styles'), ['wp_enqueue_scripts', 'admin_enqueue_scripts']);
+
 			remove_filter('the_content', 'do_blocks', 9);
 		}
 
 		// 屏蔽小工具区块编辑器模式
 		if(self::get_setting('disable_widgets_block_editor')){
-			add_filter('gutenberg_use_widgets_block_editor', '__return_false');
-			add_filter('use_widgets_block_editor', '__return_false');
+			add_filter('gutenberg_use_widgets_block_editor', fn()=> false);
+			add_filter('use_widgets_block_editor', fn()=> false);
 		}
 
 		// 屏蔽站点管理员邮箱验证功能
 		if(self::get_setting('disable_admin_email_check')){
-			add_filter('admin_email_check_interval', '__return_false');
+			add_filter('admin_email_check_interval', fn()=> false);
 		}
 
 		// 屏蔽 Emoji
@@ -224,8 +203,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			remove_filter('comment_text_rss',	'wp_staticize_emoji');
 			remove_filter('wp_mail',			'wp_staticize_emoji_for_email');
 
-			add_filter('emoji_svg_url',		'__return_false');
-
+			add_filter('emoji_svg_url',		fn()=> false);
 			add_filter('tiny_mce_plugins',	fn($plugins)=> array_diff($plugins, ['wpemoji']));
 		}
 
@@ -236,6 +214,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			}
 
 			remove_action('pre_post_update', 'wp_save_post_revision');
+
 			add_filter('register_meta_args', fn($args, $defaults, $meta_type, $meta_key)=> ($meta_type == 'post' && !empty($args['object_subtype']) && in_array($args['object_subtype'], ['post', 'page'])) ? array_merge($args, ['revisions_enabled'=>false]) : $args, 10, 4);
 		}
 
@@ -243,67 +222,55 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 		if(self::get_setting('disable_trackbacks', 1)){
 			if(!self::get_setting('disable_xml_rpc')){	//彻底关闭 pingback
 				add_filter('xmlrpc_methods', fn($methods)=> array_merge($methods, [
-					'pingback.ping'						=> '__return_false',
-					'pingback.extensions.getPingbacks'	=> '__return_false'
+					'pingback.ping'						=> fn()=> false,
+					'pingback.extensions.getPingbacks'	=> fn()=> false
 				]));
 			}
 
-			//禁用 pingbacks, enclosures, trackbacks
-			remove_action('do_pings', 'do_all_pings', 10);
-
-			//去掉 _encloseme 和 do_ping 操作。
-			remove_action('publish_post','_publish_post_hook',5);
+			remove_action('do_pings',		'do_all_pings', 10);		//禁用 pingbacks, enclosures, trackbacks
+			remove_action('publish_post',	'_publish_post_hook',5);	//去掉 _encloseme 和 do_ping 操作。
 		}
 
 		//禁用 Auto OEmbed
 		if(self::get_setting('disable_autoembed')){
-			remove_filter('the_content',			[$GLOBALS['wp_embed'], 'autoembed'], 8);
-			remove_filter('widget_text_content',	[$GLOBALS['wp_embed'], 'autoembed'], 8);
-			remove_filter('widget_block_content',	[$GLOBALS['wp_embed'], 'autoembed'], 8);
-
-			remove_action('edit_form_advanced',	[$GLOBALS['wp_embed'], 'maybe_run_ajax_cache']);
-			remove_action('edit_page_form',		[$GLOBALS['wp_embed'], 'maybe_run_ajax_cache']);
+			array_map(fn($v)=> $remove_action($v, [$GLOBALS['wp_embed'], 'maybe_run_ajax_cache']), ['edit_form_advanced', 'edit_page_form']);
+			array_map(fn($v)=> $remove_filter($v, [$GLOBALS['wp_embed'], 'autoembed']), ['the_content', 'widget_text_content', 'widget_block_content']);
 		}
 
 		// 屏蔽文章Embed
 		if(self::get_setting('disable_post_embed')){
-			remove_action('wp_head', 'wp_oembed_add_discovery_links');
-			remove_action('wp_head', 'wp_oembed_add_host_js');
+			array_map(fn($v)=> remove_action('wp_head', $v), ['wp_oembed_add_discovery_links', 'wp_oembed_add_host_js']);
 		}
 
 		// 屏蔽自动更新和更新检查作业
 		if(self::get_setting('disable_auto_update')){
-			add_filter('automatic_updater_disabled', '__return_true');
+			add_filter('automatic_updater_disabled', fn()=> true);
 
 			remove_action('init', 'wp_schedule_update_checks');
-			remove_action('wp_version_check', 'wp_version_check');
-			remove_action('wp_update_plugins', 'wp_update_plugins');
-			remove_action('wp_update_themes', 'wp_update_themes');
+
+			array_map(fn($v)=> $remove_action($v, $v), ['wp_version_check', 'wp_update_plugins', 'wp_update_themes']);
 		}
 
 		// 屏蔽后台隐私
 		if(self::get_setting('disable_privacy', 1)){
-			remove_action('user_request_action_confirmed', '_wp_privacy_account_request_confirmed');
-			remove_action('user_request_action_confirmed', '_wp_privacy_send_request_confirmation_notification', 12);
-			remove_action('wp_privacy_personal_data_exporters', 'wp_register_comment_personal_data_exporter');
-			remove_action('wp_privacy_personal_data_exporters', 'wp_register_media_personal_data_exporter');
-			remove_action('wp_privacy_personal_data_exporters', 'wp_register_user_personal_data_exporter', 1);
+			array_map(fn($v)=> $remove_action('user_request_action_confirmed', $v), ['_wp_privacy_account_request_confirmed', '_wp_privacy_send_request_confirmation_notification']);
+
+			array_map(fn($v)=> $remove_action('wp_privacy_personal_data_exporters', $v), ['wp_register_comment_personal_data_exporter', 'wp_register_media_personal_data_exporter', 'wp_register_user_personal_data_exporter']);
+
 			remove_action('wp_privacy_personal_data_erasers', 'wp_register_comment_personal_data_eraser');
 			remove_action('init', 'wp_schedule_delete_old_privacy_export_files');
 			remove_action('wp_privacy_delete_old_export_files', 'wp_privacy_delete_old_export_files');
 
-			add_filter('option_wp_page_for_privacy_policy', '__return_zero');
+			add_filter('option_wp_page_for_privacy_policy', fn()=> 0);
 		}
 
 		if(is_admin()){
 			if(self::get_setting('disable_auto_update')){
-				remove_action('admin_init', '_maybe_update_core');
-				remove_action('admin_init', '_maybe_update_plugins');
-				remove_action('admin_init', '_maybe_update_themes');
+				array_map(fn($v)=> remove_action('admin_init', $v), ['_maybe_update_core', '_maybe_update_plugins', '_maybe_update_themes']);
 			}
 
 			if(self::get_setting('disable_block_editor')){
-				add_filter('use_block_editor_for_post_type', '__return_false');
+				add_filter('use_block_editor_for_post_type', fn()=> false);
 			}
 
 			if(self::get_setting('remove_help_tabs')){
@@ -311,8 +278,8 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			}
 
 			if(self::get_setting('remove_screen_options')){
-				add_filter('screen_options_show_screen', '__return_false');
-				add_filter('hidden_columns', '__return_empty_array');
+				add_filter('screen_options_show_screen', fn()=> false);
+				add_filter('hidden_columns', fn()=> []);
 			}
 
 			if(self::get_setting('disable_privacy', 1)){
@@ -322,12 +289,12 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 					['tools.php',			'erase-personal-data.php']
 				]), 11);
 
-				add_action('admin_init', fn()=> array_map(fn($args)=> remove_filter(...$args), [
-					['admin_init',				['WP_Privacy_Policy_Content', 'text_change_check'], 100],
+				add_action('admin_init', fn()=> array_map(fn($args)=> $remove_filter(...$args), [
+					['admin_init',				['WP_Privacy_Policy_Content', 'text_change_check']],
 					['edit_form_after_title',	['WP_Privacy_Policy_Content', 'notice']],
-					['admin_init',				['WP_Privacy_Policy_Content', 'add_suggested_content'], 1],
+					['admin_init',				['WP_Privacy_Policy_Content', 'add_suggested_content']],
 					['post_updated',			['WP_Privacy_Policy_Content', '_policy_page_updated']],
-					['list_pages',				'_wp_privacy_settings_filter_draft_page_titles', 10, 2],
+					['list_pages',				'_wp_privacy_settings_filter_draft_page_titles'],
 				]), 1);
 			}
 		}
@@ -345,7 +312,7 @@ class WPJAM_Gravatar extends WPJAM_Register{
 			'loli'		=> ['title'=>'loli加速服务',		'url'=>'https://gravatar.loli.net/avatar/'],
 			'sep_cc'	=> ['title'=>'sep.cc加速服务',	'url'=>'https://cdn.sep.cc/avatar/'],
 			'cravatar'	=> ['title'=>'Cravatar加速服务',	'url'=>'https://cravatar.cn/avatar/'],
-			'custom'	=> ['title'=>'自定义加速服务',		'fields'=>['gravatar_custom'=>['placeholder'=>'请输入 Gravatar 加速服务地址']]]
+			'custom'	=> ['title'=>'自定义加速服务',		'url'=>fn()=> wpjam_basic_get_setting('gravatar_custom'),	'fields'=>['gravatar_custom'=>['placeholder'=>'请输入 Gravatar 加速服务地址']]]
 		];
 	}
 
@@ -354,22 +321,11 @@ class WPJAM_Gravatar extends WPJAM_Register{
 			return array_merge($args, ['found_avatar'=>true, 'url'=>wpjam_get_thumbnail($args['avatarurl'], $args)]);
 		}
 
-		$name	= wpjam_basic_get_setting('gravatar');
-
-		if($name == 'custom'){
-			$replace	= wpjam_basic_get_setting('gravatar_custom');
-		}else{
-			$object		= self::get($name);
-			$replace	= $object ? $object->url : '';
-		}
+		$object 	= self::get(wpjam_basic_get_setting('gravatar'));
+		$replace	= $object ? $object->get_arg('url') : '';
 
 		if($replace){
-			add_filter('get_avatar_url', fn($url)=> str_replace([
-				'https://secure.gravatar.com/avatar/',
-				'http://0.gravatar.com/avatar/',
-				'http://1.gravatar.com/avatar/',
-				'http://2.gravatar.com/avatar/',
-			], $replace, $url));
+			add_filter('get_avatar_url', fn($url)=> str_replace(array_map(fn($v)=>$v.'gravatar.com/avatar/', ['https://secure.', 'http://0.', 'http://1.', 'http://2.']), $replace, $url));
 		}
 
 		return $args;
@@ -392,44 +348,31 @@ class WPJAM_Google_Font extends WPJAM_Register{
 
 	public static function get_defaults(){
 		return [
-			'geekzu'	=> ['title'=>'极客族加速服务',	'replace'=>[
-				'//fonts.geekzu.org',
-				'//gapis.geekzu.org/ajax',
-				'//gapis.geekzu.org/g-themes',
-				'//gapis.geekzu.org/g-fonts'
-			]],
-			'loli'		=> ['title'=>'loli加速服务',	'replace'=>[
-				'//fonts.loli.net',
-				'//ajax.loli.net',
-				'//themes.loli.net',
-				'//gstatic.loli.net'
-			]],
-			'ustc'		=> ['title'=>'中科大加速服务',	'replace'=>[
-				'//fonts.lug.ustc.edu.cn',
-				'//ajax.lug.ustc.edu.cn',
-				'//google-themes.lug.ustc.edu.cn',
-				'//fonts-gstatic.lug.ustc.edu.cn'
-			]],
-			'custom'	=> ['title'=>'自定义加速服务', 'fields'=> fn()=> wpjam_map(self::get_search(), fn($v)=> ['placeholder'=>'请输入'.str_replace('//', '', $v).'加速服务地址'])]
+			'geekzu'	=> [
+				'title'		=> '极客族加速服务',
+				'replace'	=> ['//fonts.geekzu.org', '//gapis.geekzu.org/ajax', '//gapis.geekzu.org/g-themes', '//gapis.geekzu.org/g-fonts']
+			],
+			'loli'		=> [
+				'title'		=> 'loli加速服务',
+				'replace'	=> ['//fonts.loli.net', '//ajax.loli.net', '//themes.loli.net', '//gstatic.loli.net']
+			],
+			'ustc'		=> [
+				'title'		=> '中科大加速服务',
+				'replace'	=> ['//fonts.lug.ustc.edu.cn', '//ajax.lug.ustc.edu.cn', '//google-themes.lug.ustc.edu.cn', '//fonts-gstatic.lug.ustc.edu.cn']
+			],
+			'custom'	=> [
+				'title'		=> '自定义加速服务',
+				'fields'	=> fn()=> wpjam_map(self::get_search(), fn($v)=> ['placeholder'=>'请输入'.str_replace('//', '', $v).'加速服务地址']),
+				'replace'	=> fn()=> wpjam_map(self::get_search(), fn($v, $k)=> str_replace(['http://','https://'], '//', wpjam_basic_get_setting($k) ?: $v))
+			]
 		];
 	}
 
 	public static function filter_html($html){
-		$name	= wpjam_basic_get_setting('google_fonts');
-		$search	= self::get_search();
+		$object 	= self::get(wpjam_basic_get_setting('google_fonts'));
+		$replace	= $object ? $object->get_arg('replace') : '';
 
-		if($name == 'custom'){
-			$replace	= wpjam_map($search, fn($v, $k)=> str_replace(['http://','https://'], '//', wpjam_basic_get_setting($k) ?: $v));
-		}else{
-			$object		= self::get($name);
-			$replace	= $object ? $object->replace : '';
-		}
-
-		if($replace && count($replace) == 4){
-			$html	= str_replace($search, $replace, $html);
-		}
-
-		return $html;
+		return ($replace && count($replace) == 4) ? str_replace(self::get_search(), $replace, $html) : $html;
 	}
 }
 

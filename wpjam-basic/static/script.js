@@ -265,6 +265,10 @@ jQuery(function($){
 		},
 
 		wpjam_list_table_response: function(response, args){
+			if($('#TB_ajaxContent').length && response.dismiss){
+				tb_remove();
+			}
+
 			if(response.type == 'items' && response.items){
 				$.each(response.items, (i, item)=> $.wpjam_list_table_response(item, args));
 			}else if(response.type == 'redirect'){
@@ -276,12 +280,8 @@ jQuery(function($){
 					$.wpjam_modal(response.data, response.page_title, response.width);
 				}
 			}else{
-				if($('#TB_ajaxContent').length){
-					if(response.dismiss){
-						tb_remove();
-					}else{
-						$.wpjam_modal(response.form, response.page_title, response.width);
-					}
+				if($('#TB_ajaxContent').length && response.form){
+					$.wpjam_modal(response.form, response.page_title, response.width);
 				}
 
 				if(($('#TB_ajaxContent').length || args.action_type != 'submit')){

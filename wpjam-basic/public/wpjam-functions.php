@@ -110,7 +110,15 @@ function wpjam_get_path($platform, $page_key, $args=[]){
 function wpjam_get_tabbar($platform, $page_key=''){
 	$object	= WPJAM_Platform::get($platform);
 
-	return $object ? $object->get_tabbar($page_key) : [];
+	if(!$object){
+		return [];
+	}
+
+	if($page_key){
+		return $object->get_tabbar($page_key);
+	}
+
+	return wpjam_array($object->get_items(), fn($k, $v)=> ($v = $object->get_tabbar($k)) ? [$k, $v] : null);
 }
 
 function wpjam_get_page_keys($platform, $args=null, $operator='AND'){
@@ -124,9 +132,9 @@ function wpjam_get_page_keys($platform, $args=null, $operator='AND'){
 
 	if(is_string($args) && in_array($args, ['with_page', 'page'])){
 		return wpjam_array($items, fn($pk)=> ($page = $object->get_page($pk)) ? [null, ['page'=>$page, 'page_key'=>$pk]] : null);
-	}else{
-		return array_keys(is_array($args) ? wp_list_filter($items, $args, $operator) : $items);
 	}
+
+	return array_keys(is_array($args) ? wp_list_filter($items, $args, $operator) : $items);
 }
 
 function wpjam_register_path($name, ...$args){
@@ -250,7 +258,7 @@ function wpjam_get_option_object($name, $by=''){
 }
 
 function wpjam_add_option_section($option_name, ...$args){
-	return WPJAM_Option_Section::add($option_name, ...$args);
+	return wpjam_get_option_object($option_name)->add_section(...$args);
 }
 
 // Meta Type

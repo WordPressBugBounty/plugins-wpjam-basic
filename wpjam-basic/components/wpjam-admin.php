@@ -1,37 +1,20 @@
 <?php
 class WPJAM_Basic_Admin{
 	public static function on_admin_init(){
-		$menu_page	= array_filter([
-			['menu_slug'=>'wpjam-user',		'menu_title'=>'用户设置',		'order'=>16],
-			['menu_slug'=>'wpjam-page',		'menu_title'=>'页面设置',		'order'=>15],
-			['menu_slug'=>'wpjam-links',	'menu_title'=>'链接设置',		'order'=>14],
-			['menu_slug'=>'wpjam-seo',		'menu_title'=>'SEO 设置',	'order'=>12],
-		], fn($args)=> WPJAM_Menu_Page::get_tabs($args['menu_slug']));
-
-		$menu_page	= array_merge($menu_page, [[
-			'menu_slug'		=> 'wpjam-icons',
-			'menu_title'	=> '图标列表',
-			'order'			=> 9,
-			'tabs'			=> ['dashicons'=> [
-				'title'		=> 'Dashicons',
-				'function'	=> [self::class, 'dashicons_page'],
-				'summary'	=> [
-					'Dashicons 功能列出所有的 Dashicons 以及每个的名称和 HTML 代码',
-					'https://mp.weixin.qq.com/s/4BEv7KUDVacrX6lRpTd53g',
-				]]
-			]
-		], [
-			'menu_slug'		=> 'wpjam-about',
-			'menu_title'	=> '关于WPJAM',
-			'order'			=> 1,
-			'function'		=> [self::class, 'about_page'],
-		]]);
-
-		wpjam_add_menu_page(wpjam_map($menu_page, fn($args)=>wp_parse_args($args, [
+		wpjam_map([
+			'wpjam-user'	=> ['menu_title'=>'用户设置',		'order'=>16],
+			'wpjam-page'	=> ['menu_title'=>'页面设置',		'order'=>15],
+			'wpjam-links'	=> ['menu_title'=>'链接设置',		'order'=>14],
+			'wpjam-seo'		=> ['menu_title'=>'SEO 设置',	'order'=>12],
+			'wpjam-about'	=> ['menu_title'=>'关于WPJAM',	'order'=>1,	'function'=>[self::class, 'about_page']],
+			'wpjam-icons'	=> ['menu_title'=>'图标列表',		'order'=>9,	'function'=>'tab',	'tabs'=>[
+				'dashicons'	=> ['title'=>'Dashicons', 'plugin_page'=>'wpjam-icons', 'function'=>[self::class, 'dashicons_page']]
+			]],
+		], fn($args, $slug)=> (empty($args['function']) && !WPJAM_Menu_Page::get_tabs($slug)) ? null : wpjam_add_menu_page($slug, $args+[
 			'parent'	=> 'wpjam-basic',
 			'function'	=> 'tab',
 			'network'	=> false
-		])));
+		]));
 
 		wpjam_add_admin_load([
 			'type'	=> 'builtin_page',

@@ -1412,7 +1412,7 @@ class WPJAM_MU_Field extends WPJAM_Field{
 	}
 }
 
-class WPJAM_Fields{
+class WPJAM_Fields extends WPJAM_Attr{
 	private $fields		= [];
 	private $creator	= null;
 
