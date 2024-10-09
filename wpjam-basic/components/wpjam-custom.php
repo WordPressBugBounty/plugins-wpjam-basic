@@ -26,8 +26,8 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function get_setting($name='', $default=null){
-		$value	= parent::get_setting($name, $default);
+	public static function get_setting($name='', ...$args){
+		$value	= parent::get_setting($name, ...$args);
 
 		if($name == 'admin_footer'){
 			return $value ?: '<span id="footer-thankyou">感谢使用<a href="https://wordpress.org/" target="_blank">WordPress</a>进行创作。</span> | <a href="https://wpjam.com/" title="WordPress JAM" target="_blank">WordPress JAM</a>';
@@ -49,7 +49,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 
 		$objects	= wpjam_get_user_signups(['bind'=>true]);
 
-		return $objects ? [$menu_page, [
+		return [$menu_page, ...($objects ? [[
 			'parent'		=> 'users',
 			'menu_slug'		=> 'wpjam-bind',
 			'menu_title'	=> '账号绑定',
@@ -67,7 +67,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 					'response'		=> 'redirect'
 				], $object->get_attr('bind', 'admin'))
 			])
-		]] : $menu_page;
+		]] : [])];
 	}
 
 	public static function get_admin_load(){

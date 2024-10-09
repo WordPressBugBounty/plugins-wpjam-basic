@@ -601,7 +601,7 @@ jQuery(function($){
 		},
 
 		wpjam_response: function(response){
-			if(response.type == 'redirect'){
+			if($.inArray(response.type, ['reset', 'redirect']) !== -1){
 				if(response.url){
 					window.open(response.url, response.target);
 				}else{
@@ -706,11 +706,8 @@ jQuery(function($){
 				}else{
 					$('body').trigger('option_action_success', response);
 
-					if(response.type == 'reset' || response.type == 'redirect'){
-						$('<form>').prop('method', 'POST').prop('action', window.location.href)
-						.append($('<input>').prop('type', 'hidden').prop('name', 'response_type').prop('value', response.type))
-						.appendTo(document.body)
-						.submit();
+					if($.inArray(response.type, ['reset', 'redirect']) !== -1){
+						$.wpjam_response(response);
 					}else{
 						$.wpjam_notice(response.errmsg, 'success');
 					}

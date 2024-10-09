@@ -1258,7 +1258,7 @@ function wpjam_map_meta_cap(...$args){
 function wpjam_current_user_can($capability, ...$args){
 	$capability	= is_closure($capability) ? $capability(...$args) : $capability;
 
-	return current_user_can($capability, ...$args);
+	return $capability ? current_user_can($capability, ...$args) : true;
 }
 
 // Verify TXT
@@ -1332,7 +1332,11 @@ function wpjam_add_static_cdn($host){
 		}
 	}
 
-	wpjam_add_item('static_cdn', $host);
+	if(is_array($host)){
+		array_map(fn($h)=> wpjam_add_item('static_cdn', $h), $host);
+	}else{
+		wpjam_add_item('static_cdn', $host);
+	}
 }
 
 function wpjam_get_static_cdn(){

@@ -1157,7 +1157,7 @@ function wpjam_get_qqv_id($id_or_url){
 		return wpjam_find([
 			'#https://v.qq.com/x/page/(.*?).html#i',
 			'#https://v.qq.com/x/cover/.*/(.*?).html#i'
-		], fn($v)=> preg_match($pattern, $id_or_url, $matches) ? $matches[1] : '', 'result') ?: '';
+		], fn($v)=> preg_match($v, $id_or_url, $matches) ? $matches[1] : '', 'result') ?: '';
 	}
 
 	return $id_or_url;

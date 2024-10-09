@@ -1462,7 +1462,7 @@ class WPJAM_Items extends WPJAM_Args{
 
 		if($method == 'move'){
 			$ids	= wpjam_try('wpjam_move', array_keys($items), ...$args);
-			$items	= wpjam_slice($items, $ids);
+			$items	= wp_array_slice_assoc($items, $ids);
 
 			return $this->update_items($items);
 		}

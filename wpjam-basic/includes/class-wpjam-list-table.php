@@ -154,7 +154,9 @@ class WPJAM_List_Table extends WP_List_Table{
 
 			if(method_exists(...$cb)){
 				if($method == 'value_callback'){
-					return wpjam_value_callback($cb, ...$args);
+					$result	= wpjam_value_callback($cb, ...$args);
+
+					return is_wp_error($result) ? $args[2] : $result;
 				}
 
 				if($method == 'query_items' && wpjam_verify_callback($cb, fn($params)=> count($params) >= 2 && $params[0]->name != 'args')){

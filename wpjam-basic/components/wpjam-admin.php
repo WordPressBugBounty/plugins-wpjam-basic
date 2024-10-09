@@ -108,34 +108,21 @@ class WPJAM_Basic_Admin{
 
 	public static function builtin_page_load($screen){
 		if(in_array($screen->base, ['dashboard', 'dashboard-network', 'dashboard-user'])){
-			remove_meta_box('dashboard_primary', get_current_screen(), 'side');
-
 			if(is_multisite() && !is_user_member_of_blog()){
 				remove_meta_box('dashboard_quick_press', get_current_screen(), 'side');
 			}
 
-			wpjam_map([
-				'dashboard_recent_posts_query_args',
-				'dashboard_recent_drafts_query_args'
-			], fn($k)=> add_filter($k, fn($query_args)=> array_merge($query_args, [
-				'post_type'		=> get_post_types(['show_ui'=>true, 'public'=>true, '_builtin'=>false])+['post'],
-				'cache_results'	=> true
-			])));
+			$post_type	= get_post_types(['show_ui'=>true, 'public'=>true, '_builtin'=>false])+['post'];
 
-			add_action('pre_get_comments', fn($query)=> $query->query_vars	= array_merge($query->query_vars, [
-				'post_type'	=> get_post_types(['show_ui'=>true, 'public'=>true, '_builtin'=>false])+['post'],
-				'type'		=> 'comment'
-			]));
+			array_map(fn($k)=> add_filter($k, fn($query_args)=> array_merge($query_args, ['post_type'=> $post_type, 'cache_results'=>true])), ['dashboard_recent_posts_query_args', 'dashboard_recent_drafts_query_args']);
 
-			$dashboard	= new WPJAM_Dashboard([
-				'widgets'	=> ['wpjam_update'=>[
-					'title'		=> 'WordPress资讯及技巧',
-					'callback'	=> [self::class, 'update_dashboard_widget'],
-					'context'	=> 'side'
-				]],
-			]);
+			add_action('pre_get_comments', fn($query)=> $query->query_vars	= array_merge($query->query_vars, ['post_type'=>$post_type, 'type'=>'comment']));
 
-			$dashboard->page_load();
+			(new WPJAM_Dashboard(['widgets'=>['wpjam_update'=>[
+				'title'		=> 'WordPress资讯及技巧',
+				'context'	=> 'side',
+				'callback'	=> [self::class, 'update_dashboard_widget']
+			]]]))->page_load();
 
 			wp_add_inline_style('list-tables', "\n".join("\n",[
 				'#dashboard_wpjam .inside{margin:0; padding:0;}',
@@ -146,7 +133,9 @@ class WPJAM_Basic_Admin{
 				'a.jam-post span{display: table-cell; height: 40px; vertical-align: middle;}'
 			]));
 		}else{
-			if(str_starts_with($screen->base, 'plugins') || str_starts_with($screen->base, 'themes') || str_starts_with($screen->base, 'update-core')){
+			$base	= wpjam_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base));
+
+			if($base){
 				wp_add_inline_script('jquery', "jQuery(function($){
 					$('tr.plugin-update-tr').each(function(){
 						let detail_link	= $(this).find('a.open-plugin-details-modal');
@@ -160,14 +149,14 @@ class WPJAM_Basic_Admin{
 					});
 				});");
 
-				if(!str_starts_with($screen->base, 'themes')){
+				if($base != 'themes'){
 					wpjam_register_plugin_updater('blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-plugin-versions');
 
 					// delete_site_transient('update_plugins');
 					// wpjam_print_r(get_site_transient('update_plugins'));
 				}
 
-				if(!str_starts_with($screen->base, 'plugins')){
+				if($base != 'plugins'){
 					wpjam_register_theme_updater('blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-theme-versions');
 
 					// delete_site_transient('update_themes');
@@ -216,9 +205,7 @@ class WPJAM_Verify{
 			return false;
 		}
 
-		$api		= $hash ? 'http://wpjam.wpweixin.com/api/weixin/verify.json' : 'http://jam.wpweixin.com/api/topic/user/get.json?openid='.$openid;
-		$args		= $hash ? ['method'=>'POST', 'body'=>['openid'=>$openid, 'hash'=>$hash]] : [];
-		$response	= wpjam_remote_request($api, $args);
+		$response	= self::request(['openid'=>$openid, 'hash'=>$hash]);
 
 		if(is_wp_error($response) && $response->get_error_code() != 'invalid_openid'){
 			$failed_times	= (int)get_user_meta($user_id, 'wpjam_weixin_user_failed_times');
@@ -234,19 +221,23 @@ class WPJAM_Verify{
 			return false;
 		}
 
-		$verify_user	= $hash ? $response : $response['user'];
-
 		delete_user_meta($user_id, 'wpjam_weixin_user_failed_times');
 
-		if(empty($verify_user) || !$verify_user['subscribe']){
+		if(empty($response) || !$response['subscribe']){
 			delete_user_meta($user_id, 'wpjam_weixin_user');
 
 			return false;
-		}else{
-			update_user_meta($user_id, 'wpjam_weixin_user', array_merge($verify_user, ['last_update'=>time()]));
-
-			return true;
 		}
+
+		update_user_meta($user_id, 'wpjam_weixin_user', array_merge($response, ['last_update'=>time()]));
+
+		return true;
+	}
+
+	public static function request($data, $throw=false){
+		$url	= 'https://wpjam.wpweixin.com/api/weixin/verify.json';
+
+		return wpjam_remote_request('https://wpjam.wpweixin.com/api/weixin/verify.json', ['method'=>'POST', 'body'=>$data, 'throw'=>$throw]);
 	}
 
 	public static function get_form(){
@@ -257,7 +248,13 @@ class WPJAM_Verify{
 		return [
 			'submit_text'	=> '验证',
 			'response'		=> 'redirect',
-			'callback'		=> [self::class, 'ajax_callback'],
+			'callback'		=> function(){
+				$user	= self::request(wpjam_get_post_parameter('data', ['sanitize_callback'=>'wp_parse_args']), true);
+
+				update_user_meta(get_current_user_id(), 'wpjam_weixin_user', array_merge($user, ['last_update'=>time(), 'subscribe'=>1]));
+
+				return ['url'=>admin_url('page=wpjam-extends')];
+			},
 			'fields'		=> [
 				'qr_view'	=> ['title'=>'1. 二维码',		'type'=>'view',		'value'=>$qrcode],
 				'keyword'	=> ['title'=>'2. 关键字',		'type'=>'view',		'value'=>'回复关键字「<strong>验证码</strong>」。'],
@@ -265,17 +262,6 @@ class WPJAM_Verify{
 				'notes'		=> ['title'=>'4. 注意事项',	'type'=>'view',		'value'=>'<p>验证码5分钟内有效！</p><p>如果验证不通过，请使用 Chrome 浏览器验证，并在验证之前清理浏览器缓存。<br />如多次测试无法通过，可以尝试重新关注公众号测试！</p>'],
 			]
 		];
-	}
-
-	public static function ajax_callback(){
-		// $url	= 'http://jam.wpweixin.com/api/weixin/qrcode/verify.json';
-		$url	= 'https://wpjam.wpweixin.com/api/weixin/verify.json';
-		$data	= wpjam_get_post_parameter('data', ['sanitize_callback'=>'wp_parse_args']);
-		$user	= wpjam_remote_request($url, ['method'=>'POST',	'body'=>$data, 'throw'=>true]);
-
-		update_user_meta(get_current_user_id(), 'wpjam_weixin_user', array_merge($user, ['last_update'=>time(), 'subscribe'=>1]));
-
-		return ['url'=>admin_url('page=wpjam-extends')];
 	}
 
 	public static function on_admin_init(){

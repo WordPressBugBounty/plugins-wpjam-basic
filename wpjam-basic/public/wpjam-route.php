@@ -504,7 +504,7 @@ function wpjam_parse_error($data){
 	return empty($data['errcode']) ? $data : WPJAM_Error::filter($data);
 }
 
-function wpjam_register_error_setting($code, $message, $modal=[]){
+function wpjam_register_error_setting($code, $message='', $modal=[]){
 	return WPJAM_Error::add_setting($code, $message, $modal);
 }
 
@@ -564,12 +564,8 @@ function wpjam_is_json_request(){
 	}
 }
 
-function wpjam_send_error_json($errcode, $errmsg=''){
-	wpjam_send_json(compact('errcode', 'errmsg'));
-}
-
-function wpjam_register_activation($callback, $hook=null){
-	WPJAM_API::activation('add', $callback, $hook);
+function wpjam_register_activation($callback, $hook='wp_loaded'){
+	WPJAM_API::activation('add', $hook, $callback);
 }
 
 function wpjam_register_source($name, $callback, $query_args=['source_id']){
@@ -799,21 +795,14 @@ wpjam_load_extends(dirname(__DIR__).'/components');
 wpjam_load_extends(dirname(__DIR__).'/extends', [
 	'option'	=> 'wpjam-extends',
 	'sitewide'	=> true,
-	'ajax'		=> false,
 	'title'		=> '扩展管理',
 	'hook'		=> 'plugins_loaded',
 	'priority'	=> 1,
 	'menu_page'	=> [
-		'network'	=> true,
 		'parent'	=> 'wpjam-basic',
 		'order'		=> 3,
 		'function'	=> 'tab',
-		'tabs'		=> ['extends'=> [
-			'order'			=> 20,
-			'title'			=> '扩展管理',
-			'function'		=> 'option',
-			'option_name'	=> 'wpjam-extends'
-		]]
+		'tabs'		=> ['extends'=>['order'=>20, 'title'=>'扩展管理', 'function'=>'option', 'option_name'=>'wpjam-extends']]
 	]
 ]);
 
@@ -840,19 +829,19 @@ wpjam_add_pattern('slug', [
 	'custom_validity'	=> '请输入小写英文字母、数字和 _ -！'
 ]);
 
-wpjam_map([
+wpjam_add_static_cdn([
 	'https://cdnjs.cloudflare.com/ajax/libs',
 	'https://lib.baomitu.com',
 	'https://cdnjs.loli.net/ajax/libs',
-], 'wpjam_add_static_cdn');
+]);
 
-wpjam_map([
+wpjam_register_error_setting([
 	['bad_authentication',	'无权限'],
 	['access_denied',		'操作受限'],
 	['incorrect_password',	'密码错误'],
 	['undefined_method',	fn($args)=> sprintf('「%s」'.(count($args) >= 2 ? '%s' : '').'未定义', ...$args)],
 	['quota_exceeded',		fn($args)=> sprintf('%s超过上限'.(count($args) >= 2 ? '「%s」' : ''), ...$args)],
-], fn($args)=> wpjam_register_error_setting(...$args));
+]);
 
 wpjam_register_route('json',	['model'=>'WPJAM_JSON']);
 wpjam_register_route('txt',		['model'=>'WPJAM_Verify_TXT']);

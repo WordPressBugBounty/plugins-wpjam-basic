@@ -97,14 +97,14 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function get_setting($name='', $default=null){
+	public static function get_setting($name='', ...$args){
 		if(in_array($name, ['dx', 'dy'])){
 			$name	= 'distance.'.['dx'=>'width', 'dy'=>'height'][$name];
 		}elseif(in_array($name, ['wm_width', 'wm_height'])){
 			$name	= 'wm_size.'.wpjam_remove_prefix($name, 'wm_');
 		}
 
-		$value	= parent::get_setting($name, $default);
+		$value	= parent::get_setting($name, ...$args);
 
 		if(in_array($name, ['exts', 'dirs'])){
 			$value	= $value ? array_filter(array_map('trim', $value)) : [];

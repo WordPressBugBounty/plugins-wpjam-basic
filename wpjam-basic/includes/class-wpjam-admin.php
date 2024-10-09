@@ -4,21 +4,16 @@ class WPJAM_Admin{
 		return is_network_admin() ? 'network_' : (is_user_admin() ? 'user_' : '');
 	}
 
-	public static function url($path=''){
-		return call_user_func(self::get_prefix().'admin_url', $path);
-	}
-
 	public static function enqueue_scripts($setting){
-		$ver		= get_plugin_data(WPJAM_BASIC_PLUGIN_FILE)['Version'];
-		$static		= wpjam_url(dirname(__DIR__), 'relative').'/static';
-		$setting	+= wpjam_map(wpjam_get_items('page_setting'), fn($v)=> is_closure($v) ? $v() : $v);
+		$ver	= get_plugin_data(WPJAM_BASIC_PLUGIN_FILE)['Version'];
+		$static	= wpjam_url(dirname(__DIR__), 'relative').'/static';
 
 		wp_enqueue_media($setting['screen_base'] == 'post' ? ['post'=>wpjam_get_admin_post_id()] : []);
 		wp_enqueue_style('wpjam-style', $static.'/style.css', ['thickbox', 'remixicon', 'wp-color-picker', 'editor-buttons'], $ver);
 		wp_enqueue_script('wpjam-script', $static.'/script.js', ['jquery', 'thickbox', 'wp-backbone', 'jquery-ui-sortable', 'jquery-ui-tooltip', 'jquery-ui-tabs', 'jquery-ui-draggable', 'jquery-ui-slider', 'jquery-ui-autocomplete', 'wp-color-picker'], $ver);
 		wp_enqueue_script('wpjam-form', $static.'/form.js', ['wpjam-script', 'mce-view'], $ver);
 
-		wp_localize_script('wpjam-script', 'wpjam_page_setting', $setting);
+		wp_localize_script('wpjam-script', 'wpjam_page_setting', $setting+wpjam_map(wpjam_get_items('page_setting'), fn($v)=> is_closure($v) ? $v() : $v));
 	}
 
 	public static function on_admin_notices(){
@@ -56,32 +51,27 @@ class WPJAM_Admin{
 	}
 
 	public static function on_current_screen($screen){
-		$page	= $GLOBALS['plugin_page'];
+		$fn		= self::get_prefix().'admin_url';
+		$page	= $GLOBALS['plugin_page'] ?? '';
 		$object = WPJAM_Plugin_Page::get_current();
 
 		if($object){
 			$object->load($screen);
 
-			$GLOBALS['current_admin_url']	= $url = self::url($object->admin_url);
+			$url	= $fn($object->admin_url);
 		}else{
 			if(!empty($_POST['builtin_page'])){
-				$url	= self::url($_POST['builtin_page']);
+				$url	= $fn($_POST['builtin_page']);
 			}else{
 				$url	= set_url_scheme('http://'.$_SERVER['HTTP_HOST'].parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH));
+				$args	= $page ? ['page'=>$page] : wpjam_filter(wpjam_slice($_REQUEST, ['taxonomy', 'post_type']), fn($v, $k)=> $screen->$k);
+				$url	= $args ? add_query_arg($args, $url) : $url;
+			}
+		}
 
-				if($page){
-					$url	= add_query_arg('page', $page, $url);
-				}else{
-					foreach(['taxonomy', 'post_type'] as $key){
-						if($screen->$key && isset($_REQUEST[$key])){
-							$url	= add_query_arg($key, $_REQUEST[$key], $url);
-						}
-					}
-				}
-			}	
+		$GLOBALS['current_admin_url']	= $url;
 
-			$GLOBALS['current_admin_url']	= $url;
-
+		if(!$object){
 			WPJAM_Builtin_Page::init($screen);
 		}
 
@@ -110,7 +100,7 @@ class WPJAM_Admin{
 					$setting['query_data']	= $query_data;
 				}
 			}else{
-				$setting['builtin_page']	= str_replace(self::url(), '', $url);
+				$setting['builtin_page']	= str_replace($fn(), '', $url);
 
 				$params	= wpjam_except($params, array_filter(['taxonomy', 'post_type'], fn($k)=> $screen->$k));
 			}
@@ -207,8 +197,7 @@ class WPJAM_Admin_Action extends WPJAM_Register{
 		$button	= $button ? (is_array($button) ? $button : [$this->name => $button]) : [];
 
 		foreach($button as $key => &$item){
-			$item	= is_array($item) ? $item : ['text'=>$item];
-			$item	+= ['response'=>($this->response ?? $this->name), 'class'=>'primary'];
+			$item	= (is_array($item) ? $item : ['text'=>$item])+['response'=>($this->response ?? $this->name), 'class'=>'primary'];
 			$item	= $render ? get_submit_button($item['text'], $item['class'], $key, false) : $item;
 		}
 
@@ -220,7 +209,7 @@ class WPJAM_Admin_Action extends WPJAM_Register{
 	}
 
 	private function parse_nonce_action($args=[]){
-		return ($GLOBALS['plugin_page'] ?? $GLOBALS['current_screen']->id).'-'.wpjam_join('-', $this->name, $args['id'] ?? '');
+		return wpjam_join('-', ($GLOBALS['plugin_page'] ?? $GLOBALS['current_screen']->id), $this->name, $args['id'] ?? '');
 	}
 
 	public function create_nonce($args=[]){
@@ -234,28 +223,23 @@ class WPJAM_Admin_Action extends WPJAM_Register{
 
 class WPJAM_Page_Action extends WPJAM_Admin_Action{
 	public function is_allowed($type=''){
-		$capability	= $this->capability ?? ($type ? 'manage_options' : '');
-
-		return $capability ? current_user_can($capability, $this->name) : true;
+		return wpjam_current_user_can(($this->capability ?? ($type ? 'manage_options' : '')), $this->name);
 	}
 
 	public function callback($type=''){
 		if($type == 'form'){
-			$page_title	= wpjam_get_post_parameter('page_title');
+			$title	= wpjam_get_post_parameter('page_title');
 
-			if(!$page_title){
+			if(!$title){
 				$key	= wpjam_find(['page_title', 'button_text', 'submit_text'], fn($k)=> $this->$k && !is_array($this->$k));
-
-				if($key){
-					$page_title	= $this->$key;
-				}
+				$title	= $key ? $this->$key : $title;
 			}
 
 			return [
 				'form'			=> $this->get_form(),
 				'width'			=> (int)$this->width,
 				'modal_id'		=> $this->modal_id ?: 'tb_modal',
-				'page_title'	=> $page_title
+				'page_title'	=> $title
 			];
 		}
 
@@ -268,12 +252,12 @@ class WPJAM_Page_Action extends WPJAM_Admin_Action{
 		}
 
 		if($type == 'submit'){
-			$submit		= wpjam_get_post_parameter('submit_name', ['default'=>$this->name]);
+			$submit		= wpjam_get_post_parameter('submit_name') ?: $this->name;
 			$button		= $this->get_submit_button($submit);
 			$callback	= $button['callback'] ?? '';
 			$response	= $button['response'];
 		}else{
-			$callback	= $submit = '';
+			$submit		= $callback	= '';
 			$response	= $this->response ?? $this->name;
 		}
 
@@ -1054,7 +1038,7 @@ class WPJAM_Builtin_Page{
 		$meta_boxes	= $GLOBALS['wp_meta_boxes'][$post->post_type]['wpjam'] ?? [];
 		$count		= 0;
 
-		foreach(wpjam_slice($meta_boxes, ['high', 'core', 'default', 'low']) as $_meta_boxes){
+		foreach(wp_array_slice_assoc($meta_boxes, ['high', 'core', 'default', 'low']) as $_meta_boxes){
 			foreach((array)$_meta_boxes as $meta_box){
 				if(empty($meta_box['id']) || empty($meta_box['title'])){
 					continue;
