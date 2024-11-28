@@ -7,15 +7,17 @@ Version: 2.0
 */
 class WPJAM_Rewrite{
 	public static function __callStatic($method, $args){
-		if(in_array($method, ['get_setting', 'update_setting', 'delete_setting'])){
+		if(in_array($method, ['get_setting', 'update_setting'])){
 			if($method != 'get_setting'){
 				flush_rewrite_rules();
 			}
 
 			return WPJAM_Basic::$method(...$args);
-		}elseif($method == 'get_all'){
-			return get_option('rewrite_rules') ?: [];
 		}
+	}
+
+	public static function get_all(){
+		return get_option('rewrite_rules') ?: [];
 	}
 
 	public static function validate_data($data, $id=''){
@@ -37,15 +39,13 @@ class WPJAM_Rewrite{
 	}
 
 	public static function query_items($args){
-		$no	= 0;
+		return array_values(wpjam_map(self::get_all(), function($query, $regex){
+			static $no = 0;
 
-		foreach(self::get_all() as $regex => $query) {
 			$no++;
 
-			$items[]	= compact('no', 'regex', 'query');
-		}
-
-		return $items;
+			return compact('no', 'regex', 'query');
+		}));
 	}
 
 	public static function get_actions(){
@@ -77,17 +77,6 @@ class WPJAM_Rewrite{
 			'no'	=> ['title'=>'No.',	'type'=>'text',	'show_admin_column'=>true],
 			'regex'	=> ['title'=>'正则',	'type'=>'text',	'show_admin_column'=>true],
 			'query'	=> ['title'=>'查询',	'type'=>'text',	'show_admin_column'=>true],
-		];
-	}
-
-	public static function get_list_table(){
-		return [
-			'title'			=> 'Rewrite 规则',
-			'plural'		=> 'rewrites',
-			'singular'		=> 'rewrite',
-			'model'			=> self::class,
-			'capability'	=> is_multisite() ? 'manage_sites' : 'manage_options',
-			'primary_key'	=> 'no'
 		];
 	}
 
@@ -127,39 +116,45 @@ class WPJAM_Rewrite{
 		}
 	}
 
-	public static function on_generate_rewrite_rules($wp_rewrite){
-		self::cleanup($wp_rewrite->rules); 
-		self::cleanup($wp_rewrite->extra_rules_top);
-
-		$rewrites = self::get_setting('rewrites');
-
-		if($rewrites){
-			$wp_rewrite->rules = array_merge(array_column($rewrites, 'query', 'regex'), $wp_rewrite->rules);
-		}
-	}
-
 	public static function add_hooks(){
 		if(self::get_setting('remove_date_rewrite')){
 			add_filter('date_rewrite_rules', fn()=> []);
 
-			add_action('init', fn()=> wpjam_map(['%year%', '%monthnum%', '%day%', '%hour%', '%minute%', '%second%'], 'remove_rewrite_tag'));
+			add_action('init', fn()=> array_map('remove_rewrite_tag', ['%year%', '%monthnum%', '%day%', '%hour%', '%minute%', '%second%']));
 		}
 
 		if(self::get_setting('remove_comment_rewrite')){
 			add_filter('comments_rewrite_rules', fn()=> []);
 		}
 
-		add_action('generate_rewrite_rules',	[self::class, 'on_generate_rewrite_rules']);
+		add_action('generate_rewrite_rules', function($wp_rewrite){
+			self::cleanup($wp_rewrite->rules); 
+			self::cleanup($wp_rewrite->extra_rules_top);
+
+			$rewrites = self::get_setting('rewrites');
+
+			if($rewrites){
+				$wp_rewrite->rules = array_merge(array_column($rewrites, 'query', 'regex'), $wp_rewrite->rules);
+			}
+		});
+
+		if(is_admin()){
+			add_action('wpjam_admin_init', fn()=> wpjam_add_menu_page('wpjam-rewrites', [
+				'parent'		=> 'wpjam-basic',
+				'menu_title'	=> 'Rewrites',
+				'network'		=> false,
+				'summary'		=> __FILE__,
+				'capability'	=> is_multisite() ? 'manage_sites' : 'manage_options',
+				'function'		=> 'list',
+				'list_table'	=> [
+					'title'			=> 'Rewrite 规则',
+					'model'			=> self::class,
+					'primary_key'	=> 'no'
+				],
+			]));
+		}
 	}
 }
 
-wpjam_add_menu_page('wpjam-rewrites', [
-	'parent'		=> 'wpjam-basic',
-	'menu_title'	=> 'Rewrites',
-	'summary'		=> __FILE__,
-	'capability'	=> 'manage_options',
-	'hooks'			=> ['WPJAM_Rewrite', 'add_hooks'],
-	'function'		=> 'list',
-	'list_table'	=> 'WPJAM_Rewrite',
-	'network'		=> false,
-]);
+WPJAM_Rewrite::add_hooks();
+

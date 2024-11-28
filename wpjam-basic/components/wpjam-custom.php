@@ -15,7 +15,8 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 			'admin'		=> ['title'=>'后台定制',	'fields'=>[
 				'admin_logo'	=> ['title'=>'工具栏左上角 Logo',	'type'=>'img',	'item_type'=>'url',	'description'=>'建议大小：20x20，如前台显示工具栏也会同时被修改。'],
 				'admin_head'	=> ['title'=>'后台 Head 代码 ',	'type'=>'textarea',	'class'=>''],
-				'admin_footer'	=> ['title'=>'后台 Footer 代码',	'type'=>'textarea',	'class'=>'']
+				'admin_footer'	=> ['title'=>'后台 Footer 代码',	'type'=>'textarea',	'class'=>''],
+				'admin_info'	=> ['title'=>'后台运行信息',		'label'=>'后台右下角显示内存使用和 SQL 数量',	'value'=>1],
 			]],
 			'login'		=> ['title'=>'登录界面', 	'fields'=>[
 				'login_head'		=> ['title'=>'登录界面 Head 代码',		'type'=>'textarea',	'class'=>''],
@@ -75,7 +76,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 
 		if($objects){
 			return [
-				'base'	=> 'users',
+				'base'		=> 'users',
 				'callback'	=> fn()=> wpjam_register_list_table_column('openid', [
 					'title'		=> '绑定账号',
 					'order'		=> 20,
@@ -98,6 +99,10 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 			'href'  => is_admin() ? self_admin_url() : site_url(),
 			'meta'  => ['title'=> get_bloginfo('name')]
 		]);
+
+		if(self::get_setting('admin_info', 1)){
+			add_filter('update_footer',	fn($text)=> wpjam_join(' | ', [size_format(memory_get_usage()).'内存使用', get_num_queries().'次SQL查询', $text]));
+		}
 	}
 
 	public static function on_login_init(){

@@ -20,17 +20,6 @@ class WPJAM_SMTP extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function get_menu_page(){
-		return [
-			'parent'		=> 'wpjam-basic',
-			'page_title'	=> 'SMTP 发信',
-			'network'		=> false,
-			'summary'		=> __FILE__,
-			'function'		=> 'tab',
-			'tabs'			=> [self::class, 'get_tabs']
-		];
-	}
-
 	public static function get_form(){
 		return [
 			'submit_text'	=> '发送',
@@ -44,15 +33,8 @@ class WPJAM_SMTP extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function get_tabs(){
-		return [
-			'smtp'	=> ['title'=>'发信设置',	'function'=>'option'],
-			'send'	=> ['title'=>'发送测试',	'function'=>'form',	'form'=>[self::class, 'get_form']]
-		];
-	}
-
 	public static function on_phpmailer_init($phpmailer){
-		if(!wpjam_every(['host', 'user', 'pass'], fn($k)=> self::get_setting($k))){
+		if(!array_all(['host', 'user', 'pass'], fn($k)=> self::get_setting($k))){
 			return;
 		}
 
@@ -84,6 +66,17 @@ class WPJAM_SMTP extends WPJAM_Option_Model{
 }
 
 wpjam_register_option('wpjam-smtp',	[
-	'model'	=> 'WPJAM_SMTP',
-	'title'	=> '发信设置'
+	'model'		=> 'WPJAM_SMTP',
+	'title'		=> '发信设置',
+	'menu_page'	=> [
+		'parent'		=> 'wpjam-basic',
+		'page_title'	=> 'SMTP 发信',
+		'network'		=> false,
+		'summary'		=> __FILE__,
+		'function'		=> 'tab',
+		'tabs'			=> [
+			'smtp'	=> ['title'=>'发信设置',	'function'=>'option'],
+			'send'	=> ['title'=>'发送测试',	'function'=>'form',	'form'=>['WPJAM_SMTP', 'get_form']]
+		]
+	]
 ]);

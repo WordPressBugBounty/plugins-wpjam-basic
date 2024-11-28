@@ -1,25 +1,20 @@
 <?php
 class WPJAM_Setting extends WPJAM_Args{
-	private $values;
-
 	public function __call($method, $args){
 		if(str_ends_with($method, '_option')){
 			$cb			= wpjam_remove_postfix($method, '_option').'_'.$this->type;
-			$cb_args	= [...($this->type == 'blog_option' ? [$this->blog_id] : []), $this->name];
+			$cb_args	= $this->type == 'blog_option' ? [$this->blog_id] : [];
+			$cb_args[]	= $this->name;
 
 			if($method == 'get_option'){
-				if(isset($this->values)){
-					return $this->values;
-				}
-
 				$result	= $cb(...$cb_args);
 
-				return $this->values = $result === false ? ($args ? $args[0] : []) : $this->sanitize_option($result);
+				return $result === false ? [] : $this->sanitize_option($result);
+			}else{
+				$cb_args[]	= $args[0] ? $this->sanitize_option($args[0]) : $args[0];
+
+				return $cb(...$cb_args);
 			}
-
-			$this->values	= null;
-
-			return $cb(...[...$cb_args, ($args[0] ? $this->sanitize_option($args[0]) : $args[0])]);
 		}elseif(str_ends_with($method, '_setting') || in_array($method, ['get', 'update', 'delete'])) {
 			$action	= wpjam_remove_postfix($method, '_setting');
 			$values	= $this->get_option();
@@ -41,9 +36,7 @@ class WPJAM_Setting extends WPJAM_Args{
 
 			if($action == 'update'){
 				if(is_array($name)){
-					foreach($name as $n => $v){
-						$values	= wpjam_set($values, $n, $v);
-					}
+					$values	= wpjam_reduce($name, fn($carry, $v, $n)=> wpjam_set($carry, $n, $v), $values);
 				}else{
 					$values	= wpjam_set($values, $name, array_shift($args));
 				}
@@ -60,7 +53,8 @@ class WPJAM_Setting extends WPJAM_Args{
 			return null;
 		}
 
-		$args	= (is_multisite() && $type == 'option') ? ['type'=>'blog_option', 'name'=>$name, 'blog_id'=>(int)$blog_id ?: get_current_blog_id()] : compact('type', 'name');
+		$args	= ['name'=>$name];
+		$args	+= (is_multisite() && $type == 'option') ? ['type'=>'blog_option', 'blog_id'=>(int)$blog_id ?: get_current_blog_id()] : compact('type');
 
 		return wpjam_get_instance('setting', join(':', $args), fn()=> new static($args));
 	}
@@ -94,26 +88,36 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	public function get_arg($key, $default=null, $do_callback=true){
 		$value	= parent::get_arg($key, $default, $do_callback);
 
-		if($value && $key == 'menu_page' && $this->name){
-			if(is_network_admin() && !$this->site_default){
-				return;
-			}
+		if($value){
+			if($key == 'menu_page'){
+				if(!$this->name || (is_network_admin() && !$this->site_default)){
+					return;
+				}
 
-			if(wp_is_numeric_array($value)){
-				return wpjam_array($value, function($k, $v){
-					if(!empty($v['tab_slug'])){
-						return empty($v['plugin_page']) ? null : [$k, $v];
-					}elseif(!empty($v['menu_slug'])){
-						return [$k, $v+($v['menu_slug'] == $this->name ? ['menu_title'=>$this->title] : [])];
-					}
-				});
-			}
+				if(wp_is_numeric_array($value)){
+					return wpjam_array($value, function($k, $v){
+						if(!empty($v['tab_slug'])){
+							return empty($v['plugin_page']) ? null : [$k, $v];
+						}elseif(!empty($v['menu_slug'])){
+							return [$k, $v+($v['menu_slug'] == $this->name ? ['menu_title'=>$this->title] : [])];
+						}
+					});
+				}
 
-			if(!empty($value['tab_slug'])){
-				return empty($value['plugin_page']) ? null : $value+['title'=>$this->title];
-			}
+				$value	+= ['function'=>'option'];
+				$value	+= $value['function'] == 'option' ? ['option_name'=>$this->name] : [];
 
-			return $value+['menu_slug'=>$this->name, 'menu_title'=>$this->title];
+				if(!empty($value['tab_slug'])){
+					$value	+= ['plugin_page'=>$this->plugin_page];
+
+					return empty($value['plugin_page']) ? null : $value+['title'=>$this->title];
+				}
+
+				return $value+['menu_slug'=>$this->plugin_page ?: $this->name, 'menu_title'=>$this->title];
+			}elseif($key == 'admin_load'){
+				$fn		= fn($v) => ($this->model && !isset($v['callback']) && !isset($v['model'])) ? $v+['model'=>$this->model] : $v;
+				$value	= wp_is_numeric_array($value) ? array_map($fn, $value) : $fn($value);
+			}
 		}
 
 		return $value;
@@ -194,8 +198,13 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 
 	public function get_setting($name, ...$args){
 		$null	= $name ? null : [];
+		$cbs[]	= 'wpjam_get_setting';
 
-		foreach(['wpjam_get_setting', ...(($this->site_default && is_multisite()) ? ['wpjam_get_site_setting'] : [])] as $cb){
+		if($this->site_default && is_multisite()){
+			$cbs[]	= 'wpjam_get_site_setting';
+		}
+
+		foreach($cbs as $cb){
 			$value = $cb($this->name, $name);
 
 			if($value !== $null){
@@ -203,7 +212,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			}
 		}
 
-		if($args){
+		if($args && $args[0] !== $null){
 			return $args[0];
 		}
 
@@ -257,7 +266,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			if(count($sections) > 1){
 				if(!$page->tab_page){
 					$tab	= wpjam_tag('div', ['id'=>'tab_'.$id]);
-					$nav[]	= wpjam_tag('a', ['class'=>'nav-tab', 'href'=>'#tab_'.$id], $section['title'])->wrap('li')->data('show_if', wpjam_parse_show_if($section['show_if'] ?? null));
+					$nav[]	= wpjam_tag('a', ['class'=>'nav-tab', 'href'=>'#tab_'.$id], $section['title'])->wrap('li')->data(wpjam_slice($section, ['show_if']));
 				}
 
 				$title	= empty($section['title']) ? '' : [($page->tab_page ? 'h3' : 'h2'), [], $section['title']];
@@ -299,13 +308,17 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		$values	= $this->validate($values) ?: [];
 		$fix	= is_network_admin() ? 'site_option' : 'option';
 
+		if($this->flush_rewrite_rules){
+			flush_rewrite_rules();
+		}
+
 		if($this->option_type == 'array'){
 			$callback	= $this->update_callback ?: 'wpjam_update_'.$fix;
 			$callback	= is_callable($callback) ? $callback : wp_die('无效的回调函数');
 			$current	= $this->value_callback();
 
 			if($action == 'reset'){
-				$values	= wpjam_diff($current, $values);
+				$values	= wpjam_diff($current, $values, 'key');
 			}else{
 				$values	= wpjam_filter(array_merge($current, $values), fn($v)=> !is_null($v), true);
 				$result	= $this->try_method('sanitize_callback', $values, $this->name);
@@ -829,7 +842,7 @@ class WPJAM_Meta_Option extends WPJAM_Register{
 	}
 
 	public static function get_by(...$args){
-		$args		= is_array($args[0]) ? $args[0] : [$args[0] => $args[1]];
+		$args		= wpjam_parse_args($args);
 		$list_table	= wpjam_pull($args, 'list_table');
 		$meta_type	= wpjam_get($args, 'meta_type');
 

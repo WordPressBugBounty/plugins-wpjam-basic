@@ -118,9 +118,7 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 	}
 
 	public function get_primary_id(){
-		$key	= static::get_primary_key();
-
-		return $this->get_data($key);
+		return $this->get_data(static::get_primary_key());
 	}
 
 	public function get_data($key=''){
@@ -157,8 +155,7 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 	}
 
 	public function save($data=[]){
-		$meta_type	= self::get_meta_type();
-		$meta_input	= $meta_type ? wpjam_pull($data, 'meta_input') : null;
+		$meta_input	= self::get_meta_type() ? wpjam_pull($data, 'meta_input') : null;
 		$data		= array_merge($this->_data, $data);
 
 		if($this->_id){
@@ -192,7 +189,9 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 	}
 
 	public function meta_input(...$args){
-		return wpjam_update_metadata(self::get_meta_type(), $this->_id, ...$args);
+		if($args){
+			return wpjam_update_metadata(self::get_meta_type(), $this->_id, ...$args);
+		}
 	}
 
 	public static function find($id){
@@ -278,6 +277,7 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 
 class WPJAM_Handler{
 	public static function call($name, $method, ...$args){
+		$method	= strtolower($method);
 		$object	= is_object($name) ? $name : self::get($name);
 
 		if(!$object){
@@ -285,14 +285,14 @@ class WPJAM_Handler{
 		}
 
 		if($object instanceof WPJAM_DB){
-			if(strtolower($method) == 'query'){
+			if($method == 'query'){
 				if(!$args){
 					return $object;
 				}
 			}elseif($method == 'query_items'){
 				if(is_array($args[0])){
-					$method	= 'query';
-					$args	= [$args[0], ($args[1] ?? 'array')];
+					$method		= 'query';
+					$args[1]	??= 'array';
 				}
 			}elseif(str_starts_with($method, 'cache_')){
 				$method	.= '_force';
@@ -370,7 +370,7 @@ class WPJAM_Handler{
 			}
 		}
 
-		if(!empty($args['items_type']) || wpjam_every(['get_items', 'update_items'], fn($method)=> !empty($args[$method]))){	// 推荐
+		if(!empty($args['items_type']) || array_all(['get_items', 'update_items'], fn($method)=> !empty($args[$method]))){	// 推荐
 			if(!empty($args['items_type'])){
 				$args['type']	= wpjam_pull($args, 'items_type');
 			}
@@ -769,7 +769,7 @@ class WPJAM_DB extends WPJAM_Args{
 		}
 
 		$fields		= $fields ? (is_array($fields) ? '`'.implode('`, `', esc_sql($fields)).'`' : $fields) : '*';
-		$groupby	= $groupby ? ' GROUP BY '.(wpjam_some([',', '(', '.'], fn($v)=> str_contains($groupby, $v)) ? $groupby : '`'.$groupby.'`') : '';
+		$groupby	= $groupby ? ' GROUP BY '.(array_any([',', '(', '.'], fn($v)=> str_contains($groupby, $v)) ? $groupby : '`'.$groupby.'`') : '';
 		$having		= $this->having ? ' HAVING '.$this->having : '';
 		$orderby	= $this->orderby;
 		$orderby	= (is_null($orderby) && !$groupby && !$having) ? ($this->get_arg('orderby') ?: $this->primary_key) : $orderby;
@@ -1311,7 +1311,7 @@ class WPJAM_DB extends WPJAM_Args{
 			}else{
 				if(str_contains($key, '__')){
 					$operator	= $this->get_operator();
-					$type		= wpjam_find($operator, fn($v, $k)=> str_ends_with($key, '__'.$k), 'key');
+					$type		= array_find_key($operator, fn($v, $k)=> str_ends_with($key, '__'.$k));
 
 					if($type){
 						$key	= wpjam_remove_postfix($key, '__'.$type);
@@ -1693,14 +1693,14 @@ class WPJAM_Items extends WPJAM_Args{
 				];
 			}
 		}elseif($type == 'setting'){
-			if(wpjam_every(['option_name', 'setting_name'], fn($k)=> !empty($args[$k]))){
+			if(array_all(['option_name', 'setting_name'], fn($k)=> !empty($args[$k]))){
 				return [
 					'get_items'		=> fn()=> wpjam_get_setting($this->option_name, $this->setting_name) ?: [],
 					'update_items'	=> fn($items)=> wpjam_update_setting($this->option_name, $this->setting_name, $items),
 				];
 			}
 		}elseif($type == 'meta'){
-			if(wpjam_every(['meta_type', 'meta_key', 'object_id'], fn($k)=> !empty($args[$k]))){
+			if(array_all(['meta_type', 'meta_key', 'object_id'], fn($k)=> !empty($args[$k]))){
 				return [
 					'parent_key'	=> $args['meta_type'].'_id',
 					'get_items'		=> fn()=> get_metadata($this->meta_type, $this->object_id, $this->meta_key, true) ?: [],

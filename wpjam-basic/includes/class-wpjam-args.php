@@ -64,6 +64,14 @@ trait WPJAM_Items_Trait{
 		return $this->handle_item('get', $key, null, $field);
 	}
 
+	public function pull_item($key, $field=''){
+		try{
+			return $this->get_item($key, $field);
+		}finally{
+			$this->delete_item($key, $field);
+		}
+	}
+
 	public function get_item_arg($key, $arg, $field=''){
 		return ($item = $this->get_item($key, $field)) ? wpjam_get($item, $arg) : null;
 	}
@@ -148,11 +156,11 @@ trait WPJAM_Items_Trait{
 			return $result;
 		}
 
-		$invalid	= fn($title)=> new WP_Error('invalid_item_key', $title);
+		$invalid	= fn($msg)=> new WP_Error('invalid_item_key', $msg);
 
 		if(isset($item)){
 			$item	= $this->sanitize_item($item, $key, $action, $field);
-			$index	= $cb ? wpjam_find($items, $cb, 'index') : false;
+			$index	= $cb ? array_find_index($items, $cb) : null;
 		}
 
 		if(isset($key)){
@@ -169,7 +177,7 @@ trait WPJAM_Items_Trait{
 			}
 
 			if(isset($item)){
-				if($index !== false){
+				if(is_numeric($index)){
 					$items	= wpjam_add_at($items, $index, $key, $item);
 				}else{
 					$items[$key]	= $item;
@@ -179,7 +187,7 @@ trait WPJAM_Items_Trait{
 			}
 		}else{
 			if($action == 'add'){
-				if($index !== false){
+				if(is_numeric($index)){
 					array_splice($items, $index, 0, [$item]);
 				}else{
 					array_push($items, $item);
@@ -327,7 +335,7 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 	}
 
 	public function update_args($args, $replace=true){
-		$this->args	= ($replace ? 'array_merge' : 'wp_parse_args')($this->get_args(), $args);
+		$this->args	= ($replace ? 'array_replace' : 'wp_parse_args')($this->get_args(), $args);
 
 		return $this;
 	}
@@ -348,10 +356,10 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 		return $this;
 	}
 
-	public function pull($key, $default=null){
+	public function pull($key, ...$args){
 		$this->filter_args();
 
-		return wpjam_pull($this->args, $key, $default);
+		return wpjam_pull($this->args, $key, ...$args);
 	}
 
 	public function to_array(){
@@ -370,7 +378,7 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 
 	protected function parse_method($name, $type=null){
 		if(!$type || $type != 'property'){
-			$model	= ($type == 'model' || !$type) ? $this->model : $type;
+			$model	= (!$type || $type == 'model') ? $this->model : $type;
 
 			if($model && method_exists($model, $name)){
 				return [$model, $name];
@@ -477,7 +485,7 @@ class WPJAM_Register extends WPJAM_Args{
 		}
 
 		wpjam_hooks(wpjam_pull($args, 'hooks'));
-		wpjam_load('init', wpjam_pull($args, 'init'));
+		wpjam_init(wpjam_pull($args, 'init'));
 
 		return $args;
 	}
@@ -487,8 +495,8 @@ class WPJAM_Register extends WPJAM_Args{
 			$this->_filtered	= true;
 
 			$class		= self::get_called();
-			$filter		= $class == 'wpjam_register' ? 'wpjam_'.$this->_group->name.'_args' : $class.'_args';
-			$this->args	= apply_filters($filter, $this->args, $this->name);
+			$filter		= $class == 'wpjam_register' ? 'wpjam_'.$this->_group->name : $class;
+			$this->args	= apply_filters($filter.'_args', $this->args, $this->name);
 		}
 
 		return $this->args;
@@ -529,8 +537,7 @@ class WPJAM_Register extends WPJAM_Args{
 	}
 
 	public function register_sub($name, $args){
-		$args	= array_merge($args, ['sub_name'=>$name]);
-		$sub	= new static($this->name, $args);
+		$sub	= new static($this->name, array_merge($args, ['sub_name'=>$name]));
 
 		$this->add_item($name, $sub, 'subs');
 
@@ -573,7 +580,12 @@ class WPJAM_Register extends WPJAM_Args{
 		$group	= WPJAM_Register_Group::get_instance(strtolower($name ?: $called));
 
 		if(!$group->called){
-			$group->init($called, $called::get_defaults());
+			$group->called		= $called;
+			$group->defaults	= $called::get_defaults();
+
+			if($route = $group->get_config('route')){
+				wpjam_register_route($route, ['model'=>$called]);
+			}
 		}
 
 		return $group;
@@ -582,7 +594,7 @@ class WPJAM_Register extends WPJAM_Args{
 	public static function call_group($method, ...$args){
 		[$method, $group]	= str_contains($method, '_by_') ? explode('_by_', $method) : [$method, ''];
 
-		return (self::parse_group($group))->$method(...$args);
+		return [self::parse_group($group), $method](...$args);
 	}
 
 	public static function register($name, $args=[]){
@@ -606,9 +618,7 @@ class WPJAM_Register extends WPJAM_Args{
 	}
 
 	public static function get_by(...$args){
-		$args	= $args ? (is_array($args[0]) ? $args[0] : [$args[0] => $args[1]]) : [];
-
-		return self::get_registereds($args);
+		return self::get_registereds(wpjam_parse_args($args));
 	}
 
 	public static function get($name, $by='', $top=''){
@@ -642,15 +652,10 @@ class WPJAM_Register extends WPJAM_Args{
 class WPJAM_Register_Group extends WPJAM_Args{
 	use WPJAM_Items_Trait;
 
-	public function init($called, $defaults){
-		$this->called	= $called;
-		$this->defaults	= $defaults;
-
-		wpjam_register_route($this->get_config('route'), ['model'=>$called]);
-	}
-
 	public function get_objects($args=[], $operator='AND'){
-		wpjam_map(($this->pull('defaults') ?: []), [$this, 'add_object']);
+		if($defaults = $this->pull('defaults')){
+			wpjam_map($defaults, [$this, 'add_object']);
+		}
 
 		return $args ? wpjam_filter($this->get_items(), $args, $operator) : $this->get_items();
 	}
@@ -667,14 +672,9 @@ class WPJAM_Register_Group extends WPJAM_Args{
 		}else{
 			$object	= $this->get_item($name);
 
-			if(!$object){
-				$defaults	= $this->defaults;
-
-				if($defaults && isset($defaults[$name])){
-					$args	= wpjam_pull($defaults, $name);
+			if(!$object && $this->defaults){
+				if($args = $this->pull_item($name, 'defaults')){
 					$object	= $this->add_object($name, $args);
-
-					$this->defaults	= $defaults;
 				}
 			}
 
@@ -711,9 +711,7 @@ class WPJAM_Register_Group extends WPJAM_Args{
 			$object	= new $class($name, $object);
 		}
 
-		$orderby	= $this->get_config('orderby');
-
-		if($orderby){
+		if($orderby = $this->get_config('orderby')){
 			$by		= $orderby === true ? 'order' : $orderby;
 			$order	= $this->get_config('order') ?? 'DESC';
 			$score	= wpjam_get($object, $by, 10);
@@ -778,7 +776,7 @@ class WPJAM_Register_Group extends WPJAM_Args{
 	}
 
 	public function call_active($method, ...$args){
-		$type	= wpjam_find(['filter', 'get'], fn($type)=> str_starts_with($method, $type.'_'));
+		$type	= array_find(['filter', 'get'], fn($type)=> str_starts_with($method, $type.'_'));
 
 		foreach($this->get_active() as $object){
 			$result	= $object->call_method($method, ...$args);	// 不能调用对象本身的方法，会死循环
@@ -804,26 +802,22 @@ class WPJAM_Register_Group extends WPJAM_Args{
 	}
 
 	public function get_fields($args=[]){
-		if($this->get_config('single')){
-			$args	+= [
-				'name'				=> wpjam_remove_prefix(strtolower($this->called), 'wpjam_'),
-				'title'				=> '',
-				'title_field'		=> 'title',
+		$title_field	= wpjam_pull($args, 'title_field') ?: 'title';
+		$name_field		= wpjam_pull($args, 'name_field') ?: 'name';
+		$objects		= $this->get_objects(wpjam_pull($args, 'filter_args'));
+
+		if(wpjam_get($args, 'type') == 'select'){
+			return [wpjam_pull($args, 'name')=> $args+[
 				'show_option_none'	=> __('&mdash; Select &mdash;'),
-				'option_none_value'	=> ''
-			];
-
-			$options	= $args['show_option_none'] ? [$args['option_none_value']=> $args['show_option_none']] : [];
-			$options	+= wpjam_map($this->get_objects(), fn($object)=>[
-				'title'			=> $object->{$args['title_field']},
-				'description'	=> $object->description,
-				'fields'		=> $object->get_arg('fields') ?: []
-			]);
-
-			return [$args['name']=> ['title'=>$args['title'], 'type'=>'select', 'options'=>$options]];
+				'options'			=> wpjam_array($objects, fn($k, $v)=> [$v->$name_field, array_filter([
+					'title'			=> $v->$title_field,
+					'description'	=> $v->description,
+					'fields'		=> $v->get_arg('fields')
+				])])
+			]];
 		}
 
-		return wpjam_array($this->get_objects(), fn($name, $object)=> isset($object->active) ? null : [$name, ($object->field ?: [])+['type'=>'checkbox', 'label'=>$object->title]]);
+		return wpjam_array($objects, fn($k, $v)=> isset($v->active) ? null : [$v->$name_field, ($v->field ?: [])+['label'=>$v->$title_field]]);
 	}
 
 	protected static $_groups	= [];
@@ -860,7 +854,11 @@ class WPJAM_Register_Group extends WPJAM_Args{
 
 class WPJAM_AJAX extends WPJAM_Register{
 	public function registered($count){
-		wpjam_map($this->nopriv ? ['', 'nopriv_'] : [''], fn($part)=> add_action('wp_ajax_'.$part.$this->name, [$this, 'callback']));
+		$this->add_action();
+
+		if($this->nopriv){
+			$this->add_action('nopriv_');
+		}
 
 		if($count == 1 && !is_admin()){
 			wpjam_script('wpjam-ajax', [
@@ -876,6 +874,10 @@ class WPJAM_AJAX extends WPJAM_Register{
 				add_filter('script_loader_tag', fn($tag, $handle)=> $handle == 'wpjam-ajax' && current_theme_supports('script', $handle) ? '' : $tag, 10, 2);
 			}
 		}
+	}
+
+	public function add_action($part=''){
+		add_action('wp_ajax_'.$part.$this->name, [$this, 'callback']);
 	}
 
 	public function callback(){
@@ -913,8 +915,7 @@ class WPJAM_AJAX extends WPJAM_Register{
 	}
 
 	protected function get_nonce_action($data){
-		$keys	= $this->nonce_keys ?: [];
-		$data	= array_filter(wp_array_slice_assoc($data, $keys));
+		$data	= array_filter(wp_array_slice_assoc($data, ($this->nonce_keys ?: [])));
 
 		return $this->name.($data ? ':'.implode(':', $data) : '');
 	}
@@ -968,7 +969,7 @@ class WPJAM_Verify_TXT extends WPJAM_Register{
 
 	public static function redirect($action){
 		$txts	= wpjam_get_option('wpjam_verify_txts');
-		$txt	= $txts ? wpjam_find($txts, fn($v)=> $v['name'] == str_replace('.txt', '', $action).'.txt') : '';
+		$txt	= $txts ? array_find($txts, fn($v)=> $v['name'] == str_replace('.txt', '', $action).'.txt') : '';
 
 		if($txt){
 			header('Content-Type: text/plain');
@@ -980,6 +981,8 @@ class WPJAM_Verify_TXT extends WPJAM_Register{
 }
 
 class WPJAM_Data_Processor extends WPJAM_Args{
+	private $data	= [];
+
 	public function get_fields($type=''){
 		if($type){
 			return $this->$type ? array_intersect_key($this->fields, $this->$type) : [];
@@ -989,71 +992,55 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 	}
 
 	public function validate(){
-		$error	= wpjam_find($this->formula, fn($v)=> is_wp_error($v));
+		$error	= array_find($this->formulas, fn($v)=> is_wp_error($v));
 
 		return $error ?: true;
 	}
 
-	public function process($item, $sum=false){
-		return $this->format($this->calc($item, $sum));
+	public function process($items, $args=[]){
+		$sums		= empty($args['sum']) ? [] : array_fill_keys($this->sum_fields, 0);
+		$calc		= $args['calc'] ?? true;
+		$orderby	= $args['orderby'] ?? '';
+
+		foreach($items as &$item){
+			$item	= $calc ? $this->calc($item) : $item;
+
+			if($orderby){
+				$item[$orderby]	??= 0;
+			}
+
+			foreach($sums as $k => &$v){
+				if(isset($item[$k]) && is_numeric($item[$k])){
+					$v	+= $item[$k];
+				}
+			}
+		}
+
+		if($orderby){
+			$items	= wpjam_sort($items, [$orderby => $args['order'] ?? '']);
+		}
+
+		if($sums){
+			$items	= wpjam_add_at($items, 0, null, $this->calc($sums, true)+(is_array($args['sum']) ? $args['sum'] : []));
+		}
+
+		return $items;
 	}
 
 	public function calc($item, $sum=false){
-		$formulas	= $this->formula ?: [];
-		$formulas	= $sum ? array_intersect_key($formulas, array_filter($this->sumable, fn($v)=> $v == 2)) : $formulas;
+		$formulas	= $sum ? $this->sum_formulas : $this->formulas;
 
 		if(!$item || !is_array($item) || !$formulas){
 			return $item;
 		}
  
 		$item	= wpjam_except($item, array_keys($formulas));
-		$calc	= function(&$item, $key) use(&$calc){
-			$formula	= $this->formula[$key];
-
-			foreach($formula as &$t){
-				if(str_starts_with($t, '$')){
-					$k	= wpjam_remove_prefix($t, '$');
-
-					if(!isset($item[$k]) && isset($this->formula[$k])){
-						$item[$k]	= $calc($item, $k);
-					}
-
-					if(isset($item[$k]) && is_numeric(trim($item[$k]))){
-						$t	= $item[$k];
-					}else{
-						if(!isset($this->if_errors[$k])){
-							return $this->if_errors[$key] ?? '!无法计算';
-						}
-
-						$t	= $this->if_errors[$k];
-					}
-
-					if(!$t && isset($p) && $p == '/'){
-						return $this->if_errors[$key] ?? '!除零错误';
-					}
-				}
-
-				$p	= $t;
-			}
-
-			return eval('return '.implode('', $formula).';');
-		};
 
 		foreach($formulas as $key => $formula){
 			if(!is_array($formula)){
 				$item[$key]	= is_wp_error($formula) ? '!公式错误' : $formula;
 			}elseif(!isset($item[$key])){
-				$item[$key]	= $calc($item, $key);
-			}
-		}
-
-		return $item;
-	}
-
-	public function format($item){
-		foreach($this->format ?: [] as $key => $format){
-			if(isset($item[$key])){
-				$item[$key]	= wpjam_format($item[$key], $format);
+				$item[$key]	= $this->do_calc($item, $key);
 			}
 		}
 
@@ -1061,15 +1048,80 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 	}
 
 	public function sum($items, $calc=false){
-		if($this->sumable && $items){
-			$items	= $calc ? array_map([$this, 'calc'], $items) : $items;
-			$sum	= wpjam_sum($items, array_keys(array_filter($this->sumable, fn($v)=> $v == 1)));
-
-			return $this->process($sum, true);
+		if(($this->sumable || $calc) && $items){
+			return $this->calc($this->process($items, ['sum'=>true, 'calc'=>$calc])[0], true);
 		}
 	}
 
+	public function accumulate($item=null, $group=''){
+		if($item){
+			$item	= $this->calc($item);
+			$value	= $group ? $item[$group] : '__';
+
+			$this->data[$group][$value]	??= array_merge($item, array_fill_keys($this->sum_fields, 0));
+
+			foreach($this->sum_fields as $k){
+				if(isset($item[$k]) && is_numeric($item[$k])){
+					$this->data[$group][$value][$k]	+= $item[$k];
+				}
+			}
+
+			return $this->data[$group];
+		}
+
+		$items	= wpjam_pull($this->data, $group) ?: [];
+		$items	= array_map(fn($item)=> $this->calc($item, true), $items);
+
+		return $group ? $items : ($items['__'] ?? []);
+	}
+
+	protected function do_calc(&$item, $key){
+		$formula	= $this->formulas[$key];
+
+		if(is_array($formula[0])){
+			$f	= array_find($formula, fn($f)=> wpjam_if($item, $f));
+
+			if(!$f){
+				return '';
+			}
+
+			$formula	= $f['formula'];
+		}
+
+		foreach($formula as &$t){
+			if(str_starts_with($t, '$')){
+				$k	= wpjam_remove_prefix($t, '$');
+
+				if(!isset($item[$k]) && isset($this->formulas[$k])){
+					$item[$k]	= $this->do_calc($item, $k);
+				}
+
+				if(isset($item[$k]) && is_numeric(trim($item[$k]))){
+					$t	= $item[$k];
+				}else{
+					if(!isset($this->if_errors[$k])){
+						return $this->if_errors[$key] ?? '!无法计算';
+					}
+
+					$t	= $this->if_errors[$k];
+				}
+
+				if(!$t && isset($p) && $p == '/'){
+					return $this->if_errors[$key] ?? '!除零错误';
+				}
+			}
+
+			$p	= $t;
+		}
+
+		return eval('return '.implode('', $formula).';');
+	}
+
 	protected static function parse_formula($formula, $vars=[], $title=''){
+		if(is_array($formula)){
+			return array_map(fn($f)=> array_merge($f, ['formula'=>self::parse_formula($f['formula'], $vars, $title)]), $formula);
+		}
+
 		$raw		= $formula;
 		$formula	= preg_replace('@\s@', '', $formula);
 		$signs		= ['+', '-', '*', '/', '(', ')', ',', '\'', '.', '%'];
@@ -1099,17 +1151,21 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 				$args['sumable'][$key]	= $field['sumable'];
 			}
 
-			if(!empty($field['format'])){
-				$args['format'][$key]	= $field['format'];
-			}
-
 			if(!empty($field['formula'])){
-				$args['formula'][$key]	= self::parse_formula($field['formula'], $keys, '字段'.wpjam_get($field, 'title').'「'.$key.'」');
+				$args['formulas'][$key]	= self::parse_formula($field['formula'], $keys, '字段'.wpjam_get($field, 'title').'「'.$key.'」');
 			}
 
 			if(isset($field['if_error']) && ($field['if_error'] || is_numeric($field['if_error']))){
 				$args['if_errors'][$key]	= $field['if_error'];
 			}
+		}
+
+		if(!empty($args['sumable'])){
+			if(!empty($args['formulas'])){
+				$args['sum_formulas']	= array_intersect_key($args['formulas'], array_filter($args['sumable'], fn($v)=> $v == 2));
+			}
+
+			$args['sum_fields']	= array_keys(array_filter($args['sumable'], fn($v)=> $v == 1));
 		}
 
 		return new self($args);
@@ -1131,7 +1187,7 @@ class WPJAM_Updater extends WPJAM_Args{
 		if(isset($response['fields']) && isset($response['content'])){
 			$fields	= array_column($response['fields'], 'index', 'title');
 			$label	= $type == 'plugin' ? '插件' : '主题';
-			$item	= wpjam_find($response['content'], fn($item)=> $item['i'.$fields[$label]] == $file);
+			$item	= array_find($response['content'], fn($item)=> $item['i'.$fields[$label]] == $file);
 			$data	= $item ? array_map(fn($index)=> $item['i'.$index] ?? '', $fields) : [];
 
 			return $data ? [
@@ -1235,14 +1291,14 @@ class WPJAM_Cache extends WPJAM_Args{
 		return wp_cache_cas($token, $this->key($key), $value, $this->group, $this->time($time));
 	}
 
-	public function get_with_cas($key, &$token, $default=null){
+	public function get_with_cas($key, &$token, ...$args){
 		[$object, $token]	= is_object($token) ? [$token, null] : [null, $token];
 
 		$key	= $this->key($key);
 		$result	= wp_cache_get_with_cas($key, $this->group, $token);
 
-		if($result === false && isset($default)){
-			$this->set($key, $default);
+		if($result === false && $args){
+			$this->set($key, $args[0]);
 
 			$result	= wp_cache_get_with_cas($key, $this->group, $token);
 		}
@@ -1254,21 +1310,25 @@ class WPJAM_Cache extends WPJAM_Args{
 		return $result;
 	}
 
+	public function is_over($key, $max, $time){
+		$times	= $this->get($key) ?: 0;
+		$result	= $times > $max;
+
+		if(!$result){
+			$this->set($key, $times+1, ($max == $times && $time > 60) ? $time : 60);
+		}
+
+		return $result;
+	}
+
 	public function generate($key){
 		try{
-			$this->is_exceeded($key);
-
-			if($this->interval && $this->get($key.':time') !== false){
-				wpjam_throw('error', '验证码'.((int)($this->interval/60)).'分钟前已发送了。');
-			}
+			$this->failed_times($key);
+			$this->interval($key);
 
 			$code = rand(100000, 999999);
 
 			$this->set($key.':code', $code, $this->cache_time);
-
-			if($this->interval){
-				$this->set($key.':time', time(), MINUTE_IN_SECONDS);
-			}
 
 			return $code;
 		}catch(Exception $e){
@@ -1278,29 +1338,41 @@ class WPJAM_Cache extends WPJAM_Args{
 
 	public function verify($key, $code){
 		try{
-			$this->is_exceeded($key);
+			$this->failed_times($key);
 
-			$cached	= $code ? $this->get($key.':code') : false;
-
-			if($cached === false){
-				wpjam_throw('invalid_code');
-			}elseif($cached != $code){
-				if($this->failed_times){
-					$this->set($key.':failed_times', ($this->get($key.':failed_times') ?: 0)+1, $this->cache_time/2);
-				}
-
-				wpjam_throw('invalid_code');
+			if(!$code || (int)$code !== (int)$this->get($key.':code')){
+				$this->failed_times($key, true);
 			}
-		
+
 			return true;
 		}catch(Exception $e){
 			return wpjam_catch($e);
 		}
 	}
 
-	protected function is_exceeded($key){
-		if($this->failed_times && (int)$this->get($key.':failed_times') > $this->failed_times){
-			wpjam_throw('failed_times_exceeded', ['尝试的失败次数', '请15分钟后重试。']);
+	protected function failed_times($key, $increment=false){
+		if($this->failed_times){
+			$times	= (int)$this->get($key.':failed_times');
+
+			if($increment){
+				$this->set($key.':failed_times', $times+1, $this->cache_time/2);
+
+				wpjam_throw('invalid_code');
+			}else{
+				if($times > $this->failed_times){
+					wpjam_throw('failed_times_exceeded', ['尝试的失败次数', '请15分钟后重试。']);
+				}
+			}
+		}
+	}
+
+	protected function interval($key){
+		if($this->interval){
+			if($this->get($key.':time')){
+				wpjam_throw('error', '验证码'.$this->interval.'分钟前已发送了。');
+			}
+
+			$this->set($key.':time', time(), $this->interval*60);
 		}
 	}
 
@@ -1313,8 +1385,8 @@ class WPJAM_Cache extends WPJAM_Args{
 			'global'	=> true,
 		]+$args+[
 			'failed_times'	=> 5,
-			'cache_time'	=> MINUTE_IN_SECONDS*30,
-			'interval'		=> MINUTE_IN_SECONDS
+			'interval'		=> 1,
+			'cache_time'	=> MINUTE_IN_SECONDS*30
 		]);
 	}
 

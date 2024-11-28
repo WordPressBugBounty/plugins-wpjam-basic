@@ -19,38 +19,170 @@ jQuery(function($){
 	});
 
 	$.extend({
-		wpjam_post: function(args, callback){
-			$.wpjam_append_page_setting(args);
+		wpjam_compare: function(a, data){
+			let compare	= data.compare ? data.compare.toUpperCase() : '';
 
-			if(args.action_type){
-				if(args.action_type == 'submit'){
-					if(document.activeElement.tagName != 'BODY'){
-						window.submit_button	= document.activeElement;
+			if(compare){
+				const antonyms	= {
+					'!=': '=',
+					'<=': '>',
+					'>=': '<',
+					'NOT IN': 'IN',
+					'NOT BETWEEN': 'BETWEEN'
+				};
 
-						$(window.submit_button).prop('disabled', true).after('<span class="spinner is-active"></span>');
-					}
-				}else{
-					if(!window.loading_disabled){
-						$('<div id="TB_load"><img src="'+imgLoader.src+'" width="208" /></div>').appendTo('body').show();
-					}
+				if(antonyms[compare]){
+					return !$.wpjam_compare(a, {...data, compare: antonyms[data.compare]});
 				}
 			}
 
-			return $.post(ajaxurl, args, (data, status)=> {
-				if(args.action_type){
-					data	= (typeof data == 'object') ? data : JSON.parse(data);
+			let b		= data.value;
+			let swap	= Array.isArray(a) || data.swap;
 
-					if(args.action_type == 'submit'){
-						if(window.submit_button){
-							$(window.submit_button).prop('disabled', false).next('.spinner').remove();
-						}
-					}else{
-						$('#TB_load').remove();
-					}
+			if(swap){
+				[a, b]	= [b, a];
+			}
+
+			if(!compare){
+				compare	= Array.isArray(b) ? 'IN' : '=';
+			}
+
+			if(compare === 'IN' || compare === 'BETWEEN'){
+				b	= Array.isArray(b) ? b : b.split(/[\s,]+/);
+
+				if(!Array.isArray(a) && b.length === 1) {
+					return a == b[0];
+				}
+
+				b	= b.map(String);
+			}else{
+				b	= typeof b === 'string' ? b.trim() : b;
+			}
+
+			switch (compare) {
+				case '=': return a == b;
+				case '>': return a > b;
+				case '<': return a < b;
+				case 'IN': return b.includes(a);
+				case 'BETWEEN': return a >= b[0] && a <= b[1];
+				default: return false;
+			}
+		},
+
+		wpjam_post: function(args, callback){
+			let $active_el	= $(document.activeElement);
+			let spinner		= '<span class="spinner is-active"></span>';
+
+			if(wpjam_list_table && $('tbody th.check-column').length){
+				((args.bulk && args.bulk != 2) ? args.ids : (args.id ? [args.id] : [])).forEach((id)=> $.wpjam_list_table_item('get', id).find('.check-column input').before(spinner));
+			}
+
+			if(args.action_type == 'submit'){
+				if($active_el.prop('tagName') != 'BODY'){
+					$active_el.prop('disabled', true).after(spinner);
+				}
+			}else if(args.action_type){
+				if($('.spinner.is-active').length == 0){
+					$('<div id="TB_load"><img src="'+imgLoader.src+'" width="208" /></div>').appendTo('body').show();
+				}
+			}
+
+			return $.post(ajaxurl, $.wpjam_append_page_setting(args), (data, status)=> {
+				$('.spinner.is-active').remove();
+
+				if(args.action_type == 'submit'){
+					$active_el.prop('disabled', false);
+				}else if(args.action_type){
+					$('#TB_load').remove();
 				}
 
 				callback(data, status);
 			});
+		},
+
+		wpjam_append_page_setting: function(args){
+			if(wpjam_page_setting.query_data && args.data){
+				args.data.split('&').forEach(function(pair){
+					 let query	= pair.split('=');
+
+					if(wpjam_page_setting.query_data.hasOwnProperty(query[0])){
+						wpjam_page_setting.query_data[query[0]]	= query[1];
+					}
+				});
+			}
+
+			['screen_id', 'plugin_page', 'current_tab', 'builtin_page', 'post_type', 'taxonomy', 'query_data'].forEach(prop => {
+				if(wpjam_page_setting[prop]){
+					args[prop] = wpjam_page_setting[prop];
+				}
+			});
+
+			return args;
+		},
+
+		wpjam_state: function(action='push', url=''){
+			if(!url){
+				url	= wpjam_page_setting.admin_url;
+
+				if(Object.keys(wpjam_params).length || wpjam_page_setting.query_data){
+					url	= new URL(url);
+
+					if(wpjam_page_setting.query_data){
+						for(const [key, value] of Object.entries(wpjam_page_setting.query_data)){
+							url.searchParams.set(key, value);
+						}
+					}
+
+					if(Object.keys(wpjam_params).length){
+						for(const [key, value] of Object.entries(wpjam_params)){
+							if(typeof value === "object" && value !== null && value.hasOwnProperty('name') && value.hasOwnProperty('value')){
+								url.searchParams.append(value.name, value.value);
+							}else{
+								if(value == null || (key == 'paged' && value <= 1)){
+									continue;
+								}
+
+								if(Array.isArray(value)){
+									value.forEach(item => url.searchParams.append(key+'[]', item));
+								}else{
+									url.searchParams.set(key, value);
+								}
+							}
+						}
+					}
+
+					url	= url.toString();
+				}
+
+				if(window.location.hash){
+					url	+= window.location.hash;
+				}
+			}
+
+			$('input[name="_wp_http_referer"]').val(url)
+
+			if(action == 'push'){
+				if(window.location.href != url){
+					window.history.pushState({wpjam_params: wpjam_params}, null, url);
+				}
+			}else{
+				window.history.replaceState({wpjam_params: wpjam_params}, null, url);
+			}
+		},
+
+		wpjam_notice: function(notice, type){
+			if(notice){
+				notice	= $('<div id="wpjam_notice" class="notice notice-'+type+' is-dismissible inline" style="opacity:0;"><p><strong>'+notice+'</strong></p></div>');
+				notice.slideDown(200, ()=> notice.fadeTo(200, 1, ()=> {
+					$('<button type="button" class="notice-dismiss"></button>').on('click.wp-dismiss-notice', ()=> notice.fadeTo(200, 0, ()=> notice.slideUp(200, ()=> notice.remove()))).appendTo(notice);
+				}));
+
+				if($('#TB_ajaxContent').length){
+					$('#TB_ajaxContent').find('.notice').remove().end().animate({scrollTop: 0}, 300).prepend(notice);
+				}else{
+					$('div.wrap').find('#wpjam_notice').remove().end().find('.wp-header-end').last().before(notice).wpjam_scroll();
+				}
+			}
 		},
 
 		wpjam_filter: function(data){
@@ -63,41 +195,14 @@ jQuery(function($){
 			return data;
 		},
 
-		wpjam_notice: function(notice, type){
-			if(!notice){
-				return;
-			}
-
-			notice	= $('<div id="wpjam_notice" class="notice notice-'+type+' is-dismissible inline" style="opacity:0;"><p><strong>'+notice+'</strong></p></div>')
-			.slideDown(200, function(){
-				$(this).fadeTo(200, 1, function(){
-					$('<button type="button" class="notice-dismiss"><span class="screen-reader-text">忽略此提示。</span></button>').on('click.wp-dismiss-notice', function(e){
-						e.preventDefault();
-						$(this).parent().fadeTo(200, 0, function(){
-							$(this).slideUp(200, function(){
-								$(this).remove();
-							});
-						});
-					}).appendTo($(this));
-				});
-			});
-
-			if($('#TB_ajaxContent').length){
-				$('#TB_ajaxContent').find('.notice').remove().end().animate({scrollTop: 0}, 300).prepend(notice);
-			}else{
-				$('div.wrap').find('#wpjam_notice').remove().end().find('.wp-header-end').last().before(notice).wpjam_scroll();
-			}
-		},
-
 		wpjam_modal: function(html, title, width, modal_id){
-			modal_id			= modal_id || 'tb_modal';
-			window.modal_width	= width ? width + 30 : 0;
-
 			if(html instanceof jQuery){
 				width	= width || html.data('width');
 				title	= title || html.data('title') || ' ';
 				html	= html.html();
 			}
+
+			modal_id	= modal_id || 'tb_modal';
 
 			if(modal_id == 'tb_modal'){
 				if($('#TB_window').length){
@@ -108,13 +213,13 @@ jQuery(function($){
 				}else{
 					if(!$('body #tb_modal').length){
 						$('body').append('<div id="tb_modal"></div>');
-					
+
 						[$.wpjam_position, window.tb_position]	= [window.tb_position, $.wpjam_position];
 
 						if(window.send_to_editor && !$.wpjam_send_to_editor){
 							[$.wpjam_send_to_editor, window.send_to_editor]	= [window.send_to_editor, function(html){
 								[$.wpjam_tb_remove, window.tb_remove]	= [window.tb_remove, null];
-								
+
 								$.wpjam_send_to_editor(html);
 
 								window.tb_remove	= $.wpjam_tb_remove;
@@ -124,7 +229,7 @@ jQuery(function($){
 
 					$('#tb_modal').html(html);
 
-					tb_show(title, '#TB_inline?inlineId=tb_modal&width='+(width || 720));
+					tb_show(title, '#TB_inline?inlineId=tb_modal&width='+(width || 771));
 				}
 			}else{
 				if(!$('body .modal').length){
@@ -152,17 +257,17 @@ jQuery(function($){
 			let style	= {maxHeight: Math.min(900, $(window).height()-120)};
 			let width	= $(window).width()-20;
 
-			if(window.modal_width){
-				width	= Math.min(window.modal_width, width);
-			}
-
 			if($('#TB_window').length){
 				$('#TB_window').addClass('abscenter');
 
-				if(width <= TB_WIDTH){
+				if(width < 761){
 					style.width	= width - 50;
 				}else{
-					style.maxWidth	= TB_WIDTH - 50;
+					if(TB_WIDTH != 801 && TB_WIDTH < width){
+						style.width	= TB_WIDTH - 50;
+					}else{
+						style.maxWidth	= (width <= TB_WIDTH - 31) ? width - 50 : TB_WIDTH - 51;
+					}
 				}
 
 				$('#TB_ajaxContent').removeAttr('style').css(style);
@@ -180,33 +285,28 @@ jQuery(function($){
 		},
 
 		wpjam_list_table_action: function(args){
-			let list_action	= args.list_action;
-			let action_type	= args.action_type = args.action_type || args.list_action_type;
+			if(args.bulk && args.bulk == 2 && !args.id && args.action_type != 'form'){
+				if(!args.ids.length){
+					return;
+				}
 
-			if(args.bulk && args.bulk == 2 && !args.id && action_type != 'form'){
 				args.id	= args.ids.shift();
 
 				$.wpjam_list_table_item('get', args.id).wpjam_scroll();
 
 				return $.when($.wpjam_list_table_action(args)).then(()=> {
-					if(args.ids.length){
-						delete args.id;
-						$.wpjam_list_table_action(args);
-					}
+					delete args.id;
+					$.wpjam_list_table_action(args);
 				});
+			}
+
+			if($('div.list-table').hasClass('layout-left') && args.action_type != 'left'){
+				args.data	+= (args.data ? '&' : '')+$('div.left').data('left_key')+'='+$('tr.left-current').data('id');
 			}
 
 			args.action	= 'wpjam-list-table-action';
 
-			if($('tbody th.check-column').length){
-				window.loading_disabled	= action_type == 'direct';
-
-				$.each(((args.bulk && args.bulk != 2) ? args.ids : (args.id ? [args.id] : [])), (i, id)=> $.wpjam_list_table_item('get', id).find('.check-column input').after('<span class="spinner is-active"></span>').hide());
-			}
-
 			return $.wpjam_post(args, (response)=> {
-				$('.wp-list-table .spinner.is-active').prev('input').show().next('.spinner').remove();
-
 				if(args.bulk){
 					$('thead td.check-column input, tfoot td.check-column input').prop('checked', false);
 				}else if(args.id){
@@ -214,7 +314,7 @@ jQuery(function($){
 				}
 
 				if(response.errcode != 0){
-					if(action_type == 'direct'){
+					if(args.action_type == 'direct'){
 						alert(response.errmsg);
 					}else{
 						$.wpjam_notice(response.errmsg, 'error');
@@ -224,14 +324,13 @@ jQuery(function($){
 						wpjam_list_table	= wpjam_page_setting.list_table	= $.extend(wpjam_list_table, response.setting);
 					}
 
-					let $subsubsub		= $('body div.list-table .subsubsub');
-					let current_view	= $subsubsub.find('li a.current').parent().attr('class');
-
-					if(action_type == 'form'){
+					if(args.action_type == 'form'){
 						$.wpjam_modal(response.form, response.page_title, response.width);
 					}else{
-						if(action_type == 'query_items' || action_type == 'left'){
-							if(action_type == 'left'){
+						let current_view	= $('.wp-list-table').data('view');
+
+						if(args.action_type == 'query_items' || args.action_type == 'left'){
+							if(args.action_type == 'left'){
 								$('div#col-left div').html(response.left);
 							}
 
@@ -241,23 +340,25 @@ jQuery(function($){
 							$('html').scrollTop(0);
 						}
 
-						$.wpjam_list_table_response(response, args);
-					}
+						if(response.views){
+							let $views	= $(response.views);
 
-					if(response.views){
-						let $views	= $(response.views);
+							if(current_view){
+								$views.find('li a').removeClass('current').end().find('li.'+current_view+' a').addClass('current');
+							}
 
-						if(current_view){
-							$views.find('li a').removeClass('current').end().find('li.'+current_view+' a').addClass('current');
+							$('body .subsubsub').after($views).remove();
 						}
 
-						$subsubsub.after($views).remove();
+						$.wpjam_list_table_response(response, args);
+
+						$.wpjam_list_table_loaded();
 					}
 
-					$.wpjam_push_state();
+					$.wpjam_state();
 
-					response.list_action	= list_action;
-					response.action_type	= response.list_action_type	= action_type;
+					response.list_action	= args.list_action;
+					response.action_type	= response.list_action_type	= args.action_type;
 
 					$('body').trigger('list_table_action_success', response);
 				}
@@ -265,14 +366,16 @@ jQuery(function($){
 		},
 
 		wpjam_list_table_response: function(response, args){
-			if($('#TB_ajaxContent').length && response.dismiss){
-				tb_remove();
-			}
+			let dismiss	= $.wpjam_dismiss(response);
 
 			if(response.type == 'items' && response.items){
-				$.each(response.items, (i, item)=> $.wpjam_list_table_response(item, args));
+				response.items.forEach((item)=> $.wpjam_list_table_response(item, args));
 			}else if(response.type == 'redirect'){
-				$.wpjam_response(response);
+				if(dismiss){
+					$('body').on('thickbox:removed', ()=> $.wpjam_response(response));
+				}else{
+					$.wpjam_response(response);
+				}
 			}else if(response.type == 'append'){
 				if($('#TB_ajaxContent').length){
 					$.wpjam_response(response);
@@ -292,16 +395,16 @@ jQuery(function($){
 					if(response.list_action == 'delete'){
 						delete response.list_action;
 
-						$.when($.wpjam_list_table_item('delete', response)).then(()=> setTimeout(()=> $.wpjam_list_table_response(response), 300));
+						$.when($.wpjam_list_table_item('delete', response, args)).then(()=> setTimeout(()=> $.wpjam_list_table_response(response, args), 300));
 					}else{
 						if(response.table){
-							$('body div.list-table').find('input[name="_wpnonce"], input[name="_wp_http_referer"], table, div').remove().end().find('form').append(response.table);
+							$('body div.list-table').find('input[name="_wpnonce"], input[name="_wp_http_referer"], table, div').remove().end().find('form').first().append(response.table);
 						}else{
 							$('body div.list-table').html(response.data);
 						}
 
 						if(response.bulk){
-							$.each(response.ids, (index, id)=> $.wpjam_list_table_item('update', {id: id}));
+							response.ids.forEach((id)=> $.wpjam_list_table_item('update', {id: id}));
 						}else if(response.id){
 							$.wpjam_list_table_item('update', {id: response.id});
 						}
@@ -329,7 +432,7 @@ jQuery(function($){
 				}else if(response.type == 'edit_item'){
 					$.wpjam_list_table_item('update', response, false).find('.items [data-i="'+(new URLSearchParams(args.defaults)).get('i')+'"]').css('background-color', '#ffffeecc');
 				}else if(response.type == 'del_item'){
-					$.wpjam_list_table_item('get', args.id).find('.items [data-i="'+(new URLSearchParams(args.data)).get('i')+'"]').css('background-color', '#ff0000cc').fadeOut(400, function(){ $.wpjam_list_table_item('update', response, false);});
+					$.wpjam_list_table_item('get', args.id).find('.items [data-i="'+(new URLSearchParams(args.data)).get('i')+'"]').css('background-color', '#ff0000cc').fadeOut(400, ()=> $.wpjam_list_table_item('update', response, false));
 				}else if(response.type != 'form'){
 					$.wpjam_list_table_item('update', response);
 				}
@@ -356,54 +459,45 @@ jQuery(function($){
 					return $('.tr-'+id);
 				}
 
-				let prefix	= '#post';
+				let lists	= $('.wp-list-table tbody').data('wp-lists');
 
-				if($('.wp-list-table tbody').data('wp-lists')){
-					prefix	= '#'+$('.wp-list-table tbody').data('wp-lists').split(':')[1];
-					// prefix	= '#'+$('#the-list').data('wp-lists').split(':')[1];
-				}
+				return $('#'+(lists ? lists.split(':')[1] : 'post')+'-'+id);
+			}
 
-				return $(prefix+'-'+id);
-			}else{
-				if(response.layout == 'calendar'){
-					$.each(response.data, (date, item)=> $('td#date_'+date).html(item).wpjam_bg_color());
-				}else if(response.bulk){
-					if(action == 'delete'){
-						$.each(response.ids, (i, id)=> $.wpjam_list_table_item(action, {id: id}));
-					}else{
-						$.each(response.data, (id, item)=> $.wpjam_list_table_item(action, {id: id, data: item}));
-					}
+			if($('div.list-table').hasClass('layout-calendar')){
+				response.data.forEach((item, date)=> $('td#date_'+date).html(item).wpjam_bg_color());
+			}else if(response.bulk){
+				if(action == 'delete'){
+					response.ids.forEach((id)=> $.wpjam_list_table_item(action, {id: id}));
 				}else{
-					if(action == 'create'){
-						if(response.after){
-							$.wpjam_list_table_item('get', response.after).after(response.data);
-						}else if(response.before){
-							$.wpjam_list_table_item('get', response.before).before(response.data);
-						}else if(response.last){
-							$('.wp-list-table > tbody tr').last().before(response.data);
-						}else{
-							$('.wp-list-table > tbody tr').first().before(response.data);
-						}	
+					response.data.forEach((item)=> $.wpjam_list_table_item(action, item));
+				}
+			}else{
+				if(action == 'create'){
+					let pos		= (response.after || response.before);
+					let $pos	= pos ? $.wpjam_list_table_item('get', pos) : $('.wp-list-table > tbody tr');
+					let $item	= $(response.data);
 
-						$.wpjam_list_table_item('get', response.id).hide().wpjam_bg_color().fadeIn(400).wpjam_scroll();
-					}else if(action == 'update'){
-						let $item	= $.wpjam_list_table_item('get', response.id);
+					if(response.after || response.last){
+						$pos.last().after($item);
+					}else{
+						$pos.first().before($item);
+					}
 
+					$item.hide().wpjam_bg_color().fadeIn(400).wpjam_scroll();
+				}else{
+					let $item	= $.wpjam_list_table_item('get', response.id);
+
+					if(action == 'delete'){
+						$item.wpjam_bg_color('#ff0000cc').fadeOut(400, ()=> $item.remove());
+					}else{
 						if(response.data){
-							$item	= $(response.data);
+							$item.first().before(response.data).end().remove();
 
-							$.wpjam_list_table_item('get', response.id).last().before($item).end().remove();
+							$item	= $.wpjam_list_table_item('get', response.id);
 						}
 
-						if(bg_color !== false){
-							$item.hide().wpjam_bg_color(bg_color).fadeIn(1000);
-						}
-
-						return $item;
-					}else if(action == 'delete'){
-						$.wpjam_list_table_item('get', response.id).wpjam_bg_color('#ff0000cc').fadeOut(400, function(){
-							$(this).remove();
-						});
+						return bg_color === false ? $item : $item.hide().wpjam_bg_color(bg_color).fadeIn(1000);
 					}
 				}
 			}
@@ -412,8 +506,8 @@ jQuery(function($){
 		wpjam_list_table_query_items: function(){
 			let action_type	= 'query_items';
 
-			if(wpjam_list_table.left_key){
-				let left_key	= wpjam_list_table.left_key;
+			if($('div.list-table').hasClass('layout-left')){
+				let left_key	= $('div.left').data('left_key');
 
 				if(wpjam_params.hasOwnProperty('left_paged')){
 					action_type	= 'left';
@@ -450,70 +544,143 @@ jQuery(function($){
 			}
 
 			if($('.wrap .list-table').length == 0){
-				$('ul.subsubsub, form#posts-filter').wrapAll('<div class="list-table" />');
+				if($('.wrap #col-right .col-wrap').length){
+					$('.wrap #col-right .col-wrap').addClass('list-table');
+				}else{
+					$('ul.subsubsub, div.wrap form').wrapAll('<div class="list-table" />');
+				}
 			}
 
 			let $list_table		= $('table.wp-list-table');
-			let current_view	= $('body div.list-table .subsubsub').find('li a.current').parent().attr('class');
+			let current_view	= $('body .subsubsub').find('li a.current').parent().attr('class');
 
 			if(current_view){
-				$list_table.addClass('views-'+current_view);
+				$list_table.addClass('views-'+current_view).data('view', current_view);
 			}
 
-			$('input[name=_wp_http_referer]').val($.wpjam_admin_url());
-
-			$.wpjam_push_state();
-
-			if(wpjam_list_table.nowrap_columns.length){
-				$.each(wpjam_list_table.nowrap_columns, (index, column)=> {
-					$list_table.find('.column-'+column).addClass('nowrap-column');
+			if($list_table.hasClass('nowrap')){
+				$list_table.find('td, th').each(function(){
+					if($.inArray($(this).css('max-width'), ['none', '0px', 'auto']) === -1){
+						$(this).addClass('fixed');
+					}
 				});
 			}
 
-			if(wpjam_list_table.sticky_columns.length){
-				if(!$list_table.parent().hasClass('sticky-columns-list-table-wrap')){
-					$list_table.wrap('<div class="sticky-columns-list-table-wrap" />');
+			let sticky_columns	= [];
+
+			$('th i').each(function(){
+				if($(this).data('description')){
+					$(this).addClass('dashicons dashicons-editor-help');
 				}
+
+				$(this).appendTo($(this).closest('a'));
+
+				let column	= $(this).closest('th').attr('id');
+
+				if(column){
+					if($(this).data('sticky')){
+						sticky_columns.push('.column-'+column);
+					}
+
+					if($(this).data('nowrap')){
+						$list_table.find('td.column-'+column).addClass('nowrap-text');
+					}
+
+					let format				= $(this).data('format');
+					let precision			= $(this).data('precision');
+					let conditional_styles	= $(this).data('conditional_styles');
+
+					if(format || precision || conditional_styles){
+						$list_table.find('td.column-'+column).each(function(){
+							let $cell	= $(this);
+							let value	= $cell.text();
+							let number	= Number(value);
+							let rule	= conditional_styles ? conditional_styles.find((rule)=> $.wpjam_compare(number, rule)) : false;
+
+							if(rule){
+								if(rule.bold){
+									$cell.css('font-weight', 'bold');
+								}
+
+								if(rule.strikethrough){
+									$cell.css('text-decoration', 'line-through');
+								}
+
+								if(rule.color){
+									$cell.css('color', rule.color);
+								}
+
+								if(rule['background-color']){
+									$cell.css('background-color', rule['background-color']);
+								}
+							}
+
+							if(!isNaN(number) && (precision || format)){
+								if(format == '%'){
+									number	= parseFloat((number*100).toFixed(precision || 2))+'%';
+								}else{
+									if(precision){
+										number	= parseFloat(number.toFixed(precision));
+									}
+
+									if(format == ','){
+										number	= number.toLocaleString();
+									}
+								}
+
+								$cell.text(number).attr('value', value)
+							}
+						});
+					}
+				}
+			});
+
+			if(sticky_columns.length){
+				$list_table.addClass('sticky-columns');
 
 				if($list_table.height() > $(window).height()){
-					let sticky_wrap_height	= 'calc(100vh - 160px)';
-
-					if($('#col-left') && $('#col-left table').height() > $(window).height() && $list_table.height() > $('#col-left table').height()){
-						sticky_wrap_height	= $('#col-left table').height();
+					if($('#col-left').length && $('#col-left table').height() > $(window).height() && $list_table.height() > $('#col-left table').height()){
+						$list_table.css('max-height', $('#col-left table').height());
 					}
-
-					$('div.sticky-columns-list-table-wrap').css('height', sticky_wrap_height);
 				}
 
-				let width	= $list_table.find('.check-column').addClass('sticky-column').css('left', 0).width()+3 || 0;
+				if($list_table.find('.check-column').length){
+					sticky_columns.unshift('.check-column');
+				}
 
-				$.each(wpjam_list_table.sticky_columns, (index, column)=> {
-					if(!$list_table.find('.column-'+column).hasClass('hidden')){
-						width	+= $list_table.find('.column-'+column).addClass('sticky-column').css('left', width).width()+20;
+				let left	= 0;
+
+				sticky_columns.forEach((column)=> {
+					if(!$list_table.find(column).hasClass('hidden')){
+						left	+= $list_table.find(column).addClass('sticky-column').css('left', left).outerWidth();
 					}
 				});
+			}
+
+			$('p.subtitle, div.summary, p.summary').remove();
+
+			if(wpjam_list_table.subtitle){
+				$('.wp-header-end').last().before('<span class="subtitle">'+wpjam_list_table.subtitle+'</span>');
+			}
+
+			if(wpjam_list_table.summary){
+				$('.list-table').before('<div class="summary">'+wpjam_list_table.summary+'</div>');
 			}
 
 			if(wpjam_list_table.overall_actions){
 				$('div.tablenav.top').find('.overallactions').remove().end().find('div.bulkactions').after(wpjam_list_table.overall_actions);
 			}
 
-			$('span.subtitle').remove();
-
-			if(wpjam_list_table.subtitle){
-				$('.wp-header-end').last().before('<span class="subtitle">'+wpjam_list_table.subtitle+'</span>');
-			}
-
 			wpjam_list_table.loaded	= true;
 
 			if(wpjam_params.id && !wpjam_params.list_action && !wpjam_params.action){
-				if(!$.wpjam_list_table_item('get', wpjam_params.id).length){
-					$.wpjam_list_table_action({action_type:'query_item', id:wpjam_params.id });
-				}else{
+				if($.wpjam_list_table_item('get', wpjam_params.id).length){
 					$.wpjam_list_table_item('update', {id:wpjam_params.id});
+				}else{
+					$.wpjam_list_table_action({action_type:'query_item', id:wpjam_params.id });
 				}
 
-				delete wpjam_params.query_id;
+				delete wpjam_params.id;
 			}
 
 			let sortable_els	= wpjam_list_table.sortable ? $list_table.find('> tbody.ui-sortable').sortable('destroy').end().find('> tbody') : $();
@@ -554,7 +721,7 @@ jQuery(function($){
 
 						let data	= {};
 
-						$.each(['prev', 'next'], (i, key)=> {
+						['prev', 'next'].forEach((key)=> {
 							let handle	= ui.item[key]().find('.ui-sortable-handle');
 
 							if(handle.length){
@@ -581,7 +748,7 @@ jQuery(function($){
 				}));
 			});
 
-			if($.inArray(screen_base, ['edit', 'upload', 'edit-tags']) != -1 && ajax_list_action){
+			if(ajax_list_action){
 				let page	= $('#adminmenu a.current').attr('href');
 
 				$('body .subsubsub a[href^="'+page+'"], body tbody#the-list a[href^="'+page+'"]').each(function(){
@@ -598,6 +765,38 @@ jQuery(function($){
 					}
 				});
 			}
+		},
+
+		wpjam_loaded: function(type=''){
+			if(wpjam_params.page_action){
+				$.wpjam_page_action($.extend({}, wpjam_params, {action_type: 'form'}));
+			}else if(wpjam_params.list_action && wpjam_list_table){
+				$.wpjam_list_table_action($.extend({}, wpjam_params, {action_type: 'form'}));
+			}else{
+				if(type == 'popstate'){
+					tb_remove();
+
+					if(wpjam_list_table){
+						$.wpjam_list_table_query_items();
+					}
+				}else{
+					if(wpjam_list_table){
+						$.wpjam_list_table_loaded();
+					}
+
+					$.wpjam_state('replace');
+				}
+			}
+		},
+
+		wpjam_dismiss: function(response){
+			if($('#TB_ajaxContent').length && response.dismiss){
+				tb_remove();
+
+				return true;
+			}
+
+			return false;
 		},
 
 		wpjam_response: function(response){
@@ -623,7 +822,7 @@ jQuery(function($){
 		},
 
 		wpjam_page_action: function (args){
-			let action_type	= args.action_type = args.action_type || args.page_action_type || 'form';
+			let action_type	= args.action_type = args.action_type || 'form';
 			let page_action	= args.page_action;
 
 			args.action	= 'wpjam-page-action';
@@ -636,29 +835,7 @@ jQuery(function($){
 						alert(response.errmsg);
 					}
 				}else{
-					if(action_type == 'submit'){
-						if($.inArray(response.type, ['append', 'redirect']) !== -1){
-							$.wpjam_response(response);
-						}else{
-							if($('#wpjam_form').length){
-								if(response.form){
-									$('#wpjam_form').html(response.form);
-								}
-							}
-
-							let notice_type	= response.notice_type || 'success';
-							let notice_msg	= response.errmsg || args.page_title+'成功';
-
-							$.wpjam_notice(notice_msg, notice_type);
-						}
-
-						if(response.done == 0){
-							setTimeout(function(){
-								args.data	= response.args;
-								$.wpjam_page_action(args);
-							}, 400);
-						}
-					}else if(action_type == 'form'){
+					if(action_type == 'form'){
 						let response_form	= response.form || response.data;
 
 						if(!response_form){
@@ -673,15 +850,37 @@ jQuery(function($){
 							$.wpjam_modal(response_form, response.page_title, response.width, response.modal_id);
 						}
 					}else{
+						let dismiss	= $.wpjam_dismiss(response);
+
 						if(response.type == 'redirect'){
+							if(dismiss){
+								$('body').on('thickbox:removed', ()=> $.wpjam_response(response));
+							}else{
+								$.wpjam_response(response);
+							}
+						}else if(response.type == 'append'){
 							$.wpjam_response(response);
 						}else{
-							$.wpjam_notice(response.errmsg, 'success');
+							if(response.done == 0){
+								setTimeout(function(){
+									args.data	= response.args;
+									$.wpjam_page_action(args);
+								}, 400);
+							}
+
+							if(action_type == 'submit' && $('#wpjam_form').length && response.form){
+								$('#wpjam_form').html(response.form);
+							}
+
+							let notice_type	= response.notice_type || 'success';
+							let notice_msg	= response.errmsg || args.page_title+'成功';
+
+							$.wpjam_notice(notice_msg, notice_type);
 						}
 					}
 
 					if(action_type != 'form' || response.modal_id == 'tb_modal'){
-						$.wpjam_push_state();
+						$.wpjam_state();
 					}
 
 					response.page_action	= page_action;
@@ -717,95 +916,6 @@ jQuery(function($){
 			return false;
 		},
 
-		wpjam_append_page_setting: function(args){
-			args.screen_id	= wpjam_page_setting.screen_id;
-
-			if(wpjam_page_setting.plugin_page){
-				args.plugin_page	= wpjam_page_setting.plugin_page;
-				args.current_tab	= wpjam_page_setting.current_tab;
-			}
-
-			if(wpjam_page_setting.builtin_page){
-				args.builtin_page	= wpjam_page_setting.builtin_page;
-			}
-
-			if(wpjam_page_setting.post_type){
-				args.post_type	= wpjam_page_setting.post_type;
-			}
-
-			if(wpjam_page_setting.taxonomy){
-				args.taxonomy	= wpjam_page_setting.taxonomy;
-			}
-
-			if(wpjam_page_setting.query_data){
-				let query_data	= wpjam_page_setting.query_data;
-
-				if(args.data && typeof(args.data) != 'undefined'){
-					$.each(args.data.split('&'), function(){
-						let query	= this.split('=');
-
-						if(query_data.hasOwnProperty(query[0])){
-							query_data[query[0]]	= query[1];
-						}
-					});
-
-					args.data	= $.param(query_data)+'&'+args.data;
-				}else{
-					args.data	= $.param(query_data);
-				}
-			}
-
-			if(wpjam_list_table && wpjam_list_table.left_key && args.action_type != 'left'){
-				let left_query	= wpjam_list_table.left_key+'='+$('tr.left-current').data('id');
-
-				if(args.data && typeof(args.data) != 'undefined'){
-					args.data	= args.data+'&'+left_query;
-				}else{
-					args.data	= left_query;
-				}
-			}
-
-			return args;
-		},
-
-		wpjam_admin_url: function(){
-			let admin_url	= wpjam_page_setting.admin_url || $('#adminmenu a.current').prop('href');
-
-			let parts	= admin_url.split('?');
-			let params	= new URLSearchParams(parts[1]);
-			let query	= $.extend({}, wpjam_params);
-
-			if(wpjam_page_setting.query_data){
-				query	= $.extend({}, wpjam_page_setting.query_data, query);
-			}
-
-			if(query.hasOwnProperty('paged') && query.paged <= 1){
-				delete query.paged;
-			}
-
-			query	= $.wpjam_filter(query);
-
-			if(query){
-				$.each(query, function(k, v){ params.set(k, v); });
-			}
-
-			params	= params.toString();
-
-			return parts[0]+(params ? '?'+params : '');
-		},
-
-		wpjam_push_state: function(){
-			let admin_url	= $.wpjam_admin_url();
-
-			if(window.location.href != admin_url || (wpjam_list_table && !wpjam_list_table.loaded)){
-				if(wpjam_page_setting.query_data){
-					wpjam_params	= $.extend({}, wpjam_page_setting.query_data, wpjam_params);
-				}
-
-				window.history.pushState({wpjam_params: wpjam_params}, null, admin_url);
-			}
-		},
-
 		wpjam_delegate_events: function(selector, sub_selector){
 			sub_selector	= sub_selector || '';
 
@@ -827,10 +937,9 @@ jQuery(function($){
 		}
 	});
 
-	let wpjam_list_table	= wpjam_page_setting.list_table;
 	let wpjam_params		= wpjam_page_setting.params;
-	let screen_base			= wpjam_page_setting.screen_base;
-	let	ajax_list_action	= $.inArray(screen_base, ['edit', 'upload', 'edit-tags']) != -1 ? wpjam_page_setting.ajax_list_action : true;
+	let wpjam_list_table	= wpjam_page_setting.list_table;
+	let	ajax_list_action	= $('#list_table_form').length ? true : wpjam_page_setting.ajax_list_action;
 
 	$('body .chart').each(function(){
 		let options	= $(this).data('options');
@@ -875,6 +984,22 @@ jQuery(function($){
 		$.wpjam_modal($('#notice_modal'));
 	}
 
+	$('body').on('mouseenter', '[data-tooltip],[data-description]', function(e){
+		if(!$('#tooltip').length){
+			$('body').append('<div id="tooltip"></div>');
+		}
+
+		let tooltip	= $(this).data('tooltip') || $(this).data('description');
+
+		$('#tooltip').html(tooltip).show().css({top: e.pageY+22, left: e.pageX-10});
+	}).on('mousemove',  function(e){
+		$('#tooltip').css({top: e.pageY+22, left: e.pageX-10});
+	}).on('mouseleave', function(){
+		$('#tooltip').remove();
+	}).on('mouseout', function(){
+		$('#tooltip').remove();
+	});
+
 	$('body').on('tb_unload', '#TB_window', function(){
 		if($('#notice_modal').find('.delete-notice').length){
 			$('#notice_modal').find('.delete-notice').trigger('click');
@@ -890,13 +1015,13 @@ jQuery(function($){
 			delete wpjam_params.page_action;
 			delete wpjam_params.data;
 
-			$.wpjam_push_state();
+			$.wpjam_state();
 		}else if(wpjam_params.list_action && wpjam_list_table){
 			delete wpjam_params.list_action;
 			delete wpjam_params.id;
 			delete wpjam_params.data;
 
-			$.wpjam_push_state();
+			$.wpjam_state();
 		}
 	});
 
@@ -919,250 +1044,221 @@ jQuery(function($){
 		}
 	});
 
-	window.onpopstate = function(event){
-		if(event.state && event.state.wpjam_params){
-			wpjam_params	= event.state.wpjam_params;
+	$('body').on('submit', '#list_table_action_form', function(e){
+		e.preventDefault();
 
-			if(wpjam_params.page_action){
-				$.wpjam_page_action($.extend({}, wpjam_params, {action_type: 'form'}));
-			}else if(wpjam_params.list_action && wpjam_list_table){
-				$.wpjam_list_table_action($.extend({}, wpjam_params, {action_type: 'form'}));
-			}else{
-				tb_remove();
+		if($(this).data('next')){
+			window.action_flow = window.action_flow || [];
+			window.action_flow.push($(this).data('action'));
+		}
 
-				if(wpjam_list_table){
-					$.wpjam_list_table_query_items();
+		let submit_button	= $(document.activeElement);
+
+		if($(document.activeElement).prop('type') != 'submit'){
+			submit_button	= $(this).find(':submit').first();
+			submit_button.focus();
+		}
+
+		if($(this).data('bulk') == 2){
+			tb_remove();
+		}
+
+		$.wpjam_list_table_action({
+			action_type :	'submit',
+			list_action :	$(this).data('action'),
+			submit_name :	submit_button.attr('name'),
+			bulk : 			$(this).data('bulk'),
+			id :			$(this).data('id'),
+			ids :			$(this).data('ids'),
+			data : 			$(this).serialize(),
+			defaults :		$(this).data('data'),
+			_ajax_nonce :	$(this).data('nonce')
+		});
+	});
+
+	$('body').on('submit', 'div.list-table form', function(e){
+		let $active_el	= $(document.activeElement);
+		let active_id	= $active_el.attr('id');
+
+		if(active_id == 'doaction' || active_id == 'doaction2'){
+			let bulk_name	= $active_el.prev('select').val();
+
+			if(bulk_name == '-1'){
+				alert('请选择要进行的批量操作！');
+				return false;
+			}
+
+			let ids	= $.map($('tbody .check-column input[type="checkbox"]:checked'), (cb)=> cb.value);
+
+			if(ids.length == 0){
+				alert('请至少选择一项！');
+				return false;
+			}
+
+			let bulk_actions	= wpjam_list_table.bulk_actions;
+
+			if(bulk_actions && bulk_actions[bulk_name]){
+				let bulk_action	= bulk_actions[bulk_name];
+
+				if(bulk_action.confirm && confirm('确定要'+bulk_action.title+'吗?') == false){
+					return false;
 				}
+
+				$.wpjam_list_table_action({
+					list_action:	bulk_name,
+					action_type:	bulk_action.direct ? 'direct' : 'form',
+					data:			bulk_action.data,
+					_ajax_nonce: 	bulk_action.nonce,
+					bulk: 			bulk_action.bulk,
+					ids:			ids
+				});
+
+				return false;
+			}
+		}else if(ajax_list_action){
+			if(active_id == 'current-page-selector'){
+				let paged	= parseInt($active_el.val());
+				let total	= parseInt($active_el.next('span').find('span.total-pages').text());
+
+				if(paged < 1 || paged > total){
+					alert(paged < 1 ? '页面数字不能小于为1' : '页面数字不能大于'+total);
+
+					return false
+				}
+
+				wpjam_params.paged	= paged;
+
+				return $.wpjam_list_table_query_items();
+			}else if($.inArray(active_id, ['filter_action', 'post-query-submit', 'search-submit']) != -1 || active_id == $('div.list-table form input[type=search]').attr('id')){
+				wpjam_params	= $(this).serializeArray().filter((param)=> !['page', 'tab', 'paged', '_wp_http_referer', '_wpnonce', 'action', 'action2'].includes(param.name));
+
+				return $.wpjam_list_table_query_items();
 			}
 		}
-	};
+	});
 
-	if(wpjam_list_table){
-		$.wpjam_list_table_loaded();
+	$('body').on('click', 'div.list-table .prev-day, div.list-table .next-day', function(){
+		let date	= new Date($('#date').val());
 
-		$('body').on('list_table_action_success', function(e, response){
-			if(response.action_type != 'form'){
-				$.wpjam_list_table_loaded();
-			}
-		});
+		date.setDate(date.getDate()+($(this).hasClass('prev-day') ? -1 : 1));
 
-		$('body').on('submit', '#list_table_action_form', function(e){
-			e.preventDefault();
+		$('#date').val(date.toISOString().split('T')[0]);
 
-			if($(this).data('next')){
-				window.action_flows = window.action_flows || [];
-				window.action_flows.push($(this).data('action'));
-			}
+		$('#filter_action').focus().click();
+	});
 
-			let submit_button	= $(document.activeElement);
+	$('body').on('click', '.list-table-action', function(){
+		if($(this).data('confirm') && confirm('确定要'+$(this).attr('title')+'吗?') == false){
+			return false;
+		}
 
-			if($(document.activeElement).prop('type') != 'submit'){
-				submit_button	= $(this).find(':submit').first();
-				submit_button.focus();
-			}
+		let args	= {
+			action_type :	$(this).data('direct') ? 'direct' : 'form',
+			list_action :	$(this).data('action'),
+			id : 			$(this).data('id'),
+			data : 			$(this).data('data'),
+			_ajax_nonce :	$(this).data('nonce')
+		};
 
-			if($(this).data('bulk') == 2){
-				tb_remove();
-			}
+		let $item	= $.wpjam_list_table_item('get', args.id);
 
-			$.wpjam_list_table_action({
-				action_type :	'submit',
-				list_action :	$(this).data('action'),
-				submit_name :	submit_button.attr('name'),
-				bulk : 			$(this).data('bulk'),
-				id :			$(this).data('id'),
-				ids :			$(this).data('ids'),
-				data : 			$(this).serialize(),
-				defaults :		$(this).data('data'),
-				_ajax_nonce :	$(this).data('nonce')
-			});
-		});
+		if(args.list_action == 'up' || args.list_action == 'down'){
+			let action	= args.list_action == 'up' ? 'prev' : 'next';
+			let key		= action == 'next' ? 'prev' : 'next';
+			args[key]	= $item[action]().find('.ui-sortable-handle').data('id');
 
-		$('body').on('submit', 'div.list-table form', function(e){
-			let active_el	= $(document.activeElement).attr('id');
-
-			if(active_el == 'doaction' || active_el == 'doaction2'){
-				let bulk_name	= $('#'+active_el).prev('select').val();
-
-				if(bulk_name == '-1'){
-					alert('请选择要进行的批量操作！');
-					return false;
-				}
-
-				let ids	= $.map($('tbody .check-column input[type="checkbox"]:checked'), (cb)=> cb.value);
-
-				if(ids.length == 0){
-					alert('请至少选择一项！');
-					return false;
-				}
-
-				let bulk_actions	= wpjam_list_table.bulk_actions;
-
-				if(bulk_actions && bulk_actions[bulk_name]){
-					let bulk_action	= bulk_actions[bulk_name];
-
-					if(bulk_action.confirm && confirm('确定要'+bulk_action.title+'吗?') == false){
-						return false;
-					}
-
-					$.wpjam_list_table_action({
-						list_action:	bulk_name,
-						action_type:	bulk_action.direct ? 'direct' : 'form',
-						data:			bulk_action.data,
-						_ajax_nonce: 	bulk_action.nonce,
-						bulk: 			bulk_action.bulk,
-						ids:			ids	
-					});
-
-					return false;
-				}
-			}else if(ajax_list_action){
-				if(active_el == 'current-page-selector'){
-					let paged	= parseInt($('#current-page-selector').val());
-					let total	= parseInt($('#current-page-selector').next('span').find('span.total-pages').text());
-
-					if(paged < 1 || paged > total){
-						alert(paged < 1 ? '页面数字不能小于为1' : '页面数字不能大于'+total);
-
-						return false
-					}
-
-					wpjam_params.paged	= paged;
-
-					return $.wpjam_list_table_query_items();
-				}else if(active_el == 'search-submit' || active_el == $('div.list-table form input[type=search]').attr('id')){
-					wpjam_params	= {s:$('div.list-table form input[type=search]').val()};
-
-					return $.wpjam_list_table_query_items();
-				}else if(active_el == 'filter_action' || active_el == 'post-query-submit'){
-					wpjam_params	= {};
-
-					$.each($(this).serializeArray(), function(index, param){
-						if($.inArray(param.name, ['page', 'tab', 's', 'paged', '_wp_http_referer', '_wpnonce', 'action', 'action2']) == -1){
-							wpjam_params[param.name]	= param.value;
-						}
-					});
-
-					return $.wpjam_list_table_query_items();
-				}
-			}
-		});
-
-		$('body').on('click', '.list-table-action', function(){
-			if($(this).data('confirm') && confirm('确定要'+$(this).attr('title')+'吗?') == false){
+			if(!args[key]){
+				alert(action == 'next' ? '已经最后一个了，不可下移了。' : '已经是第一个了，不可上移了。');
 				return false;
 			}
 
-			let args	= {
-				action_type :	$(this).data('direct') ? 'direct' : 'form',
-				list_action :	$(this).data('action'),
-				id : 			$(this).data('id'),
-				data : 			$(this).data('data'),
-				_ajax_nonce :	$(this).data('nonce')
-			};
+			args.data	= args.data ? args.data + '&'+key+'='+args[key] : key+'='+args[key];
+		}else if(args.action_type == 'form'){
+			wpjam_params.list_action	= args.list_action;
 
-			let $item	= $.wpjam_list_table_item('get', args.id);
-
-			if(args.list_action == 'up' || args.list_action == 'down'){
-				let action	= args.list_action == 'up' ? 'prev' : 'next';
-				let key		= action == 'next' ? 'prev' : 'next';
-				args[key]	= $item[action]().find('.ui-sortable-handle').data('id');
-
-				if(!args[key]){
-					alert(action == 'next' ? '已经最后一个了，不可下移了。' : '已经是第一个了，不可上移了。');
-					return false;
-				}
-
-				args.data	= args.data ? args.data + '&'+key+'='+args[key] : key+'='+args[key];
-			}else if(args.action_type == 'form'){
-				wpjam_params.list_action	= args.list_action;
-
-				if(args.list_action != 'add' && args.id){
-					wpjam_params.id	= args.id;
-				}
-
-				if(args.data){
-					wpjam_params.data	= args.data;
-				}
+			if(args.list_action != 'add' && args.id){
+				wpjam_params.id	= args.id;
 			}
 
-			$.wpjam_list_table_action(args);
-
-			$(this).blur();
-		});
-
-		$('body').on('click', '.list-table-filter', function(){
-			if($(this).hasClass('disabled')){
-				return false;
+			if(args.data){
+				wpjam_params.data	= args.data;
 			}
+		}
 
-			wpjam_params	= $(this).data('filter');
+		$.wpjam_list_table_action(args);
 
+		$(this).blur();
+	});
+
+	$('body').on('click', '.list-table-filter:not(.disabled)', function(){
+		wpjam_params	= $(this).data('filter');
+
+		return $.wpjam_list_table_query_items();
+	});
+
+	$('body').on('click', 'div#col-left .left-item', function(){
+		$(this).siblings('.left-item').removeClass('left-current').end().addClass('left-current');
+
+		let left_paged	= wpjam_params.left_paged || 1;
+
+		delete wpjam_params.left_paged;
+
+		try{
 			return $.wpjam_list_table_query_items();
-		});
-
-		$('body').on('click', 'div#col-left .left-item', function(){
-			$(this).siblings('.left-item').removeClass('left-current').end().addClass('left-current');
-
-			return $.wpjam_list_table_query_items();
-		});
-
+		}finally{
+			wpjam_params.left_paged = left_paged;
+		}
+	});
+		
+	$('body').on('click', 'div.list-table form .pagination-links a', function(){
 		if(ajax_list_action){
-			$('body').on('click', 'div.list-table form .pagination-links a', function(){
-				wpjam_params.paged	= (new URL($(this).prop('href'))).searchParams.get('paged');
+			wpjam_params.paged	= (new URL($(this).prop('href'))).searchParams.get('paged');
 
-				return $.wpjam_list_table_query_items();
-			});
+			return $.wpjam_list_table_query_items();
+		}
+	});
 
-			$('body').on('click', 'div.list-table form th.sorted a, div.list-table form th.sortable a', function(){
-				let href = new URL($(this).prop('href'));
+	$('body').on('click', 'div.list-table form th.sorted a, div.list-table form th.sortable a', function(){
+		if(ajax_list_action){
+			let href = new URL($(this).prop('href'));
 
-				wpjam_params.orderby	= href.searchParams.get('orderby') || $(this).parent().attr('id');
-				wpjam_params.order		= href.searchParams.get('order') || ($(this).parent().hasClass('asc') ? 'desc' : 'asc');
-				wpjam_params.paged		= 1;
+			wpjam_params.orderby	= href.searchParams.get('orderby') || $(this).parent().attr('id');
+			wpjam_params.order		= href.searchParams.get('order') || ($(this).parent().hasClass('asc') ? 'desc' : 'asc');
+			wpjam_params.paged		= 1;
 
-				return $.wpjam_list_table_query_items();
-			});
+			return $.wpjam_list_table_query_items();
+		}
+	});
+
+	$('body').on('click', '#col-left .left-pagination-links a.goto', function(){
+		let paged	= parseInt($(this).prev('input').val());
+		let total	= $(this).parents('.left-pagination-links').data('total_pages');
+
+		if(paged < 1 || paged > total){
+			alert(paged < 1 ? '页面数字不能小于为1' : '页面数字不能大于'+total);
+
+			return false
 		}
 
-		$('body').on('click', '#col-left .left-pagination-links a.goto', function(){
-			let paged	= parseInt($(this).prev('input').val());
-			let total	= $(this).parents('.left-pagination-links').data('total_pages');
+		wpjam_params.left_paged	= paged;
 
-			if(paged < 1 || paged > total){
-				alert(paged < 1 ? '页面数字不能小于为1' : '页面数字不能大于'+total);
+		return $.wpjam_list_table_query_items();
+	});
 
-				return false
-			}
+	$('body').on('keyup', '.left-pagination-links input', function(e) {
+		if(e.key === 'Enter' || e.keyCode === 13){
+			$(this).next('a').trigger('click');
+		}
+	});
 
-			wpjam_params.left_paged	= paged;
+	$('body').on('change', '#col-left select.left-filter', function(){
+		let name = $(this).prop('name');
 
-			return $.wpjam_list_table_query_items();
-		});
+		wpjam_params.left_paged	= 1;
+		wpjam_params[name]		= $(this).val();
 
-		$('body').on('keyup', '.left-pagination-links input', function(e) {
-			if(e.key === 'Enter' || e.keyCode === 13){
-				$(this).next('a').trigger('click');
-			}
-		});
-
-		$('body').on('change', '#col-left select.left-filter', function(){
-			let name = $(this).prop('name');
-
-			wpjam_params.left_paged	= 1;
-			wpjam_params[name]		= $(this).val();
-
-			return $.wpjam_list_table_query_items();
-		});
-	}
-
-	window.history.replaceState({wpjam_params: wpjam_params}, null);
-
-	if(wpjam_params.page_action){
-		$.wpjam_page_action($.extend({}, wpjam_params, {action_type: 'form'}));
-	}else if(wpjam_params.list_action && wpjam_list_table){
-		$.wpjam_list_table_action($.extend({}, wpjam_params, {action_type: 'form'}));
-	}
+		return $.wpjam_list_table_query_items();
+	});
 
 	$('body').on('click', '.wpjam-button', function(e){
 		e.preventDefault();
@@ -1194,19 +1290,15 @@ jQuery(function($){
 	$('body').on('submit', '#wpjam_form', function(e){
 		e.preventDefault();
 
-		let submit_button	= $(document.activeElement);
-
-		if($(document.activeElement).prop('type') != 'submit'){
-			submit_button	= $(this).find(':submit').first();
-			submit_button.focus();
-		}
+		let $active_el	= $(document.activeElement);
+		let $submit_btn	= $active_el.prop('type') === 'submit' ? $active_el : $(this).find(':submit').first().focus();
 
 		return $.wpjam_page_action({
 			action_type:	'submit',
 			data: 			$(this).serialize(),
 			page_action:	$(this).data('action'),
-			submit_name:	submit_button.attr('name'),
-			page_title:		submit_button.attr('value'),
+			submit_name:	$submit_btn.attr('name'),
+			page_title:		$submit_btn.attr('value'),
 			_ajax_nonce:	$(this).data('nonce')
 		});
 	});
@@ -1216,10 +1308,8 @@ jQuery(function($){
 
 		let option_action	= $(document.activeElement).data('action');
 
-		if(option_action == 'reset'){
-			if(confirm('确定要重置吗?') == false){
-				return false;
-			}
+		if(option_action == 'reset' && confirm('确定要重置吗?') == false){
+			return false;
 		}
 
 		$.wpjam_option_action({
@@ -1228,4 +1318,14 @@ jQuery(function($){
 			data:			$(this).serialize()
 		});
 	});
+
+	$.wpjam_loaded();
+
+	window.onpopstate = function(event){
+		if(event.state && event.state.wpjam_params){
+			wpjam_params	= event.state.wpjam_params;
+
+			$.wpjam_loaded('popstate');
+		}
+	};
 });

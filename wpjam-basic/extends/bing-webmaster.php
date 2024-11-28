@@ -6,94 +6,47 @@ Description: Bing 站长工具扩展实现提交链接到 Microsoft Bing，让�
 Version: 1.0
 */
 class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
+	public static function submittable(){
+		return self::get_setting('bing_site_url') && self::get_setting('bing_api_key');
+	}
+
 	public static function get_fields(){
 		return [
-			'bing_site_url'	=> ['title'=>'站点',	'type'=>'url',	'class'=>'all-options',	'value'=>untrailingslashit(site_url())],
-			'bing_api_key'	=> ['title'=>'密钥',	'type'=>'password'],
+			'bing_site_url'	=> ['title'=>'站点',	'type'=>'url',		'required',	'class'=>'all-options',	'value'=>untrailingslashit(site_url())],
+			'bing_api_key'	=> ['title'=>'密钥',	'type'=>'password',	'required'],
 		];
-	}
-
-	public static function get_set_fields(){
-		$fields	= self::get_fields();
-
-		foreach($fields as $key => &$field){
-			$field['value']	= self::get_setting($key);
-		}
-
-		return $fields;
-	}
-
-	public static function get_batch_fields(){
-		return ['view'	=> [
-			'type'=>'view',
-			'value'=>'已设置 Bing Webmaster 的站点和密钥（'.wpjam_get_page_button('set_bing_webmaster', ['button_text' => '修改', 'class'=>'']).'），可以使用 Bing 站长工具更新内容接口批量将博客中的所有内容都提交给 Bing 站长平台。'
-		]];
 	}
 
 	public static function get_menu_page(){
 		$tab_page	= [
-			'tab_slug'		=> 'bing-webmaster',
-			'plugin_page'	=> 'wpjam-seo',
-			'summary'		=> __FILE__,
+			'tab_slug'	=> 'bing-webmaster',
+			'summary'	=> __FILE__,
 		];
 
 		if(self::submittable()){
-			wpjam_register_page_action('set_bing_webmaster', [
-				'title' 		=> '设置',
-				'submit_text'	=> '设置',
-				'validate'		=> true,
-				'callback'		=> [self::class, 'set'],
-				'fields'		=> [self::class, 'get_set_fields'],
-				'response'		=> 'redirect'
+			$object	= wpjam_register_page_action('set_bing_webmaster', [
+				'title' 			=> '设置',
+				'submit_text'		=> '设置',
+				'validate'			=> true,
+				'dismiss'			=> true,
+				'response'			=> 'redirect',
+				'fields'			=> [self::class, 'get_fields'],
+				'value_callback'	=> [self::class, 'get_setting'],
+				'callback'			=> [self::class, 'update_setting']
 			]);
 
-			return array_merge($tab_page, [
+			$tab_page += [
 				'function'		=> 'form',
 				'submit_text'	=> '批量提交',
 				'callback'		=> [self::class, 'batch_submit'],
-				'fields'		=> [self::class, 'get_batch_fields'],
-			]);
-		}else{
-			return array_merge($tab_page, [
-				'function'		=> 'option',
-				'option_name'	=> 'wpjam-seo',
-			]);
-		}
-	}
-
-	public static function get_admin_load(){
-		if(self::submittable()){
-			return [
-				'base'	=> ['post','edit'], 
-				'model'	=> self::class
+				'fields'		=> fn()=> ['view'=>[
+					'type'	=> 'view',
+					'value'	=> '已设置 Bing Webmaster 的站点和密钥（'.$object->get_button(['button_text' => '修改', 'class'=>'']).'），可以使用 Bing 站长工具更新内容接口批量将博客中的所有内容都提交给 Bing 站长平台。'
+				]],
 			];
 		}
-	}
 
-	public static function submittable(){
-		$keys	= array_keys(self::get_fields());
-
-		if(self::get_setting($keys[0]) === null){
-			foreach($keys as $key){
-				$value	= wpjam_get_setting('bing-webmaster', wpjam_remove_prefix($key, 'bing_')) ?: '';
-
-				self::update_setting($key, $value);
-			}
-
-			delete_option('bing-webmaster');
-		}
-
-		return self::get_setting('bing_site_url') && self::get_setting('bing_api_key');
-	}
-
-	public static function set($data){
-		foreach(self::get_fields() as $key => $field){
-			$value	= $data[$key] ?? '';
-
-			self::update_setting($key, $value);
-		}
-
-		return self::submittable() ? true : $GLOBALS['current_admin_url'];
+		return $tab_page;
 	}
 
 	public static function submit($urls){
@@ -247,6 +200,10 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 	}
 
 	public static function builtin_page_load($screen){
+		if(!self::submittable()){
+			return;
+		}
+
 		if($screen->base == 'edit'){
 			if(is_post_type_viewable($screen->post_type)){
 				wpjam_register_list_table_action('submit_bing', [
@@ -276,5 +233,6 @@ wpjam_register_option('wpjam-seo',	[
 	'current_tab'	=> 'bing-webmaster',
 	'model'			=> 'WPJAM_Bing_Webmaster',
 	'title'			=> 'Bing Webmaster',
-	'ajax'			=> false
+	'ajax'			=> false,
+	'admin_load'	=> ['base'=>['post','edit']]
 ]);

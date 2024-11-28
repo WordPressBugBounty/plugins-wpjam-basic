@@ -133,7 +133,7 @@ class WPJAM_Basic_Admin{
 				'a.jam-post span{display: table-cell; height: 40px; vertical-align: middle;}'
 			]));
 		}else{
-			$base	= wpjam_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base));
+			$base	= array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base));
 
 			if($base){
 				wp_add_inline_script('jquery', "jQuery(function($){
@@ -201,7 +201,7 @@ class WPJAM_Verify{
 		$hash		= $verify_user['hash'] ?? '';
 		$user_id	= get_current_user_id();
 
-		if(wpjam_lock('fetching_wpjam_weixin_user_'.$openid, 1, 10)){
+		if(wpjam_lock('fetching_wpjam_weixin_user_'.$openid, 10)){
 			return false;
 		}
 

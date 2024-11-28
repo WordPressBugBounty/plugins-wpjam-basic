@@ -6,10 +6,6 @@ Description: 简单 SEO 扩展实现最简单快捷的方式设置 WordPress 站
 Version: 2.0
 */
 class WPJAM_SEO extends WPJAM_Option_Model{
-	public static function sanitize_callback($value){
-		flush_rewrite_rules();
-	}
-
 	public static function get_fields(){
 		if(file_exists(ABSPATH.'robots.txt')){
 			$robots_field	= ['type'=>'view',	'value'=>'博客的根目录下已经有 robots.txt 文件。<br />请直接编辑或者删除之后在后台自定义。'];
@@ -119,26 +115,6 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		}
 	}
 
-	public static function get_menu_page(){
-		return [
-			'tab_slug'		=> 'seo',
-			'plugin_page'	=> 'wpjam-seo',
-			'title'			=> 'SEO设置',
-			'order'			=> 20,
-			'function'		=> 'option',
-			'summary'		=> __FILE__,
-		];
-	}
-
-	public static function get_admin_load(){
-		if(self::get_setting('individual')){
-			return [
-				'base'	=> ['post','edit', 'edit-tags', 'term'], 
-				'model'	=> self::class
-			];
-		}
-	}
-
 	public static function sitemap($action){
 		$sitemap	= '';
 
@@ -217,6 +193,10 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 	}
 
 	public static function builtin_page_load($screen){
+		if(!self::get_setting('individual')){
+			return;
+		}
+
 		$args	= [
 			'title'			=> 'SEO设置',
 			'page_title'	=> 'SEO设置',
@@ -264,6 +244,11 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 }
 
 wpjam_register_option('wpjam-seo', [
-	'model'	=> 'WPJAM_SEO',
-	'title'	=> 'SEO设置'
+	'title'					=> 'SEO设置',
+	'model'					=> 'WPJAM_SEO',
+	'flush_rewrite_rules'	=> true,
+	'plugin_page'			=> 'wpjam-seo',
+	'current_tab'			=> 'seo',
+	'menu_page'				=> ['tab_slug'=>'seo', 'order'=>20, 'summary'=>__FILE__],
+	'admin_load'			=> ['base'=>['post','edit', 'edit-tags', 'term']]
 ]);

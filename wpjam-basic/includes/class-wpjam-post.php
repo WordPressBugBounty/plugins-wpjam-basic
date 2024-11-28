@@ -75,7 +75,7 @@ class WPJAM_Post{
 	}
 
 	public function save($data){
-		if(wpjam_some(['post_status', 'status'], fn($k)=> array_get($data, $k) == 'publish')){
+		if(array_any(['post_status', 'status'], fn($k)=> wpjam_get($data, $k) == 'publish')){
 			$result	= $this->is_publishable();
 
 			if(is_wp_error($result) || !$result){
@@ -588,10 +588,6 @@ class WPJAM_Post{
 		}, []);
 	}
 
-	public static function get_filterable_fields(){
-		return ['status'];
-	}
-
 	public static function get_views(){
 		if(get_current_screen()->base != 'edit'){
 			$post_type	= static::get_current_post_type();
@@ -920,7 +916,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 
 			add_action('registered_post_type_'.$this->name,	[$this, 'registered_callback'], 10, 2);
 
-			wpjam_load('init', fn()=> register_post_type($this->name, $this->to_array()));
+			wpjam_init(fn()=> register_post_type($this->name, $this->to_array()));
 
 			if($this->options){
 				wpjam_map($this->options, fn($option, $name)=> wpjam_register_post_option($name, $option+['post_type'=>$this->name]));
@@ -1208,7 +1204,7 @@ class WPJAM_Posts{
 
 		foreach(array_diff($taxonomies, ['post_format']) as $tax){	// taxonomy 参数处理，同时支持 $_GET 和 $query_vars 参数
 			if($tax == 'category'){
-				$vars['cat']	??= wpjam_find(['category_id', 'cat_id'], fn($k)=> (int)wpjam_get_parameter($k), 'result');
+				$vars['cat']	??= wpjam_found(['category_id', 'cat_id'], fn($k)=> (int)wpjam_get_parameter($k));
 	
 				if(!$vars['cat']){
 					unset($vars['cat']);	
@@ -1259,14 +1255,13 @@ class WPJAM_Posts{
 			$wp_query	= $GLOBALS['wp_query'];
 			$query_vars	= array_merge($wp->query_vars, $args);
 
-			$number		= wpjam_find(['number', 'posts_per_page'], fn($k)=> (int)wpjam_get_parameter($k), 'result');
+			$number		= wpjam_found(['number', 'posts_per_page'], fn($k)=> (int)wpjam_get_parameter($k));
+			$offset		= wpjam_get_parameter('offset');
 			$query_vars	+= ($number && $number != -1) ? ['posts_per_page'=> $number > 100 ? 100 : $number] : [];
-			$query_vars	+= ['offset'=> wpjam_get_parameter('offset')];
-			$post__in	= wpjam_get_parameter('post__in');
-			$post__in	= $post__in ? wp_parse_id_list($post__in) : [];
+			$query_vars	+= $offset ? compact('offset') : [];
 
-			if($post__in){
-				$query_vars['post__in']			= $post__in;
+			if($post__in = wpjam_get_parameter('post__in')){
+				$query_vars['post__in']			= wp_parse_id_list($post__in?: []);
 				$query_vars['orderby']			??= 'post__in';
 				$query_vars['posts_per_page']	??= -1;	
 			}
@@ -1381,7 +1376,7 @@ class WPJAM_Posts{
 		if(!$post_type){
 			$post_types	= get_post_types(['_builtin'=>false, 'query_var'=>true], 'objects');
 			$query_keys	= wp_list_pluck($post_types, 'query_var')+['post'=>'name', 'page'=>'pagename'];
-			$post_type	= wpjam_find($query_keys, fn($key, $post_type)=> !empty($query_vars[$key]), 'key');
+			$post_type	= array_find_key($query_keys, fn($key, $post_type)=> !empty($query_vars[$key]));
 
 			if($post_type){
 				$key	= $query_keys[$post_type];

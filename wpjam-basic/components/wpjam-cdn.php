@@ -7,10 +7,10 @@ Version: 2.0
 */
 class WPJAM_CDN extends WPJAM_Option_Model{
 	public static function get_sections(){
-		$cdn_fields	= WPJAM_CDN_Type::get_setting_fields(['name'=>'cdn_name', 'title'=>'云存储'])+[
-			'host'		=> ['title'=>'CDN 域名',	'type'=>'url',		'show_if'=>['cdn_name', '!=', ''],	'description'=>'设置为在CDN云存储绑定的域名。'],
-			'disabled'	=> ['title'=>'使用本站',	'type'=>'checkbox',	'show_if'=>['cdn_name', ''],		'label'=>'如使用 CDN 之后切换回使用本站图片，请勾选该选项，并将原 CDN 域名填回「本地设置」的「额外域名」中。'],
-			'image'		=> ['title'=>'图片处理',	'type'=>'checkbox',	'show_if'=>['cdn_name', 'IN', ['aliyun_oss', 'volc_imagex', 'qcloud_cos', 'qiniu']],	'class'=>'switch',	'value'=>1,	'label'=>'开启云存储图片处理功能，使用云存储进行裁图、添加水印等操作。<br />&emsp;<strong>*</strong> 注意：开启之后，文章和媒体库中的所有图片都会镜像到云存储。'],
+		$cdn_fields	= WPJAM_CDN_Type::get_setting_fields(['type'=>'select', 'name'=>'cdn_name', 'title'=>'云存储'])+[
+			'host'		=> ['title'=>'CDN 域名',	'show_if'=>['cdn_name', '!=', ''],	'type'=>'url',	'description'=>'设置为在CDN云存储绑定的域名。'],
+			'disabled'	=> ['title'=>'切换回本站','show_if'=>['cdn_name', '=', ''],	'label'=>'如使用 CDN 之后切换回使用本站图片，请勾选该选项，并将原 CDN 域名填回「本地设置」的「额外域名」中。'],
+			'image'		=> ['title'=>'图片处理',	'show_if'=>['cdn_name', 'IN', ['aliyun_oss', 'volc_imagex', 'qcloud_cos', 'qiniu']],	'class'=>'switch',	'value'=>1,	'label'=>'开启云存储图片处理功能，使用云存储进行裁图、添加水印等操作。<br />&emsp;<strong>*</strong> 注意：开启之后，文章和媒体库中的所有图片都会镜像到云存储。'],
 		];
 
 		$local_fields	= [
@@ -88,15 +88,6 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function get_menu_page(){
-		return [
-			'parent'	=> 'wpjam-basic',
-			'function'	=> 'option',
-			'position'	=> 2,
-			'summary'	=> __FILE__,
-		];
-	}
-
 	public static function get_setting($name='', ...$args){
 		if(in_array($name, ['dx', 'dy'])){
 			$name	= 'distance.'.['dx'=>'width', 'dy'=>'height'][$name];
@@ -120,14 +111,39 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		return $value;
 	}
 
+	public static function get_sizes($id, $meta){
+		foreach(wp_get_registered_image_subsizes() as $name => $size){
+			$downsize	= self::downsize($id, $size, $meta);
+
+			if($downsize && !empty($downsize[3])){
+				$arr	= explode('?', $downsize[0]);
+
+				$sizes[$name]	= [
+					'file'			=> wp_basename($arr[0]).(isset($arr[1]) ? '?'.$arr[1] : ''),
+					'url'			=> $downsize[0],
+					'width'			=> $downsize[1],
+					'height'		=> $downsize[2],
+					'orientation'	=> $downsize[2] > $downsize[1] ? 'portrait' : 'landscape',
+				];
+			}
+		}
+
+		return $sizes ?? [];
+	}
+
 	public static function is($url){
 		return apply_filters('wpjam_is_cdn_url', str_starts_with($url, CDN_HOST), $url);
 	}
 
-	public static function exception($url, $scene){
-		$exceptions	= $scene == 'fetch' ? self::get_setting('exceptions') : '';
+	public static function is_external($url, $scene){
+		if(self::is($url)){
+			return false;
+		}
 
-		return $exceptions ? wpjam_some(array_filter(explode("\n", $exceptions)), fn($v)=> strpos($url, trim($v)) !== false) : false;
+		$exceptions	= $scene == 'fetch' ? self::get_setting('exceptions') : [];
+		$exceptions	= $exceptions ? array_filter(explode("\n", $exceptions)) : [];
+
+		return $exceptions ? array_all($exceptions, fn($v)=> strpos($url, trim($v)) === false) : true;
 	}
 
 	public static function downsize($id, $size, $meta=null){
@@ -175,35 +191,23 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 			return strtr($str, array_fill_keys($locals, $to));
 		}
 
-		$local	= wpjam_find($locals, fn($v)=> str_starts_with($str, $v));
+		$local	= array_find($locals, fn($v)=> str_starts_with($str, $v));
 
 		return $local ? $to.wpjam_remove_prefix($str, $local) : $str;
 	}
 
 	public static function filter_html($html){
-		$html	= self::replace($html, false, true);
+		$local	= preg_quote(LOCAL_HOST).(self::get_setting('no_http') ? '|'.preg_quote(str_replace(['http://', 'https://'], '//', LOCAL_HOST)) : '');
+		$exts	= self::get_setting('exts');
+		$dirs	= self::get_setting('dirs');
+		$dirs	= $dirs ? '('.implode('|', array_map(fn($dir)=> preg_quote(trim($dir, '/')), $dirs)).')\/' : '';
+		$regex	= '#('.$local.')\/('.$dirs.'[^\s\?\\\'\"\;\>\<]{1,}\.('.implode('|', $exts).')'.'[\"\\\'\)\s\]\?]{1})#';
 
-		if(empty(CDN_NAME) && self::get_setting('disabled')){
-			return $html;
-		}
-
-		$dirs		= self::get_setting('dirs');
-		$local		= preg_quote(LOCAL_HOST);
-		$local		.= self::get_setting('no_http') ? '|'.preg_quote(str_replace(['http://', 'https://'], '//', LOCAL_HOST)) : '';
-		$pattern	= '('.$local.')\/(';
-		$pattern	.= $dirs ? '('.implode('|', array_map(fn($dir)=> preg_quote(trim($dir, '/')), $dirs)).')\/' : '';
-		$pattern	.= '[^\s\?\\\'\"\;\>\<]{1,}\.('.implode('|', self::get_setting('exts')).')';
-		$pattern	.= '[\"\\\'\)\s\]\?]{1})';
-
-		return preg_replace('#'.$pattern.'#', CDN_HOST.'/$2', $html);
+		return preg_replace($regex, CDN_HOST.'/$2', self::replace($html, false, true));
 	}
 
 	public static function filter_content_img_tag($img_tag, $context, $attachment_id){
-		if($context != 'the_content'){
-			return $img_tag;
-		}
-
-		$proc	= wpjam_html_tag_processor($img_tag);
+		$proc	= $context == 'the_content' ? wpjam_html_tag_processor($img_tag) : '';
 		$src	= $proc ? $proc->get_attribute('src') : '';
 	
 		if(!$src || wpjam_is_external_url($src)){
@@ -211,25 +215,20 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		}
 
 		$attr	= ['width', 'height'];
-		$name	= $proc->get_attribute('data-size');
 		$size	= wpjam_fill($attr, fn($k)=> $proc->get_attribute($k) ?: 0);
-		$max	= self::get_setting('max_width', ($GLOBALS['content_width'] ?? 0));
-		$max	= (int)apply_filters('wpjam_content_image_width', $max);
-
+		$max	= (int)self::get_setting('max_width', ($GLOBALS['content_width'] ?? 0));
 		$meta	= $attachment_id ? wp_get_attachment_metadata($attachment_id) : null;
-		$meta	= ($meta && is_array($meta)) ? $meta : null;
 
-		if($meta && !$size['width'] && !$size['width']){
+		if($meta && is_array($meta) && !$size['width'] && !$size['height']){
+			$name	= $proc->get_attribute('data-size');
 			$size	= wpjam_slice((($name && $name != 'full' && isset($meta['sizes'][$name])) ? $meta['sizes'][$name] : $meta), $attr);
 			$size	= ($max && $size['width'] > $max) ? ['width'=>$max, 'height'=>(int)($max/$size['width']*$size['height'])] : $size;
-
-			array_walk($attr, fn($k)=> $size[$k] ? $proc->set_attribute($k, $size[$k]) : null);
+			$update	= true;
 		}else{
 			if($max){
 				if($size['width'] > $max){
 					$size	= ['width'=>$max, 'height'=>(int)($max/$size['width']*$size['height'])];
-
-					array_walk($attr, fn($k)=> $size[$k] ? $proc->set_attribute($k, $size[$k]) : null);
+					$update	= true;
 				}elseif($size['width'] == 0){
 					if($size['height'] == 0){
 						$size['width']	= $max;
@@ -238,7 +237,11 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 			}
 		}
 
-		if($meta && is_numeric($size['width']) && is_numeric($size['height'])){
+		if(!empty($update)){
+			array_walk($size, fn($v, $k)=> $v ? $proc->set_attribute($k, $v) : null);
+		}
+
+		if($meta && is_array($meta) && is_numeric($size['width']) && is_numeric($size['height'])){
 			if($size['width']*2 >= $meta['width'] && $size['height']*2 >= $meta['height']){
 				unset($size['width'], $size['height']);
 			}elseif($size['width']*2 >= $meta['width'] && !$size['height']){
@@ -248,30 +251,31 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 			}
 		}
 
-		$size	= wpjam_parse_size($size+['content'=>true], 2);
-		$src	= wpjam_get_thumbnail($src, $size);
-
-		$proc->set_attribute('src', $src);
+		$proc->set_attribute('src', wpjam_get_thumbnail($src, wpjam_parse_size($size+['content'=>true], 2)));
 
 		return $proc->get_updated_html();
 	}
 
-	public static function filter_block($block_content, $parsed_block){
-		if($parsed_block['blockName'] == 'core/image'){
-			$size	= $parsed_block['attrs']['sizeSlug'] ?? '';
+	public static function filter_image_block($content, $parsed){
+		$slug	= $parsed['attrs']['sizeSlug'] ?? '';
+		$slug	= $slug == 'full' ? '' : $slug;
+		$size	= wpjam_slice($parsed['attrs'], ['width', 'height']);
 
-			if($size && $size != 'full'){
-				$proc	= wpjam_html_tag_processor($block_content, 'img');
+		if($slug || $size){
+			$proc	= wpjam_html_tag_processor($content, 'img');
 
-				if($proc){
-					$proc->set_attribute('data-size', $size);
-
-					return (string)$proc;
-				}
+			if($slug){
+				$proc->set_attribute('data-size', $slug);
 			}
+
+			if($size){
+				array_walk($size, fn($v, $k)=> !$proc->get_attribute($k) ? $proc->set_attribute($k, wpjam_remove_postfix($v, 'px')) : null);
+			}
+
+			return (string)$proc;
 		}
 
-		return $block_content;
+		return $content;
 	}
 
 	public static function filter_content($content){
@@ -285,33 +289,12 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 
 		if(self::get_setting('no_subsizes', 1)){
 			add_filter('wp_img_tag_add_srcset_and_sizes_attr', fn()=> false);
+			add_filter('wp_img_tag_add_width_and_height_attr', fn()=> false);
 		}
 
 		add_filter('wp_content_img_tag', [self::class, 'filter_content_img_tag'], 1, 3);
 
 		return $content;
-	}
-
-	public static function filter_attachment_metadata($meta, $id){
-		if(wp_attachment_is_image($id) && is_array($meta) && empty($meta['sizes'])){
-			foreach(wp_get_registered_image_subsizes() as $name => $size){
-				$downsize	= self::downsize($id, $size, $meta);
-
-				if($downsize && !empty($downsize[3])){
-					$arr	= explode('?', $downsize[0]);
-
-					$meta['sizes'][$name]	= [
-						'file'			=> wp_basename($arr[0]).(isset($arr[1]) ? '?'.$arr[1] : ''),
-						'url'			=> $downsize[0],
-						'width'			=> $downsize[1],
-						'height'		=> $downsize[2],
-						'orientation'	=> $downsize[2] > $downsize[1] ? 'portrait' : 'landscape',
-					];
-				}
-			}
-		}
-
-		return $meta;
 	}
 
 	public static function on_plugins_loaded(){
@@ -328,7 +311,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 				add_filter((wpjam_is_json_request() ? 'the_content' : 'wpjam_html'), [self::class, 'filter_html'], 5);
 			}
 
-			add_filter('wpjam_is_external_url', fn($status, $url, $scene)=> $status && !self::is($url) && !self::exception($url, $scene), 10, 3);
+			add_filter('wpjam_is_external_url', fn($status, $url, $scene)=> $status && self::is_external($url, $scene), 10, 3);
 			add_filter('wp_resource_hints', fn($urls, $type)=> array_merge($urls, $type == 'dns-prefetch' ? [CDN_HOST] : []), 10, 2);
 
 			if(self::get_setting('image', 1)){
@@ -346,12 +329,12 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 					add_filter('wp_calculate_image_srcset_meta',	fn()=> []);
 					add_filter('embed_thumbnail_image_size',		fn()=> '160x120');
 					add_filter('intermediate_image_sizes_advanced',	fn($sizes)=> isset($sizes['full']) ? ['full'=>$sizes['full']] : []);
-					add_filter('wp_get_attachment_metadata',		[self::class, 'filter_attachment_metadata'], 10, 2);
+					add_filter('wp_get_attachment_metadata',		fn($meta, $id)=> array_merge($meta, (wp_attachment_is_image($id) && is_array($meta) && empty($meta['sizes'])) ? ['sizes'=>self::get_sizes($id, $meta)] : []), 10, 2);
 				}
 
 				if(self::get_setting('thumbnail', 1)){
-					add_filter('render_block',	[self::class, 'filter_block'], 5, 2);
-					add_filter('the_content',	[self::class, 'filter_content'], 5);
+					add_filter('render_block_core/image',	[self::class, 'filter_image_block'], 5, 2);
+					add_filter('the_content',				[self::class, 'filter_content'], 5);
 				}
 
 				if($exts){
@@ -379,21 +362,19 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 			}
 		}else{
 			if(self::get_setting('disabled')){
+				$replace	= fn($html)=> self::replace($html, false, true);
+
 				if(!is_admin() && !wpjam_is_json_request()){
-					add_filter('wpjam_html',	[self::class, 'filter_html'], 9);
+					add_filter('wpjam_html',	$replace, 9);
 				}
 
-				add_filter('the_content',		[self::class, 'filter_html'], 5);
-				add_filter('wpjam_thumbnail',	[self::class, 'filter_html'], 9);
+				add_filter('the_content',		$replace, 5);
+				add_filter('wpjam_thumbnail',	$replace, 9);
 			}
 		}
 	}
 }
 
-/**
-* @config single
-**/
-#[config('single')]
 class WPJAM_CDN_Type extends WPJAM_Register{
 	public static function load($name){
 		$object	= self::get($name);
@@ -436,8 +417,8 @@ function wpjam_unregister_cdn($name){
 	return WPJAM_CDN_Type::unregister($name);
 }
 
-function wpjam_cdn_get_setting($name, $default=null){
-	return WPJAM_CDN::get_setting($name, $default);
+function wpjam_cdn_get_setting($name, ...$args){
+	return WPJAM_CDN::get_setting($name, ...$args);
 }
 
 function wpjam_cdn_host_replace($html, $to_cdn=true){
@@ -477,5 +458,6 @@ wpjam_register_option('wpjam-cdn',	[
 	'title'			=> 'CDN加速',
 	'model'			=> 'WPJAM_CDN',
 	'hooks'			=> ['plugins_loaded', ['WPJAM_CDN', 'on_plugins_loaded'], 99],
+	'menu_page'		=> ['parent'=>'wpjam-basic', 'position'=>2, 'summary'=>__FILE__],
 	'site_default'	=> true,
 ]);

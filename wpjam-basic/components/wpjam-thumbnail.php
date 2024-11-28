@@ -48,15 +48,6 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function get_menu_page(){
-		return [
-			'parent'	=> 'wpjam-basic',
-			'function'	=> 'option',
-			'position'	=> 3,
-			'summary'	=> __FILE__,
-		];
-	}
-
 	public static function get_default(){
 		$default	= self::get_setting('default', []);
 		$default	= ($default && is_array($default)) ? $default[array_rand($default)] : '';
@@ -73,7 +64,7 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 			}
 		}elseif($order['type'] == 'term'){
 			if($order['taxonomy'] && $object->in_taxonomy($order['taxonomy'])){
-				return wpjam_find($object->get_terms($order['taxonomy']), fn($term)=> wpjam_get_term_thumbnail_url($term), 'result');
+				return wpjam_found($object->get_terms($order['taxonomy']), fn($term)=> wpjam_get_term_thumbnail_url($term));
 			}
 		}
 	}
@@ -81,7 +72,7 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 	public static function filter_post_thumbnail_url($url, $post){
 		if(is_object_in_taxonomy($post, 'category')){
 			$object	= wpjam_get_post_object($post);
-			$value	= wpjam_find(self::get_setting('post_thumbnail_orders', []), fn($order)=> self::get_by_order($order, $object), 'result');
+			$value	= wpjam_found(self::get_setting('post_thumbnail_orders', []), fn($order)=> self::get_by_order($order, $object));
 
 			return $value ?: ($url ?: self::get_default());
 		}
@@ -165,4 +156,5 @@ wpjam_register_option('wpjam-thumbnail', [
 	'title'			=> '缩略图设置',
 	'model'			=> 'WPJAM_Thumbnail',
 	'site_default'	=> true,
+	'menu_page'		=> ['parent'=>'wpjam-basic', 'position'=>3, 'summary'=>__FILE__]
 ]);

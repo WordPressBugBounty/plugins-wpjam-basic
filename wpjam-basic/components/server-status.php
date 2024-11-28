@@ -23,7 +23,7 @@ class WPJAM_Server_Status{
 			
 			if(@is_readable('/proc/meminfo')){
 				$mems	= explode("\n", trim(file_get_contents('/proc/meminfo')));
-				$mem	= (int)wpjam_remove_prefix(wpjam_find($mems, fn($m) => str_starts_with($m, 'MemTotal:')), 'MemTotal:');
+				$mem	= (int)wpjam_remove_prefix(array_find($mems, fn($m) => str_starts_with($m, 'MemTotal:')), 'MemTotal:');
 				$base[]	= round($mem/1024/1024).'G';
 			}
 
@@ -271,6 +271,6 @@ wpjam_add_menu_page('server-status', [
 	'chart'			=> true,
 	'order'			=> 9,
 	'function'		=> 'tab',
-	'capability'	=> is_multisite() ? 'manage_site':'manage_options',
+	'capability'	=> is_multisite() ? 'manage_site' : 'manage_options',
 	'tabs'			=> ['WPJAM_Server_Status', 'get_tabs']
 ]);

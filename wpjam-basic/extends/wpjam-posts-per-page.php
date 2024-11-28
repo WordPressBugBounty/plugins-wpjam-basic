@@ -95,24 +95,6 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 		return $fields;
 	}
 
-	public static function get_menu_page(){
-		return [
-			'tab_slug'		=> 'posts-per-page',
-			'function'		=> 'option',	
-			'option_name'	=> 'wpjam-posts-per-page',
-			'plugin_page'	=> 'wpjam-posts',
-			'order'			=> 18,
-			'summary'		=> __FILE__
-		];
-	}
-
-	public static function get_admin_load(){
-		return [
-			'base'	=> 'edit-tags',
-			'model'	=> self::class
-		];
-	}
-
 	public static function builtin_page_load($screen){
 		if(is_taxonomy_hierarchical($screen->taxonomy) && self::get_setting($screen->taxonomy.'_individual')){
 			$default	= self::get_setting($screen->taxonomy) ?: get_option('posts_per_page');
@@ -213,6 +195,8 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 }
 
 wpjam_register_option('wpjam-posts-per-page',	[
-	'model'	=> 'WPJAM_Posts_Per_Page',
-	'title'	=> '文章数量'
+	'model'			=> 'WPJAM_Posts_Per_Page',
+	'title'			=> '文章数量',
+	'menu_page'		=> ['tab_slug'=>'posts-per-page', 'plugin_page'=>'wpjam-posts', 'order'=>18, 'summary'=>__FILE__],
+	'admin_load'	=> ['base'=>'edit-tags']
 ]);

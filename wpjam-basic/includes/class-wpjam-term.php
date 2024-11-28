@@ -316,17 +316,17 @@ class WPJAM_Term{
 
 		if($object && ($object->hierarchical || ($type == 'select' || $type == 'mu-select'))){
 			if(is_admin() && !$type && $object->levels > 1 && $object->selectable){
+				$field	= ['type'=>'number']+self::parse_option_args($args);
+
 				return array_merge($args, [
 					'type'		=> 'fields',
-					'fields'	=> wpjam_array(range(0, $object->levels-1), fn($k, $v)=> ['level_'.$v, ['type'=>'number']]),
+					'fields'	=> wpjam_array(range(0, $object->levels-1), fn($k, $v)=> ['level_'.$v, $field]),
 					'render'	=> function($args){
 						$tax	= $this->taxonomy;
 						$values	= $this->value ? array_reverse([$this->value, ...get_ancestors($this->value, $tax, 'taxonomy')]) : [];
 						$terms	= get_terms(['taxonomy'=>$tax, 'hide_empty'=>0]);
 						$fields	= $this->fields;
 						$parent	= 0;
-
-						$option_all	= WPJAM_Term::parse_option_all($this);
 
 						for($level=0; $level < count($fields); $level++){
 							$options	= is_null($parent) ? [] : array_column(wp_list_filter($terms, ['parent'=>$parent]), 'name', 'term_id');
@@ -335,7 +335,7 @@ class WPJAM_Term{
 
 							$fields['level_'.$level]	= array_merge(
 								$fields['level_'.$level],
-								['type'=>'select', 'data_type'=>'taxonomy', 'taxonomy'=>$tax, 'value'=>$value, 'options'=>$option_all+$options],
+								['type'=>'select', 'data_type'=>'taxonomy', 'taxonomy'=>$tax, 'value'=>$value, 'options'=>$options],
 								($level > 0 ? ['show_if'=>['level_'.($level-1), '!=', 0, ['query_arg'=>'parent']]] : [])
 							);
 						}
@@ -354,11 +354,9 @@ class WPJAM_Term{
 			}
 
 			if($type == 'select' || $type == 'mu-select'){
-				$option_all	= self::parse_option_all($args);
-
-				return array_merge($args, [
+				return array_merge($args, self::parse_option_args($args), [
 					'type'		=> $type,
-					'options'	=> fn()=> ($option_all+array_column(wpjam_get_terms(['taxonomy'=>$this->taxonomy, 'hide_empty'=>0, 'format'=>'flat', 'parse'=>false]), 'name', 'term_id'))
+					'options'	=> fn()=> array_column(wpjam_get_terms(['taxonomy'=>$this->taxonomy, 'hide_empty'=>0, 'format'=>'flat', 'parse'=>false]), 'name', 'term_id')
 				]);
 			}
 		}
@@ -366,11 +364,16 @@ class WPJAM_Term{
 		return $args+['type'=>'text', 'class'=>'all-options', 'placeholder'=>'请输入'.$title.'ID或者输入关键字筛选'];
 	}
 
-	public static function parse_option_all($args){
-		$option_all	= wpjam_pull($args, 'option_all', true);
-		$option_all	= is_bool($option_all) ? ($option_all ? '请选择': []) : $option_all;
+	public static function parse_option_args($args){
+		$parsed	= ['show_option_all'=>'请选择', 'option_all_value'=>''];
 
-		return is_array($option_all) ? $option_all : [''=>$option_all];
+		if(isset($args['option_all'])){	// 兼容
+			$v	= $args['option_all'];
+
+			return $v === false ? [] : ($v === true ? [] : ['show_option_all'=>$v])+$parsed;
+		}
+
+		return wpjam_map($parsed, fn($v, $k)=> $args[$k] ?? $v);
 	}
 
 	public static function query_items($args){
@@ -880,7 +883,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 				add_filter('taxonomy_labels_'.$this->name,	[$this, 'filter_labels']);
 			}
 
-			wpjam_load('init', fn()=> register_taxonomy($this->name, $this->object_type, $this->to_array()));
+			wpjam_init(fn()=> register_taxonomy($this->name, $this->object_type, $this->to_array()));
 
 			if($this->options){
 				wpjam_map($this->options, fn($option, $name)=> wpjam_register_term_option($name, $option+['taxonomy'=>$this->name]));

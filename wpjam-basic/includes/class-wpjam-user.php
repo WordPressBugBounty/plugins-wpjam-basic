@@ -243,11 +243,20 @@ class WPJAM_User{
 				$data['nickname']	= $data['display_name']	= $args['nickname'];
 			}
 
+			$meta_input	= wpjam_pull($data, 'meta_input');
 			$user_id	= self::insert($data);
 
 			wp_cache_delete($lock_key, 'users');
 
-			return is_wp_error($user_id) ? $user_id : self::get_instance($user_id);
+			if(is_wp_error($user_id)){
+				return $user_id;
+			}
+
+			if($meta_input){
+				wpjam_update_metadata('user', $user_id, $meta);
+			}
+
+			return self::get_instance($user_id);
 		}, $args);
 	}
 

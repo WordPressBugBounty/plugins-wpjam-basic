@@ -28,24 +28,6 @@ if(!function_exists('clamp')){
 	}
 }
 
-if(!function_exists('array_is_list')){
-	function array_is_list($arr){
-		if(([] === $arr ) || (array_values($arr) === $arr)){
-			return true;
-		}
-
-		$next_key	= -1;
-
-		foreach($arr as $k => $v){
-			if(++$next_key !== $k){
-				return false;
-			}
-		}
-
-		return true;
-	}
-}
-
 if(!function_exists('wp_hash')){
 	function wp_hash($data, $scheme='auth', $algo='md5') {
 		return hash_hmac($algo, $data, wp_salt($scheme));
@@ -104,7 +86,7 @@ if(!function_exists('array_value_last')){
 
 if(!function_exists('array_first')){
 	function array_first($array, $callback=null){
-		return is_null($callback) ? reset($array) : wpjam_find($array, $callback);
+		return is_null($callback) ? reset($array) : array_find($array, $callback);
 	}
 }
 
@@ -538,22 +520,11 @@ function wpjam_list_filter($list, $args=[], $operator='AND'){
 	return wpjam_filter($list, $args, $operator);
 }
 
-function wpjam_list_flatten($list, $depth=0, $args=[]){
-	$flat	= [];
-
+function wpjam_list_flatten($list, $args=[]){
 	$name		= $args['name'] ?? 'name'; 
 	$children	= $args['children'] ?? 'children'; 
 
-	foreach($list as $item){
-		$item[$name]	= str_repeat('&emsp;', $depth).$item[$name];
-		$flat[]			= $item;
-
-		if(!empty($item[$children])){
-			$flat	= array_merge($flat, wpjam_list_flatten($item[$children], $depth+1, $args));
-		}
-	}
-
-	return $flat;
+	return wpjam_flatten($list, $children, fn($item, $k, $d)=> [array_merge($item, [$name=>str_repeat('&emsp;', $d).$item[$name]])]);
 }
 
 //中文截取方式
@@ -563,8 +534,8 @@ function wpjam_mb_strimwidth($text, $start=0, $width=40, $trimmarker='...', $enc
 	return $text ? mb_strimwidth($text, $start, $width, $trimmarker, $encoding) : '';
 }
 
-function wpjam_parse_fields($fields){
-	return WPJAM_Fields::flatten($fields);
+function wpjam_parse_fields($fields, $args=[]){
+	return WPJAM_Fields::parse($fields, wp_parse_args($args, ['flat'=>true]));
 }
 
 function wpjam_field_get_icon($name){
@@ -688,7 +659,7 @@ function wpjam_is_remote_image($img_url, $strict=true){
 }
 
 function wpjam_get_content_width(){
-	return (int)apply_filters('wpjam_content_image_width', wpjam_cdn_get_setting('width'));
+	return (int)wpjam_cdn_get_setting('width');
 }
 
 function wpjam_cdn_content($content){
@@ -937,7 +908,6 @@ add_action('wpjam_loaded', function(){
 
 	function_alias('wpjam_is_module', 'is_module');
 
-	function_alias('wpjam_is_json', 'is_wpjam_json');
 	function_alias('wpjam_get_json_object', 'wpjam_get_api_setting');
 	function_alias('wpjam_get_json_object', 'wpjam_get_api');
 	function_alias('wpjam_get_current_json', 'wpjam_get_json');
@@ -1383,12 +1353,8 @@ class WPJAM_User_Message{
 		<script type="text/javascript">
 		jQuery(function($){
 			$('body').on('page_action_success', function(e, response){
-				var action		= response.page_action;
-				var action_type	= response.page_action_type;
-
-				if(action == 'delete_message'){
-					var message_id	= response.message_id;
-					$('#message_'+message_id).animate({opacity: 0.1}, 500, function(){ $(this).remove();});
+				if(response.page_action == 'delete_message'){
+					$('#message_'+response.message_id).animate({opacity: 0.1}, 500, function(){ $(this).remove();});
 				}
 			});
 		});
@@ -1568,32 +1534,12 @@ trait WPJAM_Register_Trait{
 
 	protected static $_registereds	= [];
 
-	public static function parse_name($name){
-		if(empty($name)){
-			trigger_error(self::class.'的注册 name 为空');
-			return null;
-		}elseif(is_numeric($name)){
-			trigger_error(self::class.'的注册 name「'.$name.'」'.'为纯数字');
-			return null;
-		}elseif(!is_string($name)){
-			trigger_error(self::class.'的注册 name「'.var_export($name, true).'」不为字符串');
-			return null;
-		}
-
-		return $name;
-	}
-
 	public static function register(...$args){
 		if(count($args) == 1){
 			$object	= $args[0];
 			$name	= $object->name;
 		}else{
-			$name	= self::parse_name($args[0]);
-
-			if(is_null($name)){
-				return null;
-			}
-
+			$name	= $args[0];
 			$object	= new static($name, $args[1]);
 		}
 

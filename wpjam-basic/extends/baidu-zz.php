@@ -19,45 +19,34 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 
 	public static function get_menu_page(){
 		$tab_page	= [
-			'tab_slug'		=> 'baidu-zz',
-			'plugin_page'	=> 'wpjam-seo',
-			'summary'		=> __FILE__,
+			'tab_slug'	=> 'baidu-zz',
+			'summary'	=> __FILE__,
 		];
 
 		if(self::submittable()){
-			wpjam_register_page_action('set_baidu_zz', [
+			$object	= wpjam_register_page_action('set_baidu_zz', [
 				'title' 			=> '设置',
 				'submit_text'		=> '设置',
 				'validate'			=> true,
-				'value_callback'	=> [self::class, 'get_setting'],
-				'callback'			=> [self::class, 'update_setting'],
+				'dismiss'			=> true,
+				'response'			=> 'redirect',
 				'fields'			=> [self::class, 'get_fields'],
+				'value_callback'	=> [self::class, 'get_setting'],
+				'callback'			=> [self::class, 'update_setting']
 			]);
 
-			return array_merge($tab_page, [
+			$tab_page	+= [
 				'function'		=> 'form',
 				'submit_text'	=> '批量提交',
 				'callback'		=> [self::class, 'batch_submit'],
 				'fields'		=> fn()=> ['view'=> [
 					'type'	=> 'view',
-					'value'	=> '已设置百度站长的站点和密钥（'.wpjam_get_page_button('set_baidu_zz', ['button_text'=>'修改', 'class'=>'']).'），可以使用百度站长更新内容接口批量将博客中的所有内容都提交给百度搜索资源平台。'
+					'value'	=> '已设置百度站长的站点和密钥（'.$object->get_button(['button_text'=>'修改', 'class'=>'']).'），可以使用百度站长更新内容接口批量将博客中的所有内容都提交给百度搜索资源平台。'
 				]],
-			]);
-		}else{
-			return array_merge($tab_page, [
-				'function'		=> 'option',
-				'option_name'	=> 'wpjam-seo',
-			]);
-		}
-	}
-
-	public static function get_admin_load(){
-		if(self::submittable()){
-			return [
-				'base'	=> ['post','edit'], 
-				'model'	=> self::class
 			];
 		}
+
+		return $tab_page;
 	}
 
 	public static function submit($urls, $type=''){
@@ -186,6 +175,10 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 	<?php }
 
 	public static function builtin_page_load($screen){
+		if(!self::submittable()){
+			return;
+		}
+
 		if($screen->base == 'edit'){
 			if(is_post_type_viewable($screen->post_type)){
 				wpjam_register_list_table_action('notify_baidu_zz', [
@@ -218,5 +211,6 @@ wpjam_register_option('wpjam-seo',	[
 	'current_tab'	=> 'baidu-zz',
 	'model'			=> 'WPJAM_Baidu_ZZ',
 	'title'			=> '百度站长',
-	'ajax'			=> false
+	'ajax'			=> false,
+	'admin_load'	=> ['base'=>['post','edit']]
 ]);	

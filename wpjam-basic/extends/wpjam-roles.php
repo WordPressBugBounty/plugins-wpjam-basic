@@ -136,16 +136,6 @@ class WPJAM_Role{
 		wpjam_map(array_diff($caps, $current), fn($cap)=> $user->add_cap($cap));
 	}
 
-	public static function get_list_table(){
-		return [
-			'singular'		=> 'wpjam-role',
-			'plural'		=> 'wpjam-roles',
-			'primary_key'	=> 'role',
-			'capability'	=> 'edit_roles',
-			'model'			=> self::class,
-		];
-	}
-
 	public static function builtin_page_load($screen_base){
 		$capability	= is_multisite() ? 'manage_sites' : 'manage_options';
 
@@ -173,10 +163,16 @@ if(is_admin()){
 		'tab_slug'		=> 'roles',
 		'title'			=> '角色管理',
 		'order'			=> 8,
-		'function'		=> 'list',
-		'list_table'	=> 'WPJAM_Role',
 		'capability'	=> 'edit_roles',
-		'map_meta_cap'	=> ['WPJAM_Role', 'map_meta_cap']
+		'map_meta_cap'	=> ['WPJAM_Role', 'map_meta_cap'],
+		'function'		=> 'list',
+		'list_table'	=> [
+			'singular'		=> 'wpjam-role',
+			'plural'		=> 'wpjam-roles',
+			'primary_key'	=> 'role',
+			'capability'	=> 'edit_roles',
+			'model'			=> 'WPJAM_Role',
+		]
 	]);
 
 	wpjam_add_admin_load([

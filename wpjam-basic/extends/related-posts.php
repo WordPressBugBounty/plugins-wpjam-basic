@@ -40,17 +40,6 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 		return $fields;
 	}
 
-	public static function get_menu_page(){
-		return [
-			'tab_slug'		=> 'related-posts',
-			'plugin_page'	=> 'wpjam-posts',
-			'order'			=> 19,
-			'function'		=> 'option',
-			'option_name'	=> 'wpjam-related-posts',
-			'summary'		=> __FILE__,
-		];
-	}
-
 	public static function get_post_types(){
 		$ptypes	= ['post'=>__('Post')];
 
@@ -166,6 +155,7 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 }
 
 wpjam_register_option('wpjam-related-posts', [
-	'model'	=> 'WPJAM_Related_Posts',
-	'title'	=> '相关文章'
+	'model'		=> 'WPJAM_Related_Posts',
+	'title'		=> '相关文章',
+	'menu_page'	=> ['tab_slug'=>'related', 'plugin_page'=>'wpjam-posts', 'order'=>19, 'summary'=>__FILE__]
 ]);

@@ -53,9 +53,11 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.6.2 = 
+= 6.6.3 = 
 * 新增 wpjam_exists 函数
 * 新增 wpjam_slice 函数
+* 新增 wpjam_toggle 函数
+* 新增 wpjam_flatten 函数
 
 = 6.6 =
 * 新增 wpjam_include 函数用于加载文件

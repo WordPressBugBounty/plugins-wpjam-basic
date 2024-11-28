@@ -10,7 +10,9 @@ class WPJAM_Shortcode{
 		$attr		= array_map('esc_attr', (array)$attr);
 		$content	= wp_kses($content, 'post');
 
-		if($tag == 'email'){
+		if($tag == 'hide'){
+			return '';
+		}elseif($tag == 'email'){
 			$attr	= shortcode_atts(['mailto'=>false], $attr);
 
 			return antispambot($content, $attr['mailto']);
@@ -110,23 +112,7 @@ class WPJAM_Shortcode{
 	}
 
 	public static function query_items($args){
-		foreach($GLOBALS['shortcode_tags'] as $tag => $callback){
-			if(is_array($callback)){
-				if(is_object($callback[0])){
-					$callback	= '<p>'.get_class($callback[0]).'->'.(string)$callback[1].'</p>';
-				}else{
-					$callback	= '<p>'.$callback[0].'->'.(string)$callback[1].'</p>';
-				}
-			}elseif(is_object($callback)){
-				$callback	= '<pre>'.print_r($callback, true).'</pre>';
-			}else{
-				$callback	= wpautop($callback);
-			}
-
-			$items[]	= ['tag'=>wpautop($tag), 'callback'=>$callback];
-		}
-
-		return $items ?? [];
+		return array_values(wpjam_map($GLOBALS['shortcode_tags'], fn($callback, $tag)=> ['tag'=>wpautop($tag), 'callback'=>wpjam_render_callback($callback)]));
 	}
 
 	public static function get_actions(){
@@ -140,30 +126,23 @@ class WPJAM_Shortcode{
 		];
 	}
 
-	public static function get_list_table(){
-		return [
-			'model'			=> self::class,
-			'primary_key'	=> 'tag',
-		];
+	public static function add_hooks(){
+		wpjam_map(['hide', 'email', 'list', 'table', 'code', 'youku', 'qqv', 'bilibili', 'tudou', 'sohutv'], fn($tag)=> add_shortcode($tag,	[self::class, 'callback']));
+
+		if(is_admin()){
+			add_action('wpjam_admin_init', fn()=> wpjam_add_menu_page('wpjam-shortcodes', [
+				'parent'		=> 'wpjam-basic',
+				'menu_title'	=> '常用简码',
+				'network'		=> false,
+				'summary'		=> __FILE__,
+				'function'		=> 'list',
+				'list_table'	=> [
+					'model'			=> self::class,
+					'primary_key'	=> 'tag',
+				],
+			]));
+		}
 	}
 }
 
-add_shortcode('hide',		'__return_empty_string');
-add_shortcode('email',		['WPJAM_Shortcode', 'callback']);
-add_shortcode('list',		['WPJAM_Shortcode', 'callback']);
-add_shortcode('table',		['WPJAM_Shortcode', 'callback']);
-add_shortcode('code',		['WPJAM_Shortcode', 'callback']);
-add_shortcode('youku',		['WPJAM_Shortcode', 'callback']);
-add_shortcode('qqv',		['WPJAM_Shortcode', 'callback']);
-add_shortcode('bilibili',	['WPJAM_Shortcode', 'callback']);
-add_shortcode('tudou',		['WPJAM_Shortcode', 'callback']);
-add_shortcode('sohutv',		['WPJAM_Shortcode', 'callback']);
-
-wpjam_add_menu_page('wpjam-shortcodes', [
-	'parent'		=> 'wpjam-basic',
-	'menu_title'	=> '常用简码',
-	'network'		=> false,
-	'function'		=> 'list',
-	'list_table'	=> 'WPJAM_Shortcode',
-	'summary'		=> __FILE__,
-]);
+WPJAM_Shortcode::add_hooks();

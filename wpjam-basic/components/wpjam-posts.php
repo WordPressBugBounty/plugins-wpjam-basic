@@ -36,72 +36,38 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		]]];
 	}
 
-	public static function get_menu_page(){
-		return [
-			'parent'		=> 'wpjam-basic',
-			'menu_slug'		=> 'wpjam-posts',
-			'position'		=> 4,
-			'function'		=> 'tab',
-			'tabs'			=> ['posts'=>[
-				'title'			=> '文章设置',
-				'function'		=> 'option',
-				'option_name'	=> 'wpjam-basic',
-				'site_default'	=> true,
-				'order'			=> 20,
-				'summary'		=> __FILE__,
-			]]
-		];
-	}
-
-	public static function get_admin_load(){
-		return [
-			'base'	=> ['edit', 'upload', 'post', 'edit-tags', 'term'],
-			'model'	=> self::class
-		];
-	}
-
 	public static function is_wc_shop($post_type){
 		return defined('WC_PLUGIN_FILE') && str_starts_with($post_type, 'shop_');
 	}
 
 	public static function find_by_name($post_name, $post_type='', $post_status='publish'){
-		$args			= $post_status && $post_status != 'any' ? ['post_status'=> $post_status] : [];
-		$args_with_type	= ($post_type && $post_type != 'any') ? array_merge($args, ['post_type'=>$post_type]) : [];
-		$post_types		= get_post_types(['public'=>true, 'exclude_from_search'=>false]);
-		$post_types		= array_diff($post_types, ['attachment']);
-		$args_for_meta	= array_merge($args, ['post_type'=>array_values($post_types)]);
+		$args		= $post_status && $post_status != 'any' ? ['post_status'=> $post_status] : [];
+		$with_type	= $post_type && $post_type != 'any' ? $args+['post_type'=>$post_type] : $args;
+		$for_meta	= $args+['post_type'=>array_values(array_diff(get_post_types(['public'=>true, 'exclude_from_search'=>false]), ['attachment']))];
 
 		$meta	= wpjam_get_by_meta('post', '_wp_old_slug', $post_name);
 		$posts	= $meta ? WPJAM_Post::get_by_ids(array_column($meta, 'post_id')) : [];
 
-		if($args_with_type){
-			$post	= wpjam_find($posts, $args_with_type);
-
-			if($post){
+		if($with_type){
+			if($post = wpjam_find($posts, $with_type)){
 				return $post;
 			}
 		}
 
-		$post	= wpjam_find($posts, $args_for_meta);
-
-		if($post){
+		if($post = wpjam_find($posts, $for_meta)){
 			return $post;
 		}
 
-		$wpdb		= $GLOBALS['wpdb'];
-		$post_types	= get_post_types(['public'=>true, 'hierarchical'=>false, 'exclude_from_search'=>false]);
-		$post_types	= array_diff($post_types, ['attachment']);
+		$wpdb	= $GLOBALS['wpdb'];
+		$types	= array_diff(get_post_types(['public'=>true, 'hierarchical'=>false, 'exclude_from_search'=>false]), ['attachment']);
+		$where	= "post_type in ('" . implode( "', '", array_map('esc_sql', $types)) . "')";
+		$where	.= ' AND '.$wpdb->prepare("post_name LIKE %s", $wpdb->esc_like($post_name).'%');
 
-		$where		= "post_type in ('" . implode( "', '", array_map('esc_sql', $post_types)) . "')";
-		$where		.= ' AND '.$wpdb->prepare("post_name LIKE %s", $wpdb->esc_like($post_name).'%');
+		$ids	= $wpdb->get_col("SELECT ID FROM $wpdb->posts WHERE $where");
+		$posts	= $ids ? WPJAM_Post::get_by_ids($ids) : [];
 
-		$post_ids	= $wpdb->get_col("SELECT ID FROM $wpdb->posts WHERE $where");
-		$posts		= $post_ids ? WPJAM_Post::get_by_ids($post_ids) : [];
-
-		if($args_with_type){
-			$post	= wpjam_find($posts, $args_with_type);
-
-			if($post){
+		if($with_type){
+			if($post = wpjam_find($posts, $with_type)){
 				return $post;
 			}
 		}
@@ -110,6 +76,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 	}
 
 	public static function upload_external_images($id){
+		$bulk		= (int)wpjam_get_post_parameter('bulk') == 2;
 		$object		= wpjam_post($id);
 		$content	= $object->content;
 
@@ -118,57 +85,45 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			$replace	= wpjam_fetch_external_images($img_urls, $id);
 
 			if($replace){
-				$result	= $object->save(['post_content'=>str_replace($img_urls, $replace, $content)]);
-			}else{
-				$result	= new WP_Error('error', '文章中无外部图片');
+				return $object->save(['post_content'=>str_replace($img_urls, $replace, $content)]);
 			}
-		}else{
-			$result	= new WP_Error('error', '文章中无图片');
+
+			return $bulk ? true : new WP_Error('error', '文章中无外部图片');
 		}
 
-		return is_wp_error($result) && (int)wpjam_get_post_parameter('bulk') == 2 ? true : $result;
+		return $bulk ? true : new WP_Error('error', '文章中无图片');
 	}
 
-	public static function filter_single_row($single_row, $id){
+	public static function filter_single_row($row, $id){
 		$object	= get_screen_option('object');
 
 		if(get_current_screen()->base == 'edit'){
-			if(self::get_setting('post_list_set_thumbnail', 1) && ($object->supports('thumbnail') || $object->supports('images'))){
-				$thumbnail	= get_the_post_thumbnail($id, [50,50]) ?: '<span class="no-thumbnail">暂无图片</span>';
-				$thumbnail	= '[row_action name="set" class="wpjam-thumbnail-wrap" fallback="1"]'.$thumbnail.'[/row_action]';
-				$single_row	= str_replace('<a class="row-title" ', $thumbnail.'<a class="row-title" ', $single_row);
-			}
-
-			$set_action	= '[row_action name="set" class="row-action"]<span class="dashicons dashicons-edit"></span>[/row_action]';
-			$single_row = preg_replace('/(<strong>.*?<a class=\"row-title\".*?<\/a>.*?)(<\/strong>)/is', '$1 '.$set_action.'$2', $single_row);
+			$icon	= '<span class="dashicons dashicons-edit"></span>';
+			$row	= preg_replace('/(<strong>.*?<a class=\"row-title\".*?<\/a>.*?)(<\/strong>)/is', '$1 [row_action name="set" class="row-action"]'.$icon.'[/row_action]$2', $row);
 
 			if(self::get_setting('post_list_ajax', 1)){
-				$quick_edit	= '<a title="快速编辑" href="javascript:;" class="editinline row-action"><span class="dashicons dashicons-edit"></span></a>';
+				$columns	= array_map(fn($tax)=> 'column-'.preg_quote($tax->column_name, '/'), $object->get_taxonomies(['show_in_quick_edit'=>true]));
+				$columns[]	= 'column-author';
+				$row		= preg_replace('/(<td class=\'[^\']*('.implode('|', $columns).')[^\']*\'.*?>.*?)(<\/td>)/is', '$1 <a title="快速编辑" href="javascript:;" class="editinline row-action">'.$icon.'</a>$3', $row);
+			}
 
-				if($object->supports('author')){
-					$single_row = preg_replace('/(<td class=\'author column-author\' .*?>.*?)(<\/td>)/is', '$1 '.$quick_edit.'$2', $single_row);
-				}
-
-				foreach($object->get_taxonomies(['show_in_quick_edit'=>true]) as $tax_object){
-					$single_row	= preg_replace('/(<td class=\''.$tax_object->column_name.' column-'.$tax_object->column_name.'\' .*?>.*?)(<\/td>)/is', '$1 '.$quick_edit.'$3', $single_row);
-				}
+			if(self::get_setting('post_list_set_thumbnail', 1) && array_any(['thumbnail', 'images'], fn($v)=> $object->supports($v))){
+				$thumb	= get_the_post_thumbnail($id, [50,50]) ?: '暂无图片';
 			}
 		}else{
 			if(self::get_setting('post_list_set_thumbnail', 1) && $object->supports('thumbnail')){
-				$thumb_url	= wpjam_get_term_thumbnail_url($id, [100, 100]);
-
-				if($thumb_url){
-					$thumbnail	= wpjam_tag('img', ['class'=>'wp-term-image', 'src'=>$thumb_url, 'width'=>50, 'height'=>50]);
-				}else{
-					$thumbnail	= wpjam_tag('span', ['no-thumbnail'], '暂无图片');
-				}
-
-				$thumbnail	= '[row_action name="set" class="wpjam-thumbnail-wrap" fallback="1"]'.$thumbnail.'[/row_action]';
-				$single_row	= str_replace('<a class="row-title" ', $thumbnail.'<a class="row-title" ', $single_row);
+				$thumb	= wpjam_get_term_thumbnail_url($id, [100, 100]);
+				$thumb	= $thumb ? wpjam_tag('img', ['class'=>'wp-term-image', 'src'=>$thumb, 'width'=>50, 'height'=>50]) : '暂无图片';
 			}
 		}
 
-		return $single_row;
+		if(!empty($thumb)){
+			$thumb	= $thumb === '暂无图片' ? '<span class="no-thumbnail">'.$thumb.'</span>' : $thumb;
+			$thumb	= '[row_action name="set" class="wpjam-thumbnail-wrap" fallback="1"]'.$thumb.'[/row_action]';
+			$row	= str_replace('<a class="row-title" ', $thumb.'<a class="row-title" ', $row);
+		}
+
+		return $row;
 	}
 
 	public static function filter_content_save_pre($content){
@@ -214,7 +169,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 	public static function filter_old_slug_redirect_post_id($post_id){
 		// 解决文章类型改变之后跳转错误的问题
 		// WP 原始解决函数 'wp_old_slug_redirect' 和 'redirect_canonical'
-		if(empty($post_id) && self::get_setting('404_optimization')){
+		if(!$post_id && self::get_setting('404_optimization')){
 			$post	= self::find_by_name(get_query_var('name'), get_query_var('post_type'));
 
 			return $post ? $post->ID : $post_id;
@@ -245,8 +200,6 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			$style	= ['.fixed .column-date{width:8%;}'];
 			$ptype	= $screen->post_type;
 
-			add_action('restrict_manage_posts',	fn($ptype)=> wpjam_map($object->get_taxonomies(['show_admin_column'=>true]), fn($tax_object)=> $tax_object->filterable ? $tax_object->dropdown() : null), 1);
-
 			if(self::get_setting('post_list_author_filter', 1) && $object->supports('author')){
 				add_action('restrict_manage_posts',	fn($ptype)=> wp_dropdown_users([
 					'name'						=> 'author',
@@ -261,15 +214,17 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 
 			if(self::get_setting('post_list_sort_selector', 1) && !self::is_wc_shop($ptype)){
 				add_action('restrict_manage_posts',	function($ptype){
-					list($columns, $hidden, $sortables)	= $GLOBALS['wp_list_table']->get_column_info();
+					[$columns, , $sortable]	= $GLOBALS['wp_list_table']->get_column_info();
 
-					$options	= wpjam_array($sortables, fn($k, $v)=> isset($columns[$k]) ? [$v[0], $columns[$k]] : null);
-					$options	= [''=>'排序','ID'=>'ID']+$options+($ptype != 'attachment' ? ['modified'=>'修改时间'] : []);
-					$orderby	= wpjam_get_data_parameter('orderby', ['sanitize_callback'=>'sanitize_key']);
-					$order		= wpjam_get_data_parameter('order', ['sanitize_callback'=>'sanitize_key', 'default'=>'DESC']);
+					$orderby	= wpjam_array($sortable, fn($k, $v)=> isset($columns[$k]) ? [$v[0], wp_strip_all_tags($columns[$k])] : null);
 
-					echo "\n".wpjam_field(['key'=>'orderby',	'value'=>$orderby,	'options'=>$options]);
-					echo "\n".wpjam_field(['key'=>'order',		'value'	=>$order,	'options'=>['desc'=>'降序','asc'=>'升序']])."\n";
+					echo wpjam_fields([
+						'orderby'	=> ['options'=>[''=>'排序','ID'=>'ID']+$orderby+($ptype != 'attachment' ? ['modified'=>'修改时间'] : [])],
+						'order'		=> ['options'=>['desc'=>'降序','asc'=>'升序']]
+					], [
+						'fields_type'		=> '',
+						'value_callback'	=> fn($k)=> wpjam_get_data_parameter($k, ['sanitize_callback'=>'sanitize_key'])
+					])."\n";
 				}, 99);
 			}
 
@@ -319,7 +274,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				add_filter('wpjam_single_row',	[self::class, 'filter_single_row'], 10, 2);
 
 				$style	= [
-					'.fixed th.column-slug{ width:16%; }',
+					'.fixed th.column-slug{width:16%;}',
 					'.fixed th.column-description{width:22%;}',
 					'.form-field.term-parent-wrap p{display: none;}',
 					'.form-field span.description{color:#666;}'
@@ -471,4 +426,19 @@ wpjam_register_option('wpjam-basic', [
 	'current_tab'	=> 'posts',
 	'site_default'	=> true,
 	'model'			=> 'WPJAM_Basic_Posts',
+	'admin_load'	=> ['base'=>['edit', 'upload', 'post', 'edit-tags', 'term']],
+	'menu_page'		=> [
+		'parent'		=> 'wpjam-basic',
+		'menu_slug'		=> 'wpjam-posts',
+		'position'		=> 4,
+		'function'		=> 'tab',
+		'tabs'			=> ['posts'=>[
+			'title'			=> '文章设置',
+			'function'		=> 'option',
+			'option_name'	=> 'wpjam-basic',
+			'site_default'	=> true,
+			'order'			=> 20,
+			'summary'		=> __FILE__,
+		]]
+	],
 ]);

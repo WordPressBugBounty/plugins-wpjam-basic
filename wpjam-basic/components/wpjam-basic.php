@@ -23,6 +23,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 				'disable_privacy'			=>['title'=>'屏蔽后台隐私',	'label'=>'移除为欧洲通用数据保护条例而生成的页面。',	'value'=>1],
 				'disable_dashboard_primary'	=>['title'=>'屏蔽后台新闻',	'label'=>'移除后台仪表盘的「WordPress 活动及新闻」'],
 				'disable_xml_rpc'			=>['title'=>'屏蔽XML-RPC',	'label'=>'关闭XML-RPC功能，只在后台发布文章。'],
+				'disable_capital_P_dangit'	=>['title'=>'屏蔽大小写修正',	'label'=>'屏蔽 WordPress 大小写修正，自行决定如何书写。',	'value'=>1],
 				'disable_embed'				=>['title'=>'屏蔽嵌入功能',	'fields'=>[
 					'disable_autoembed'	=>['label'=>'禁用Auto Embeds功能，加快页面解析速度。'],
 					'disable_embed'		=>['label'=>'屏蔽嵌入其他WordPress文章的Embed功能。'],
@@ -34,12 +35,11 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			]],
 			'enhance'	=>['title'=>'增强优化',	'fields'=>[
 				'static_cdn'				=>['title'=>'前端公共库',		'options'=>wpjam_fill(wpjam_get_items('static_cdn'), fn($url)=> parse_url($url, PHP_URL_HOST))],
-				'google_fonts_set'			=>['title'=>'Google字体加速',	'fields'=>WPJAM_Google_Font::get_setting_fields(['name'=>'google_fonts'])],
-				'gravatar_set'				=>['title'=>'Gravatar加速',	'fields'=>WPJAM_Gravatar::get_setting_fields()],
+				'google_fonts'				=>['title'=>'Google字体加速',	'fields'=>WPJAM_Google_Font::get_setting_fields(['type'=>'select', 'name'=>'google_fonts'])],
+				'gravatar'					=>['title'=>'Gravatar加速',	'fields'=>WPJAM_Gravatar::get_setting_fields(['type'=>'select', 'name'=>'gravatar'])],
 				'x-frame-options'			=>['title'=>'Frame嵌入',		'options'=>[''=>'所有网页', 'SAMEORIGIN'=>'只允许同域名网页', 'DENY'=>'不允许任何网页']],
-				'no_category_base_set'		=>['title'=>'分类链接简化',	'group'=>true,	'fields'=>['no_category_base'=>$no_base]],
+				'no_category_base'			=>['title'=>'分类链接简化',	'group'=>true,	'fields'=>['no_category_base'=>$no_base]],
 				'timestamp_file_name'		=>['title'=>'图片时间戳',		'label'=>'给上传的图片加上时间戳，防止大量的SQL查询。'],
-				'remove_capital_P_dangit'	=>['title'=>'移除大小写修正',	'label'=>'移除 WordPress 大小写修正，自行决定如何书写。',	'value'=>1],
 				'frontend'					=>['title'=>'前台页面优化',	'fields'=>[
 					'remove_head_links'		=>['label'=>'移除页面头部版本号和服务发现标签代码。'],
 					'remove_admin_bar'		=>['label'=>'移除工具栏和后台个人资料中工具栏相关选项。'],
@@ -53,44 +53,8 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function get_menu_page(){
-		return [
-			'menu_title'	=> 'WPJAM',
-			'icon'			=> 'ri-rocket-fill',
-			'position'		=> '58.99',
-			'sub_title'		=> '优化设置',
-			'function'		=> 'option',
-			'summary'		=> __FILE__,
-		];
-	}
-
-	public static function get_avatar_data($id_or_email){
-		if(is_numeric($id_or_email)){
-			$user_id	= $id_or_email;
-		}elseif(is_string($id_or_email)){
-			$email		= $id_or_email;
-		}elseif(is_object($id_or_email)){
-			if(isset($id_or_email->comment_ID)){
-				$comment	= get_comment($id_or_email);
-				$user_id	= $comment->user_id;
-				$email		= $comment->comment_author_email;
-				$avatarurl	= get_comment_meta($comment->comment_ID, 'avatarurl', true);
-			}elseif($id_or_email instanceof WP_User){
-				$user_id	= $id_or_email->ID;
-			}elseif($id_or_email instanceof WP_Post){
-				$user_id	= $id_or_email->post_author;
-			}
-		}
-
-		$user_id	??= 0;
-		$email		??= '';
-		$avatarurl	= !empty($avatarurl) ? $avatarurl : ($user_id ? get_user_meta($user_id, 'avatarurl', true) : '');
-
-		return $avatarurl ? ['avatarurl'=>$avatarurl] : ['user_id'=>$user_id, 'email'=>$email];
-	}
-
-	public static function is_disabled($feature, $default=null){
-		return self::get_setting('disable_'.$feature, $default);
+	public static function is_disabled($feature, ...$args){
+		return self::get_setting('disable_'.$feature, ...$args);
 	}
 
 	public static function init(){
@@ -101,8 +65,9 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 
 	public static function add_hooks(){
 		foreach([
-			'disable_revision'		=> 'disable_revisions',
-			'disable_post_embed'	=> 'disable_embed',
+			'disable_revision'			=> 'disable_revisions',
+			'disable_post_embed'		=> 'disable_embed',
+			'remove_capital_P_dangit'	=> 'disable_capital_P_dangit'
 		] as $from => $to){
 			if(self::get_setting($to) === null && ($value = self::get_setting($from)) !== null){
 				self::update_setting($to, $value);
@@ -122,7 +87,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			add_action('send_headers', fn()=> header('X-Frame-Options: '.$x_frame_options));
 		}
 
-		add_filter('pre_get_avatar_data', fn($args, $id_or_email)=> WPJAM_Gravatar::filter_pre_data(self::get_avatar_data($id_or_email)+$args), 10, 2);
+		add_filter('pre_get_avatar_data', fn($args, $id_or_email)=> WPJAM_Gravatar::filter_pre_data($args, $id_or_email), 10, 2);
 
 		add_action('wp_loaded',	fn()=> ob_start(fn($html)=> apply_filters('wpjam_html', WPJAM_Google_Font::filter_html($html))));
 
@@ -162,7 +127,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 		}
 
 		//让用户自己决定是否书写正确的 WordPress
-		if(self::get_setting('remove_capital_P_dangit', 1)){
+		if(self::is_disabled('capital_P_dangit', 1)){
 			array_map(fn($v)=> $remove_filter($v, 'capital_P_dangit'), ['the_content', 'the_title', 'wp_title', 'document_title', 'comment_text', 'widget_text_content']);
 		}
 
@@ -317,10 +282,6 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 	}
 }
 
-/**
-* @config single
-**/
-#[config('single')]
 class WPJAM_Gravatar extends WPJAM_Register{
 	public static function get_defaults(){
 		return [
@@ -332,26 +293,45 @@ class WPJAM_Gravatar extends WPJAM_Register{
 		];
 	}
 
-	public static function filter_pre_data($args){
-		if(!empty($args['avatarurl'])){
-			return array_merge($args, ['found_avatar'=>true, 'url'=>wpjam_get_thumbnail($args['avatarurl'], $args)]);
+	public static function filter_pre_data($args, $id_or_email){
+		if(is_numeric($id_or_email)){
+			$user_id	= $id_or_email;
+		}elseif(is_string($id_or_email)){
+			$email		= $id_or_email;
+		}elseif(is_object($id_or_email)){
+			if(isset($id_or_email->comment_ID)){
+				$comment	= get_comment($id_or_email);
+				$user_id	= $comment->user_id;
+				$email		= $comment->comment_author_email;
+				$avatarurl	= get_comment_meta($comment->comment_ID, 'avatarurl', true);
+			}elseif($id_or_email instanceof WP_User){
+				$user_id	= $id_or_email->ID;
+			}elseif($id_or_email instanceof WP_Post){
+				$user_id	= $id_or_email->post_author;
+			}
+		}
+
+		$user_id	??= 0;
+		$email		??= '';
+		$avatarurl	= !empty($avatarurl) ? $avatarurl : ($user_id ? get_user_meta($user_id, 'avatarurl', true) : '');
+
+		if($avatarurl){
+			return $args+['found_avatar'=>true, 'url'=>wpjam_get_thumbnail($avatarurl, $args)];
 		}
 
 		$object 	= self::get(wpjam_basic_get_setting('gravatar'));
 		$replace	= $object ? $object->get_arg('url') : '';
 
+		// print_r(self::get_registereds());
+
 		if($replace){
 			add_filter('get_avatar_url', fn($url)=> str_replace(array_map(fn($v)=>$v.'gravatar.com/avatar/', ['https://secure.', 'http://0.', 'http://1.', 'http://2.']), $replace, $url));
 		}
 
-		return $args;
+		return $args+['user_id'=>$user_id, 'email'=>$email];
 	}
 }
 
-/**
-* @config single
-**/
-#[config('single')]
 class WPJAM_Google_Font extends WPJAM_Register{
 	public static function get_search(){
 		return [
@@ -393,11 +373,12 @@ class WPJAM_Google_Font extends WPJAM_Register{
 }
 
 wpjam_register_option('wpjam-basic', [
-	'title'				=> '优化设置',
-	'model'				=> 'WPJAM_Basic',
-	'order'				=> 20,
-	'site_default'		=> true,
-	'sanitize_callback'	=> 'flush_rewrite_rules'
+	'title'					=> '优化设置',
+	'model'					=> 'WPJAM_Basic',
+	'site_default'			=> true,
+	'flush_rewrite_rules'	=> true,
+	'summary'				=> __FILE__,
+	'menu_page'				=> ['menu_title'=>'WPJAM', 'sub_title'=>'优化设置', 'icon'=>'ri-rocket-fill', 'position'=>'58.99']
 ]);
 
 // Gravatar
@@ -410,8 +391,8 @@ function wpjam_register_google_font($name, $args){
 	return WPJAM_Google_Font::register($name, $args);
 }
 
-function wpjam_basic_get_setting($name, $default=null){
-	return WPJAM_Basic::get_setting($name, $default);
+function wpjam_basic_get_setting($name, ...$args){
+	return WPJAM_Basic::get_setting($name, ...$args);
 }
 
 function wpjam_basic_update_setting($name, $value){
