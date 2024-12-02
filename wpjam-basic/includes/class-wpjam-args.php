@@ -10,6 +10,10 @@ trait WPJAM_Call_Trait{
 		return is_closure($closure) ? $closure->bindTo($this, get_called_class()) : $closure;
 	}
 
+	public function ob_get($method, ...$args){
+		return wpjam_ob_get_contents([$this, wpjam_remove_prefix($method, 'ob_get_')], ...$args);
+	}
+
 	public static function dynamic_method($action, $method, ...$args){
 		if(!$method){
 			return;
@@ -1250,6 +1254,7 @@ class WPJAM_Cache extends WPJAM_Args{
 	public function __call($method, $args){
 		$method	= wpjam_remove_prefix($method, 'cache_');
 		$gnd	= str_contains($method, 'get') || str_contains($method, 'delete');
+		$cb		= $method == 'cas' ? [array_shift($args)] : [];
 		$key	= array_shift($args);
 
 		if(str_contains($method, '_multiple')){
@@ -1265,7 +1270,11 @@ class WPJAM_Cache extends WPJAM_Args{
 		$cb[]	= $this->group;
 
 		if(!$gnd){
-			$cb[]	= $this->time(array_shift($args));
+			$cb[]	= (int)(array_shift($args)) ?: ($this->time ?: DAY_IN_SECONDS);
+		}else{
+			if($args){
+				$cb[]	= array_shift($args);
+			}
 		}
 
 		$callback	= 'wp_cache_'.$method;
@@ -1281,14 +1290,6 @@ class WPJAM_Cache extends WPJAM_Args{
 
 	protected function key($key){
 		return wpjam_join(':', $this->prefix, $key);
-	}
-
-	protected function time($time){
-		return (int)($time) ?: ($this->time ?: DAY_IN_SECONDS);
-	}
-
-	public function cas($token, $key, $value, $time=0){
-		return wp_cache_cas($token, $this->key($key), $value, $this->group, $this->time($time));
 	}
 
 	public function get_with_cas($key, &$token, ...$args){
@@ -1312,13 +1313,14 @@ class WPJAM_Cache extends WPJAM_Args{
 
 	public function is_over($key, $max, $time){
 		$times	= $this->get($key) ?: 0;
-		$result	= $times > $max;
 
-		if(!$result){
-			$this->set($key, $times+1, ($max == $times && $time > 60) ? $time : 60);
+		if($times > $max){
+			return true;
 		}
 
-		return $result;
+		$this->set($key, $times+1, ($max == $times && $time > 60) ? $time : 60);
+
+		return false;
 	}
 
 	public function generate($key){
@@ -1401,12 +1403,26 @@ class WPJAM_Cache extends WPJAM_Args{
 	}
 
 	public static function create($args=[]){
-		if(!empty($args['group'])){
-			if(wpjam_pull($args, 'global')){
-				wp_cache_add_global_groups($args['group']);
+		if(is_object($args)){
+			if(!$args->cache_object){
+				$group	= $args->cache_group;
+
+				if($group){
+					$group	= is_array($group) ? array_combine(['group', 'global'], $group) : ['group'=>$group];
+
+					$args->cache_object	= self::create($group+['prefix'=>$args->cache_prefix, 'time'=>$args->cache_time]);
+				}
 			}
 
-			return new self($args);
+			return $args->cache_object;
+		}else{
+			if(!empty($args['group'])){
+				if(wpjam_pull($args, 'global')){
+					wp_cache_add_global_groups($args['group']);
+				}
+
+				return new self($args);
+			}
 		}
 	}
 }

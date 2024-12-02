@@ -157,6 +157,19 @@ function wpjam_lock($name, $expire=10, $global=false){
 	return $locked;
 }
 
+function wpjam_is_over($name, $max, $time, $global=false){
+	$group	= ($global ? 'site-' : '').'transient';
+	$times	= wp_cache_get($key, $group) ?: 0;
+
+	if($times > $max){
+		return true;
+	}
+
+	wp_cache_set($key, $times+1, $group, ($max == $times && $time > 60) ? $time : 60);
+
+	return false;
+}
+
 function wpjam_db_transaction($callback, ...$args){
 	$GLOBALS['wpdb']->query("START TRANSACTION;");
 
@@ -692,8 +705,7 @@ if(is_admin()){
 		if(wp_is_numeric_array($args)){
 			array_walk($args, 'wpjam_add_admin_load');
 		}else{
-			$type	= wpjam_pull($args, 'type');
-			$type	= $type ?: array_find(['base'=>'builtin_page', 'plugin_page'=>'plugin_page'], fn($v, $k)=> isset($args[$k]));
+			$type	= wpjam_pull($args, 'type') ?: array_find(['base'=>'builtin_page', 'plugin_page'=>'plugin_page'], fn($v, $k)=> isset($args[$k]));
 
 			if($type && in_array($type, ['builtin_page', 'plugin_page'])){
 				$score	= wpjam_get($args, 'order', 10);
@@ -745,15 +757,15 @@ if(is_admin()){
 				wpjam_map((array)$load['page_file'], fn($file)=> is_file($file) ? include $file : null);
 			}
 
-			if(!empty($load['callback'])){
-				$callback	= is_callable($load['callback']) ? $load['callback'] : null;
-			}elseif(!empty($load['model'])){
-				$method		= array_find(['load', $type.'_load'], fn($method)=> method_exists($load['model'], $method));
-				$callback	= $method ? [$load['model'], $method] : null;
+			$cb	= $load['callback'] ?? '';
+
+			if(!$cb && !empty($load['model'])){
+				$method	= array_find(['load', $type.'_load'], fn($method)=> method_exists($load['model'], $method));
+				$cb		= $method ? [$load['model'], $method] : '';
 			}
 
-			if(!empty($callback)){
-				$callback(...$args);
+			if($cb && is_callable($cb)){
+				$cb(...$args);
 			}
 		}
 	}

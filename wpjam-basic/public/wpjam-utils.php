@@ -165,11 +165,8 @@ function wpjam_parse_user_agent($user_agent=null, $referer=null){
 	], fn($rule)=> stripos($user_agent, $rule[0]));
 
 	if($rule){
-		$os	= $rule[1];
-
-		if(isset($rule[2])){
-			$device	= $rule[2];
-		}
+		$os		= $rule[1];
+		$device	= $rule[2] ?? '';
 	}
 
 	if($os == 'iOS'){

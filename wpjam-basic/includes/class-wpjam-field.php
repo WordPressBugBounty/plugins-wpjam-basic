@@ -1234,11 +1234,7 @@ class WPJAM_Field extends WPJAM_Attr{
 			$field['render']	??= function($args){
 				$value	= $this->value;
 				$tag	= $this->tag ?? ($value != strip_tags($value) ? '' : 'span');
-
-				if($this->options){
-					$result	= array_find($this->_options, fn($v, $k)=> $value ? $k == $value : !$k);
-					$value	= $result === false ? $value : $result;
-				}
+				$value	= $this->options ? (array_find($this->_options, fn($v, $k)=> $value ? $k == $value : !$k) ?? $value) : $value;
 
 				return $tag ? wpjam_tag($tag, ['field-key-'.$this->key], $value)->data('value', $this->value) : $value;
 			};

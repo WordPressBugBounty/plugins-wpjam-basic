@@ -1129,8 +1129,24 @@ function wpjam_fetch_external_images(&$urls, $post_id=0){
 }
 
 // Cache
-function wpjam_cache($group, $args=[]){
-	return WPJAM_Cache::get_instance($group, $args);
+function wpjam_cache(...$args){
+	if(count($args) > 2){
+		$_args	= array_slice($args, 0, 2);
+		$value	= wp_cache_get(...$_args);
+
+		if($value === false){
+			$cb		= array_splice($args, 2, 1)[0];
+			$value	= $cb(...$_args);
+
+			if(!is_wp_error($value) && $value !== false){
+				wp_cache_set(...wpjam_add_at($args, 1, null, $value));
+			}
+		}
+
+		return $value;
+	}
+
+	return WPJAM_Cache::get_instance(...$args);
 }
 
 function wpjam_generate_verification_code($key, $group='default'){

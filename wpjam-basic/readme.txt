@@ -53,11 +53,13 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.6.3 = 
+= 6.6.5 =
+* 新增 PHP 8.4 引入的 array_find、array_find_key、array_all、array_any 函数
 * 新增 wpjam_exists 函数
 * 新增 wpjam_slice 函数
 * 新增 wpjam_toggle 函数
 * 新增 wpjam_flatten 函数
+* 其他优化和bug修复
 
 = 6.6 =
 * 新增 wpjam_include 函数用于加载文件
@@ -73,8 +75,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 新增 wpjam_export 函数
 * 新增 wpjam_at 函数
 * 新增 wpjam_add_at 函数
-* 优化 show_if 功能
-* 其他优化和bug修复
 
 = 6.5 =
 * 使用注解的方式实现注册类支持能力

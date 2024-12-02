@@ -657,7 +657,7 @@ jQuery(function($){
 				});
 			}
 
-			$('p.subtitle, div.summary, p.summary').remove();
+			$('span.subtitle, div.summary, p.summary').remove();
 
 			if(wpjam_list_table.subtitle){
 				$('.wp-header-end').last().before('<span class="subtitle">'+wpjam_list_table.subtitle+'</span>');

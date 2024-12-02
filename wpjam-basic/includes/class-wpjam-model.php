@@ -502,18 +502,7 @@ class WPJAM_DB extends WPJAM_Args{
 				}
 			}
 
-			if(!$this->cache_object){
-				$group	= $this->cache_group;
-
-				$this->cache_object	= WPJAM_Cache::create([
-					'group'		=> is_array($group) ? $group[0] : $group,
-					'global'	=> is_array($group) ? $group[1] : false,
-					'prefix'	=> $this->cache_prefix,
-					'time'		=> $this->cache_time
-				]);
-			}
-
-			return $this->cache_object->$method(...$args);
+			return (WPJAM_Cache::create($this))->$method(...$args);
 		}elseif(str_ends_with($method, '_last_changed')){
 			$key	= 'last_changed';
 
