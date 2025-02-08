@@ -12,22 +12,20 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				0	=> 'WordPress 默认方式截取',
 				1	=> [
 					'label'		=> '按照中文最优方式截取',
-					'fields'	=> ['excerpt_length'=>['before'=>'文章摘要长度：', 'type'=>'number', 'value'=>200, 'after'=>'<strong>中文算2个字节，英文算1个字节</strong>']]
+					'fields'	=> ['excerpt_length'=>['before'=>'文章摘要长度：', 'type'=>'number', 'class'=>'small-text', 'value'=>200, 'after'=>'<strong>中文算2个字节，英文算1个字节</strong>']]
 				],
 				2	=> '直接不显示摘要'
 			]]]],
-			'list'		=> ['title'=>'文章列表',	'fields'=>[
-				'post_list_support'	=> ['type'=>'fields',	'before'=>'支持：',	'sep'=>'&emsp;',	'fields'=>[
-					'post_list_ajax'			=> ['value'=>1,	'label'=>'全面 AJAX 操作'],
-					'upload_external_images'	=> ['value'=>0,	'label'=>'上传外部图片操作'],
-				]],
-				'post_list_display'	=> ['type'=>'fields',	'before'=>'显示：',	'sep'=>'&emsp;',	'fields'=>[
-					'post_list_set_thumbnail'	=> ['value'=>1,	'label'=>'文章缩略图'],
-					'post_list_author_filter'	=> ['value'=>1,	'label'=>'作者下拉选择框'],
-					'post_list_sort_selector'	=> ['value'=>1,	'label'=>'排序下拉选择框'],
-				]]
+			'list'		=> ['title'=>'文章列表',	'sep'=>'&emsp;',	'fields'=>[
+				'post_list_support'			=> '支持：',
+				'post_list_ajax'			=> ['value'=>1,	'label'=>'全面 AJAX 操作'],
+				'upload_external_images'	=> ['value'=>0,	'label'=>'上传外部图片操作'],
+				'post_list_display'			=> '<br />显示：',
+				'post_list_set_thumbnail'	=> ['value'=>1,	'label'=>'文章缩略图'],
+				'post_list_author_filter'	=> ['value'=>1,	'label'=>'作者下拉选择框'],
+				'post_list_sort_selector'	=> ['value'=>1,	'label'=>'排序下拉选择框'],
 			]],
-			'other'		=> ['title'=>'功能优化',	'type'=>'fields',	'sep'=>'&emsp;',	'fields'=>[
+			'other'		=> ['title'=>'功能优化',	'sep'=>'&emsp;',	'fields'=>[
 				'remove_post_tag'		=> ['value'=>0,	'label'=>'移除文章标签功能'],
 				'remove_page_thumbnail'	=> ['value'=>0,	'label'=>'移除页面特色图片'],
 				'add_page_excerpt'		=> ['value'=>0,	'label'=>'增加页面摘要功能'],
@@ -98,27 +96,25 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		$object	= get_screen_option('object');
 
 		if(get_current_screen()->base == 'edit'){
-			$icon	= '<span class="dashicons dashicons-edit"></span>';
-			$row	= preg_replace('/(<strong>.*?<a class=\"row-title\".*?<\/a>.*?)(<\/strong>)/is', '$1 [row_action name="set" class="row-action"]'.$icon.'[/row_action]$2', $row);
+			$row	= preg_replace('/(<strong>.*?<a class=\"row-title\".*?<\/a>.*?)(<\/strong>)/is', '$1 [row_action name="set" class="row-action" dashicon="edit"]$2', $row);
 
 			if(self::get_setting('post_list_ajax', 1)){
 				$columns	= array_map(fn($tax)=> 'column-'.preg_quote($tax->column_name, '/'), $object->get_taxonomies(['show_in_quick_edit'=>true]));
-				$columns[]	= 'column-author';
-				$row		= preg_replace('/(<td class=\'[^\']*('.implode('|', $columns).')[^\']*\'.*?>.*?)(<\/td>)/is', '$1 <a title="快速编辑" href="javascript:;" class="editinline row-action">'.$icon.'</a>$3', $row);
+				$row		= preg_replace('/(<td class=\'[^\']*('.implode('|', array_merge($columns, ['column-author'])).')[^\']*\'.*?>.*?)(<\/td>)/is', '$1 <a title="快速编辑" href="javascript:;" class="editinline row-action dashicons dashicons-edit"></a>$3', $row);
 			}
 
 			if(self::get_setting('post_list_set_thumbnail', 1) && array_any(['thumbnail', 'images'], fn($v)=> $object->supports($v))){
-				$thumb	= get_the_post_thumbnail($id, [50,50]) ?: '暂无图片';
+				$thumb	= get_the_post_thumbnail($id, [50,50]) ?: '';
 			}
 		}else{
 			if(self::get_setting('post_list_set_thumbnail', 1) && $object->supports('thumbnail')){
 				$thumb	= wpjam_get_term_thumbnail_url($id, [100, 100]);
-				$thumb	= $thumb ? wpjam_tag('img', ['class'=>'wp-term-image', 'src'=>$thumb, 'width'=>50, 'height'=>50]) : '暂无图片';
+				$thumb	= $thumb ? wpjam_tag('img', ['class'=>'wp-term-image', 'src'=>$thumb, 'width'=>50, 'height'=>50]) : '';
 			}
 		}
 
-		if(!empty($thumb)){
-			$thumb	= $thumb === '暂无图片' ? '<span class="no-thumbnail">'.$thumb.'</span>' : $thumb;
+		if(isset($thumb)){
+			$thumb	= $thumb ?: '<span class="no-thumbnail">暂无图片</span>';
 			$thumb	= '[row_action name="set" class="wpjam-thumbnail-wrap" fallback="1"]'.$thumb.'[/row_action]';
 			$row	= str_replace('<a class="row-title" ', $thumb.'<a class="row-title" ', $row);
 		}
@@ -290,36 +286,27 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 
 				$scripts	.= wpjam_remove_pre_tab("
 				$(window).load(function(){
-					if($('#the-list').length){
-						$.wpjam_delegate_events('#the-list', '.editinline');
-					}
-
-					if($('#doaction').length){
-						$.wpjam_delegate_events('#doaction');
-					}
+					wpjam.delegate('#the-list', '.editinline');
+					wpjam.delegate('#doaction');
 				});
-				", 4);
+				", 3);
 			}
 
-			$scripts	.= wpjam_remove_pre_tab("
-			let observer = new MutationObserver(function(mutations){
-				if($('#the-list .inline-editor').length > 0){
-					let tr_id	= $('#the-list .inline-editor').attr('id');
-
-					if(tr_id == 'bulk-edit'){
-						$('#the-list').trigger('bulk_edit');
-					}else{
-						let id	= tr_id.split('-')[1];
-
-						if(id > 0){
-							$('#the-list').trigger('quick_edit', id);
-						}
-					}
-				}
+			$scripts	.= $base == 'edit' ? wpjam_remove_pre_tab("
+			wpjam.add_extra_logic(inlineEditPost, 'setBulk', function(){
+				$('#the-list').trigger('bulk_edit');
 			});
 
-			observer.observe(document.querySelector('body'), {childList: true, subtree: true});
-			", 3);
+			wpjam.add_extra_logic(inlineEditPost, 'edit', function(id){
+				if(typeof(id) === 'object'){
+					id = this.getId(id);
+				}
+
+				$('#the-list').trigger('quick_edit', id);
+
+				return false;
+			});
+			", 2) : '';
 		}
 
 		if($scripts){

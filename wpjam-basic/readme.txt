@@ -2,9 +2,9 @@
 Contributors: denishua
 Donate link: https://wpjam.com/
 Tags: WPJAM, Memcached, 性能优化
-Requires at least: 6.4
+Requires at least: 6.5
 Requires PHP: 7.4
-Tested up to: 6.6
+Tested up to: 6.7
 Stable tag: trunk
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -53,12 +53,13 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.6.5 =
+= 6.7 =
 * 新增 PHP 8.4 引入的 array_find、array_find_key、array_all、array_any 函数
 * 新增 wpjam_exists 函数
 * 新增 wpjam_slice 函数
 * 新增 wpjam_toggle 函数
 * 新增 wpjam_flatten 函数
+* 新增 wpjam_bettwen 函数
 * 其他优化和bug修复
 
 = 6.6 =
@@ -240,7 +241,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 通过 query_data 实现带参数的 list_table 菜单显示自动处理
 * 新增自定义表 meta 查询 
 * 新增 WPJAM_Field 分组打横显示功能
-* 新增 wpjam_iframe JS 方法，默认在后台右下角显示
 * 新增 class WPJAM_Bind 用于用户相关业务连接
 * 新增 class WPJAM_Phone_Bind 用于手机号码相关业务连接
 * 新增 class WPJAM_CDN_Type，优化 CDN 处理

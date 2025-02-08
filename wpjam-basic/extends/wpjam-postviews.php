@@ -7,12 +7,12 @@ Version: 1.0
 */
 class WPJAM_Postviews{
 	public static function get_sections(){
-		return ['posts'=>['fields'=>[
-			'postviews'	=> ['title'=>'初始浏览量', 'type'=>'fields', 'fields'=>[
-				'views_begin'	=> ['type'=>'number',	'class'=>'small-text'], 
-				'views_end'		=> ['type'=>'number',	'class'=>'small-text',	'before'=>'和',	'after'=>'之间随机数'],
-			]]
-		]]];
+		return ['posts'=>['fields'=>['postviews'=> ['title'=>'初始浏览量', 'sep'=>'&nbsp;',	'prefix'=>'views', 'fields'=>[
+			'begin'	=> ['type'=>'number',	'class'=>'small-text'],
+			'v1'	=> '和',
+			'end'	=> ['type'=>'number',	'class'=>'small-text'],
+			'v2'	=> '之间随机数',
+		]]]]];
 	}
 
 	public static function redirect(){
@@ -112,7 +112,7 @@ class WPJAM_Postviews{
 				'page_title'	=> '增加浏览数',
 				'submit_text'	=> '增加',
 				'row_action'	=> false,
-				'bulk'			=> true,
+				'bulk'			=> 2,
 				'fields'		=> [
 					'view'	=>['title'=>'使用说明',	'type'=>'view',	'value'=>'批量处理是在原有的浏览量上增加'],
 					'addon'	=>['title'=>'浏览数增量',	'type'=>'number']

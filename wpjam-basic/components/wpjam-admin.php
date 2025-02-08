@@ -47,9 +47,8 @@ class WPJAM_Basic_Admin{
 		jQuery(function($){
 			$('body').on('click', 'div.wpjam-icons p', function(){
 				let dashicon	= $(this).data('dashicon');
-				let html 		= '<div style="display:flex;"><p><span style="font-size:100px; width: 100px; height: 100px;" class="dashicons '+dashicon+'"></span></p><p style="margin-left:20px; font-size:20px;">'+dashicon+'<br /><br />HTML：<br /><code>&lt;span class="dashicons '+dashicon+'"&gt;&lt;/span&gt;</code></p></dov>';
 				
-				$.wpjam_modal(html, dashicon, 680);
+				wpjam.add_modal({page_title: dashicon, data: '<div style="display:flex;"><p><span style="font-size:100px; width: 100px; height: 100px;" class="dashicons '+dashicon+'"></span></p><p style="margin-left:20px; font-size:20px;">'+dashicon+'<br /><br />HTML：<br /><code>&lt;span class="dashicons '+dashicon+'"&gt;&lt;/span&gt;</code></p></dov>'});
 			});
 		});
 		</script>
@@ -275,7 +274,7 @@ class WPJAM_Verify{
 			if(isset($_GET['unbind_wpjam_user'])){
 				delete_user_meta(get_current_user_id(), 'wpjam_weixin_user');
 
-				wp_redirect(admin_url('page=wpjam-verify'));
+				wp_redirect(admin_url('admin.php?page=wpjam-verify'));
 			}
 		}else{
 			if($menu_page && isset($menu_page['subs'])){

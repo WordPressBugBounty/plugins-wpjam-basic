@@ -1,12 +1,12 @@
 <?php
 class WPJAM_Setting extends WPJAM_Args{
 	public function __call($method, $args){
-		if(str_ends_with($method, '_option')){
-			$cb			= wpjam_remove_postfix($method, '_option').'_'.$this->type;
+		if(try_remove_suffix($method, '_option')){
+			$cb			= $method.'_'.$this->type;
 			$cb_args	= $this->type == 'blog_option' ? [$this->blog_id] : [];
 			$cb_args[]	= $this->name;
 
-			if($method == 'get_option'){
+			if($method == 'get'){
 				$result	= $cb(...$cb_args);
 
 				return $result === false ? [] : $this->sanitize_option($result);
@@ -15,12 +15,11 @@ class WPJAM_Setting extends WPJAM_Args{
 
 				return $cb(...$cb_args);
 			}
-		}elseif(str_ends_with($method, '_setting') || in_array($method, ['get', 'update', 'delete'])) {
-			$action	= wpjam_remove_postfix($method, '_setting');
+		}elseif(try_remove_suffix($method, '_setting') || in_array($method, ['get', 'update', 'delete'])) {
 			$values	= $this->get_option();
 			$name	= array_shift($args);
 
-			if($action == 'get'){
+			if($method == 'get'){
 				if(!$name){
 					return $values;
 				}
@@ -34,7 +33,7 @@ class WPJAM_Setting extends WPJAM_Args{
 				return is_wp_error($value) ? null : (is_string($value) ? str_replace("\r\n", "\n", trim($value)) : $value);
 			}
 
-			if($action == 'update'){
+			if($method == 'update'){
 				if(is_array($name)){
 					$values	= wpjam_reduce($name, fn($carry, $v, $n)=> wpjam_set($carry, $n, $v), $values);
 				}else{
@@ -258,7 +257,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 
 	public function render($page){
 		$sections	= $this->get_sections();
-		$form		= wpjam_tag('form', ['method'=>'POST', 'id'=>'wpjam_option']);
+		$form		= wpjam_tag('form', ['method'=>'POST', 'id'=>'wpjam_option', 'novalidate']);
 
 		foreach($sections as $id => $section){
 			$tab	= wpjam_tag();
@@ -281,8 +280,8 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		}
 
 		$form->data('nonce', wp_create_nonce($this->option_group))->append(wpjam_tag('p', ['submit'])->append([
-			get_submit_button('', 'primary', 'option_submit', false, ['data-action'=>'save']),
-			$this->reset ? get_submit_button('重置选项', 'secondary', 'option_reset', false, ['data-action'=>'reset']) : ''
+			get_submit_button('', 'primary', 'save', false),
+			$this->reset ? get_submit_button('重置选项', 'secondary', 'reset', false) : ''
 		]));
 
 		return isset($nav) ? $form->before(wpjam_tag('ul')->append($nav)->wrap('h2', ['nav-tab-wrapper', 'wp-clearfix']))->wrap('div', ['tabs']) : $form;
@@ -303,7 +302,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			wp_die('access_denied');
 		}
 
-		$action	= wpjam_get_post_parameter('option_action');
+		$name	= wpjam_get_post_parameter('submit_name');
 		$values	= wpjam_get_data_parameter();
 		$values	= $this->validate($values) ?: [];
 		$fix	= is_network_admin() ? 'site_option' : 'option';
@@ -317,7 +316,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			$callback	= is_callable($callback) ? $callback : wp_die('无效的回调函数');
 			$current	= $this->value_callback();
 
-			if($action == 'reset'){
+			if($name == 'reset'){
 				$values	= wpjam_diff($current, $values, 'key');
 			}else{
 				$values	= wpjam_filter(array_merge($current, $values), fn($v)=> !is_null($v), true);
@@ -328,9 +327,9 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			$callback($this->name, $values);
 		}else{
 			foreach($values as $name => $value){
-				$callback	= ($action == 'reset' ? 'delete_' : 'update_').$fix;
+				$callback	= ($name == 'reset' ? 'delete_' : 'update_').$fix;
 
-				$callback($name, ...($action == 'reset' ? [] : [$value]));
+				$callback($name, ...($name == 'reset' ? [] : [$value]));
 			}
 		}
 
@@ -341,8 +340,8 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		}
 
 		return [
-			'type'		=> $this->response ?? ($this->ajax ? $action : 'redirect'),
-			'errmsg'	=> $action == 'reset' ? '设置已重置。' : '设置已保存。'
+			'type'		=> (!$this->ajax || $name == 'reset') ? 'redirect' : $name,
+			'errmsg'	=> $name == 'reset' ? '设置已重置。' : '设置已保存。'
 		];
 	}
 
@@ -479,10 +478,10 @@ class WPJAM_Notice{
 #[config('orderby')]
 class WPJAM_Meta_Type extends WPJAM_Register{
 	public function __call($method, $args){
-		if(str_ends_with($method, '_option')){	// get_option register_option unregister_option
+		if(try_remove_suffix($method, '_option')){	// get_option register_option unregister_option
 			$name	= array_shift($args);
 
-			if($method == 'register_option'){
+			if($method == 'register'){
 				$args	= array_merge(array_shift($args), ['meta_type'=>$this->name]);
 
 				if($this->name == 'post'){
@@ -502,15 +501,15 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 			}
 
 			$args		= [$this->name.':'.$name, ...$args];
-			$callback	= ['WPJAM_Meta_Option', wpjam_remove_postfix($method, '_option')];
+			$callback	= ['WPJAM_Meta_Option', $method];
 		}elseif(in_array($method, ['get_data', 'add_data', 'update_data', 'delete_data', 'data_exists'])){
 			$args		= [$this->name, ...$args];
 			$callback	= str_replace('data', 'metadata', $method);
-		}elseif(str_ends_with($method, '_by_mid')){
+		}elseif(try_remove_suffix($method, '_by_mid')){
 			$args		= [$this->name, ...$args];
-			$callback	= str_replace('_by_mid', '_metadata_by_mid', $method);
-		}elseif(str_ends_with($method, '_meta')){
-			$callback	= [$this, str_replace('_meta', '_data', $method)];
+			$callback	= $method.'_metadata_by_mid';
+		}elseif(try_remove_suffix($method, '_meta')){
+			$callback	= [$this, $method.'_data'];
 		}elseif(str_contains($method, '_meta')){
 			$callback	= [$this, str_replace('_meta', '', $method)];
 		}
@@ -656,31 +655,29 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 	}
 
 	public function cleanup(){
+		$wpdb	= $GLOBALS['wpdb'];
+
 		if($this->object_key){
 			$object_key		= $this->object_key;
-			$object_table	= $GLOBALS['wpdb']->{$this->name.'s'};
+			$object_table	= $wpdb->{$this->name.'s'};
 		}else{
 			$object_model	= $this->object_model;
 
-			if($object_model && is_callable([$object_model, 'get_table'])){
-				$object_table	= $object_model::get_table();
-				$object_key		= $object_model::get_primary_key();
-			}else{
-				$object_table	= '';
-				$object_key		= '';
+			if(!$object_model || !is_callable([$object_model, 'get_table'])){
+				return;
 			}
+
+			$object_table	= $object_model::get_table();
+			$object_key		= $object_model::get_primary_key();
 		}
 
-		$this->delete_orphan_data($object_table, $object_key);
-	}
-
-	public function delete_orphan_data($object_table='', $object_key=''){
-		if($object_table && $object_key){
-			$wpdb	= $GLOBALS['wpdb'];
-			$mids	= $wpdb->get_col("SELECT m.".$this->get_column('id')." FROM ".$this->get_table()." m LEFT JOIN ".$object_table." t ON t.".$object_key." = m.".$this->get_column('object')." WHERE t.".$object_key." IS NULL") ?: [];
-
-			array_walk($mids, [$this, 'delete_by_mid']);
+		if(is_multisite() && !str_starts_with($this->get_table(), $wpdb->prefix) && wpjam_lock($this->name.':meta_type:cleanup', DAY_IN_SECONDS, true)){
+			return;
 		}
+
+		$mids	= $wpdb->get_col("SELECT m.".$this->get_column('id')." FROM ".$this->get_table()." m LEFT JOIN ".$object_table." t ON t.".$object_key." = m.".$this->get_column('object')." WHERE t.".$object_key." IS NULL") ?: [];
+
+		array_walk($mids, [$this, 'delete_by_mid']);
 	}
 
 	public function delete_empty_data(){
@@ -743,11 +740,10 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 #[config('orderby')]
 class WPJAM_Meta_Option extends WPJAM_Register{
 	public function __call($method, $args){
-		if(str_ends_with($method, '_by_fields')){
+		if(try_remove_suffix($method, '_by_fields')){
 			$id		= array_shift($args);
 			$fields	= $this->get_fields($id);
 			$object	= wpjam_fields($fields);
-			$method	= wpjam_remove_postfix($method, '_by_fields');
 
 			return $object->$method(...$args);
 		}
@@ -842,7 +838,7 @@ class WPJAM_Meta_Option extends WPJAM_Register{
 	}
 
 	public static function get_by(...$args){
-		$args		= wpjam_parse_args($args);
+		$args		= $args ? (is_array($args[0]) ? $args[0] : [$args[0]=> $args[1]]) : [];
 		$list_table	= wpjam_pull($args, 'list_table');
 		$meta_type	= wpjam_get($args, 'meta_type');
 

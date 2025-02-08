@@ -106,8 +106,8 @@ function wpjam_ob_get_contents($callback, ...$args){
 }
 
 function wpjam_transient($name, $callback, $expire=86400, $global=false){
-	$cb		= 'get_'.($global ? 'site_' : '').'transient';
-	$data	= $cb($name);
+	$fix	= ($global ? 'site_' : '').'transient';
+	$data	= call_user_func('get_'.$fix, $name);
 
 	if($data === false || is_numeric($callback)){
 		if(is_numeric($callback)){
@@ -119,9 +119,7 @@ function wpjam_transient($name, $callback, $expire=86400, $global=false){
 		}
 
 		if(!is_wp_error($data)){
-			$cb	= 'set_'.($global ? 'site_' : '').'transient';
-
-			$cb($name, $update, $expire);
+			call_user_func('set_'.$fix, $name, $update, $expire);
 		} 
 	}
 
@@ -146,8 +144,8 @@ function wpjam_counts($name, $callback){
 	return $counts;
 }
 
-function wpjam_lock($name, $expire=10, $global=false){
-	$group	= ($global ? 'site-' : '').'transient';
+function wpjam_lock($name, $expire=10, $group=false){
+	$group	= WPJAM_Cache::parse_group($group);
 	$locked	= wp_cache_get($name, $group, true);
 
 	if($locked === false){
@@ -157,15 +155,17 @@ function wpjam_lock($name, $expire=10, $global=false){
 	return $locked;
 }
 
-function wpjam_is_over($name, $max, $time, $global=false){
-	$group	= ($global ? 'site-' : '').'transient';
-	$times	= wp_cache_get($key, $group) ?: 0;
+function wpjam_is_over($name, $max, $time, $group=false, $action='increment'){
+	$group	= WPJAM_Cache::parse_group($group);
+	$times	= wp_cache_get($name, $group) ?: 0;
 
 	if($times > $max){
 		return true;
 	}
 
-	wp_cache_set($key, $times+1, $group, ($max == $times && $time > 60) ? $time : 60);
+	if($action == 'increment'){
+		wp_cache_set($name, $times+1, $group, ($max == $times && $time > 60) ? $time : 60);
+	}
 
 	return false;
 }

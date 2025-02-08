@@ -1,20 +1,203 @@
 jQuery(function($){
 	$.fn.extend({
-		wpjam_uploader_init: function(){
-			this.each(function(){
-				let hidden	= $(this).find('input[type=hidden]');
+		wpjam_form_init: function(){
+			$(this).find('[data-chart]').each(function(){
+				let $this	= $(this).removeAttr('data-chart');
+				let options	= $this.data('options');
+				let type	= $this.data('type');
 
-				if(hidden.val()){
-					hidden.addClass('hidden');
+				if(type == 'Donut'){
+					$this.height(Math.max(160, Math.min(240, $this.next('table').length ? $this.next('table').height() : 240))).width($this.height());
 				}
 
-				let up_args		= $(this).data('plupload');
-				let uploader	= new plupload.Uploader($.extend({}, up_args, {
-					url : ajaxurl,
-					multipart_params : $.wpjam_append_page_setting(up_args.multipart_params)
-				}));
+				if(['Line', 'Bar', 'Donut'].includes(type)){
+					Morris[type]({...options, element: $this.prop('id')});
+				}
+			});
 
-				$(this).removeAttr('data-plupload').removeData('plupload');
+			$(this).find('[data-description]').each(function(){
+				$(this).addClass('dashicons dashicons-editor-help').attr('data-tooltip', $(this).data('description')).removeAttr('data-description');
+			});
+
+			$(this).find('.mu').each(function(){
+				let $this	= $(this).removeClass('mu');
+				let value	= $this.data('value');
+
+				if(!$this.hasClass('mu-fields')){
+					$this.wrapInner('<div class="mu-item"></div>');
+				}
+
+				$('<a class="new-item button">'+($this.hasClass('mu-img') ? '' : $this.data('button_text'))+'</a>').on('click', function(){
+					let	max		= parseInt($this.data('max_items'));
+					let rest	= max ? (max - ($this.children().length - ($this.is('.mu-img, .mu-fields, .direction-row') ? 1 : 0))) : 0;
+
+					if(max && rest <= 0){
+						alert('最多支持'+max+'个');
+
+						return false;
+					}
+
+					if($this.is('.mu-text, .mu-fields')){
+						$this.wpjam_mu_item();
+					}else if($this.is('.mu-img, .mu-file, .mu-image')){
+						wp.hooks.addAction('wpjam_media', 'wpjam', function(frame, args){
+							if(args.rest){
+								frame.state().get('selection').on('update', function(){
+									if(this.length > args.rest){
+										this.reset(this.first(args.rest));
+
+										alert('最多可以选择'+args.rest+'个');
+									}
+								});
+							}
+
+							wp.hooks.removeAction('wpjam_media', 'wpjam');
+						});
+
+						wp.hooks.addAction('wpjam_media_selected', 'wpjam', function(value, url){
+							$this.wpjam_mu_item($this.is('.mu-img') ? {value: value, url: url} : value);
+						});
+
+						$this.wpjam_media({
+							id:			$this.prop('id'),
+							multiple: 	true,
+							rest:		rest
+						});
+					}
+
+					return false;
+				}).appendTo($this.find('> .mu-item').last());
+
+				if($this.hasClass('mu-text')){
+					if($this.find('select').length && !$this.find('option').toArray().some((opt) => $(opt).val() == '')){
+						$this.find('select').prepend('<option disabled="disabled" hidden="hidden" value="" class="disabled">请选择</option>').val('');
+					}
+
+					if($this.hasClass('direction-row') && value.length <= 1){
+						value.push(null);
+					}
+				}
+
+				if(value){
+					value.forEach(v => $this.wpjam_mu_item(v));
+				}
+
+				let sortable	= $this.is('.sortable:not(.disabled):not(.readonly)') && !$this.parents('.disabled,.readonly').length;
+				let del_btn		= $this.hasClass('direction-row') ? '' : '删除';
+
+				$this.find('> .mu-item').append([
+					'<a href="javascript:;" class="del-item '+(del_btn ? 'button' : 'dashicons dashicons-no-alt')+'">'+del_btn+'</a>',
+					sortable && !$this.hasClass('mu-img') ? '<span class="dashicons dashicons-menu"></span>' : ''
+				]);
+
+				if(sortable){
+					$this.sortable({cursor: 'move', items: '.mu-item:not(:last-child)'});
+				}
+			});
+
+			$(this).find('.checkable:not(.field-key)').each(function(){
+				let $this	= $(this);
+				let value	= $this.data('value');
+
+				$this.addClass('field-key').find('input').on('change', function(){
+					let $el		= $(this);
+					let checked	= $el.is(':checked');
+
+					if($el.is(':checkbox')){
+						$this.find(':checkbox').toArray().forEach(el => el.setCustomValidity(''));
+
+						if(!$this.wpjam_validity((checked ? 'max_items' : 'min_items'), $el[0])){
+							$el[0].reportValidity();
+						}
+					}else{
+						if(checked){
+							$this.find('label').removeClass('checked');
+						}
+					}
+
+					$el.parent('label').toggleClass('checked', checked);
+				});
+
+				if(value != null){
+					(_.isArray(value) ? value : [value]).forEach(item => $this.find('input[value="'+item+'"]').click());
+				}
+			});
+
+			$(this).find('[data-value]').each(function(){
+				let $this	= $(this);
+				let value	= $this.data('value');
+
+				if(value){
+					if($this.is(':checkbox')){
+						$this.prop('checked', true);
+					}else if($this.is('select')){
+						$this.val(value);
+					}else if($this.hasClass('wpjam-img')){
+						$this.find('img').attr('src', value.url+$this.data('thumb_args')).end().find('input').val(value.value).end();
+					}else if($this.is('span')){
+						return;
+					}
+				}
+
+				$this.removeAttr('data-value');
+			});
+
+			$(this).find('input[data-data_type][data-query_args]:not(.ui-autocomplete-input)').each(function(){
+				let $this	= $(this);
+
+				$this.wpjam_query_label($this.data('label')).autocomplete({
+					minLength:	0,
+					source: function(request, response){
+						this.element.wpjam_query(items => $this.data('autocomplete_items', items) && response(items), request.term);
+					},
+					select: function(event, ui){
+						let item	= $this.data('autocomplete_items').find(item => (_.isObject(item) ? item.value : item) == ui.item.value);
+
+						if(_.isObject(item) && item.label){
+							$this.wpjam_query_label(item.label);
+						}
+					},
+					change: function(event, ui){
+						$this.trigger('change.show_if');
+					}
+				}).focus(function(){
+					if(!this.value){
+						$this.autocomplete('search');
+					}
+				});
+			});
+
+			$(this).find('[data-media_button]').each(function(){
+				let $this	= $(this);
+				let button	= $this.data('media_button');
+
+				$this.data('button_text', button).append([
+					$this.hasClass('wpjam-img') ? '<a href="javascript:;" class="del-img dashicons dashicons-no-alt"></a>' : '',
+					$('<a href="javascript:;" class="add-media button"><span class="dashicons dashicons-admin-media"></span>'+button+'</a>')
+				]).removeAttr('data-media_button');
+			});
+
+			$(this).find('.plupload[data-plupload]').each(function(){
+				let $this	= $(this);
+				let $input	= $this.find('input');
+				let up_args	= $this.data('plupload');
+
+				if(up_args.drop_element){
+					$this.addClass('drag-drop');
+					$input.wrap('<p class="drag-drop-buttons"></p>');
+					$this.prepend('<p class="drag-drop-info">'+up_args.drop_info[0]+'</p><p>'+up_args.drop_info[1]+'</p>');
+					$this.wrapInner('<div class="plupload-drag-drop" id="'+up_args.drop_element+'"><div class="drag-drop-inside"></div></div>');
+				}
+
+				$this.attr('id', up_args.container).removeAttr('data-plupload');
+				$this.append('<div class="progress hidden"><div class="percent"></div><div class="bar"></div></div>');
+				$input.before('<input type="button" id="'+up_args.browse_button+'" value="'+up_args.button_text+'" class="button">').wpjam_query_label($input.val().split('/').pop());
+
+				let uploader	= new plupload.Uploader({
+					...up_args,
+					url : ajaxurl,
+					multipart_params : wpjam.append_page_setting(up_args.multipart_params)
+				});
 
 				uploader.bind('init', function(up){
 					let up_container = $(up.settings.container);
@@ -58,9 +241,7 @@ jQuery(function($){
 					if(response.errcode){
 						alert(response.errmsg);
 					}else{
-						let query_title	= $(up.settings.container).find('.field-key-'+up.settings.file_data_name).addClass('hidden').val(response.path).end().find('.query-title');
-
-						query_title.html(() => query_title.children().prop('outerHTML')+response.path.split('/').pop());
+						$(up.settings.container).find('.field-key-'+up.settings.file_data_name).val(response.path).prev('span').remove().end().wpjam_query_label(response.path.split('/').pop());
 					}
 				});
 
@@ -68,1266 +249,417 @@ jQuery(function($){
 
 				uploader.init();
 			});
-		},
 
-		wpjam_show_if: function(scope=null){
-			let _this;
+			$(this).find('input[type="color"]').each(function(){
+				let $this	= $(this).attr('type', 'text');
+				let $label	= $this.val($this.attr('value')).parent('label');
+				let button	= $this.data('button_text');
+				let $picker	= $this.wpColorPicker().parents('.wp-picker-container').append($label.next('.description'));
 
-			if(this instanceof jQuery){
-				scope	= scope || $('body');
-				_this	= this;
-			}else{
-				scope	= $('body');
-				_this	= $([this]);
-			}
-
-			_this.each(function(){
-				if(!$(this).hasClass('show_if_key')){
-					return;
+				if($this.data('alpha-enabled')){
+					$this.addClass('wp-color-picker-alpha');
 				}
 
-				let key	= $(this).data('key');
-				let val	= $(this).val();
-
-				if($(this).is(':checkbox')){
-					let wrap_id	= $(this).data('wrap_id');
-
-					if(wrap_id){
-						val	= $('#'+wrap_id+' input:checked').map((i, item) => $(item).val()).get();
-					}else{
-						if(!$(this).is(':checked')){
-							val	= 0;
-						}
-					}
-				}else if($(this).is(':radio')){
-					if(!$(this).is(':checked')){
-						if($(this).parent('label').siblings('label.checked').length || $(this).parent('label').nextAll('label').length ){
-							return;
-						}
-
-						val	= null;
-					}
-				}else if($(this).is('span')){
-					val	= $(this).data('value');
+				if(button){
+					$picker.find('.wp-color-result-text').text(button);
 				}
 
-				if($(this).prop('disabled')){
-					val	= null;
+				if($label.length && $label.text()){
+					$label.prependTo($picker);
+					$picker.find('button').add($picker.find('.wp-picker-input-wrap')).insertAfter($this);
+					$this.prependTo($picker.find('.wp-picker-input-wrap'));
 				}
 
-				scope.find('.show_if-'+key).each(function(){
-					let data	= $(this).data('show_if');
-
-					if(data.compare || !data.query_arg){
-						let show	= val === null ? false : $.wpjam_compare(val, data);
-
-						if(show){
-							$(this).removeClass('hidden');
-						}else{
-							$(this).addClass('hidden');
-
-							if($(this).is('option') && $(this).is(':selected')){
-								$(this).parent().prop('selectedIndex', 0);
-							}
-						}
-
-						if($(this).is('option')){
-							$(this).prop('disabled', !show);
-							$(this).parents('select').wpjam_show_if(scope);
-						}else{
-							$(this).find(':input').not('.disabled').prop('disabled', !show);
-							$(this).find('.show_if_key').wpjam_show_if(scope);
-						}
-					}
-
-					if(!$(this).hasClass('hidden') && data.query_arg){
-						let query_var	= data.query_arg;
-						let show_if_el	= $(this);
-						let query_el	= $(this).find('[data-data_type]');
-
-						if(query_el.length > 0){
-							let query_args	= query_el.data('query_args');
-
-							if(query_args[query_var] != val){
-								query_el.data('query_args', $.extend(query_args, {[query_var] : val}));
-
-								if(query_el.is('input')){
-									query_el.val('').removeClass('hidden');
-								}else if(query_el.is('select')){
-									query_el.find('option').filter((i, item) => item.value).remove();
-									show_if_el.addClass('hidden');
-
-									query_el.wpjam_query((items) => {
-										if(items.length > 0){
-											$.each(items, (i, item) => query_el.append('<option value="'+item.value+'">'+item.label+'</option>'));
-
-											show_if_el.removeClass('hidden');
-										}
-
-										query_el.wpjam_show_if(scope);
-									});
-								}
-							}else{
-								if(query_el.is('select')){
-									if(query_el.find('option').filter((i, item) => item.value).length == 0){
-										$(this).addClass('hidden');
-									}
-								}
-							}
-						}
-					}
-				});
+				if($label.attr('data-show_if')){
+					$picker.attr('data-show_if', $label.attr('data-show_if'));
+					$label.removeAttr('data-show_if');
+				}
 			});
-		},
 
-		wpjam_custom_validity:function(){
-			$(this).off('invalid').on('invalid', function(){ 
-				this.setCustomValidity($(this).data('custom_validity'));
-			}).on('input', function(){
-				this.setCustomValidity('');
+			$(this).find('input[type="timestamp"]').each(function(){
+				let $this	= $(this);
+
+				if($this.val()){
+					let pad2	= (num)=> num.toString().padStart(2, '0');
+					let date	= new Date(+$this.val()*1000);
+
+					$this.val(date.getFullYear()+'-'+pad2(date.getMonth()+1)+'-'+pad2(date.getDate())+'T'+pad2(date.getHours())+':'+pad2(date.getMinutes()));
+				}
+
+				$this.attr('type', 'datetime-local');
 			});
-		},
 
-		wpjam_show_if_init:function(){
-			let els	= [];
+			$(this).find('input.tiny-text, input.small-text').addClass('expandable');
+			$(this).find('input.expandable:not(.is-expanded)').each(function(){
+				let $this	= $(this);
 
-			this.each(function(){
-				let data	= $(this).data('show_if');
+				$this.on('input.expandable', ()=> $this.width('').width(Math.min(522, $this.prop('scrollWidth')-($this.innerWidth()-$this.width()))).addClass('is-expanded')).trigger('input.expandable');
+			});
+
+			$(this).find('textarea[data-editor]').each(function(){
+				let $this	= $(this);
+
+				if(wp.editor){
+					let id	= $this.attr('id');
+
+					wp.editor.remove(id);
+					wp.editor.initialize(id, $this.data('editor'));
+
+					$this.attr({rows: 10, cols: 40}).removeAttr('data-editor');
+				}else{
+					console.log('请在页面加载 add_action(\'admin_footer\', \'wp_enqueue_editor\');');
+				}
+			});
+
+			$(this).find('textarea:not([rows]), textarea:not([cols])').each(function(){
+				let $this	= $(this);
+
+				if(!$this.attr('rows')){
+					$this.one('click', function(){
+						let from	= $this.height();
+						let to		= Math.min(320, $this.height('').prop('scrollHeight')+5);
+
+						if(to > from+10){
+							$this.height(from).animate({ height: to }, 300);
+						}
+					}).on('input', ()=> $this.height('').height(Math.min(320, $this.prop('scrollHeight')))).attr('rows', 4);
+				}
+
+				if(!$this.attr('cols')){
+					$this.attr('cols', $this.parents('#TB_window').length ? 52 : 68);
+				}
+			});
+
+			$(this).find('[data-show_if]:not(.show_if)').each(function(){
+				let $this	= $(this);
+				let data	= $this.data('show_if');
 				let key		= data.key;
-				let el		= data.external ? '#'+key : '.field-key-'+key;
+				let $if		= $(data.external ? '#'+key : '.field-key-'+key);
+				let val		= $if.val();
 
-				$(this).addClass(['show_if', 'show_if-'+key]);
+				$this.addClass(['show_if', 'show_if-'+key]);
 
-				if(data.query_arg){
-					let query_el	= $(this).find('[data-data_type]');
+				if(!$if.hasClass('show_if_key')){
+					$if.addClass('show_if_key once').on('change.show_if', function(){
+						let val	= $(this).wpjam_val();
 
-					if(query_el.length){
-						let query_var	= data.query_arg;
-						let query_args	= query_el.data('query_args');
-
-						if(!query_args[query_var]){
-							if((query_el.is('input') && query_el.val()) || (query_el.is('select') && $(el).val())){
-								query_el.data('query_args', $.extend(query_args, {[query_var] : $(el).val()}));
-							}
-						}
-					}
-				}
-
-				$(el).data('key', key).addClass('show_if_key');
-
-				if($.inArray(el, els) === -1){
-					els.push(el);
-				}
-			});
-
-			$.each(els, (i, el) => $(el).wpjam_show_if() );
-		},
-
-		wpjam_autocomplete: function(){
-			this.each(function(){
-				if($(this).data('query_args')){
-					if($(this).next('.query-title').length){
-						if($(this).val()){
-							$(this).addClass('hidden');
-						}else{
-							$(this).removeClass('hidden');
-						}
-					}
-
-					$(this).autocomplete({
-						minLength:	0,
-						source: function(request, response){
-							this.element.wpjam_query(response, request.term);
-						},
-						select: function(event, ui){
-							if($(this).next('.query-title').length){
-								let query_title	= $(this).addClass('hidden').next('.query-title');
-
-								query_title.html(() => query_title.children().prop('outerHTML')+ui.item.label);
-							}
-						},
-						change: function(event, ui){
-							$(this).wpjam_show_if();
-						}
-					}).focus(function(){
-						if(this.value == ''){
-							$(this).autocomplete('search');
-						}
+						$('body').find('.show_if-'+key).each(function(){
+							$(this).wpjam_show_if(val);
+						});
 					});
 				}
+
+				if(data.query_arg){
+					let arg	= data.query_arg;
+					let $el	= $this.is(':input') ? ($this.data('data_type') ? $this : null) : $this.find('[data-data_type]').first();
+
+					if($el){
+						$this.data('query_el', $el);
+
+						let query_args	= $el.data('query_args') || {};
+
+						if(!query_args[arg]){
+							query_args[arg]	= val;
+
+							$el.data('query_args', query_args);
+						}
+					}
+				}
+			});
+
+			let $once	= $(this).find('.show_if_key.once').removeClass('once');
+
+			while($once.length){
+				let $this	= $once.first().trigger('change.show_if');
+				let $wrap	= $this.parents('.checkable');
+
+				$once	= $once.not($wrap.length ? $wrap.find('input') : $this);
+			}
+
+			$(this).find('.tabs:not(.ui-tabs)').each(function(){
+				$(this).tabs({
+					activate: function(e, ui){
+						window.history.replaceState(null, null, ui.newTab.children('a')[0].hash);
+					}
+				});
 			});
 
 			return this;
 		},
 
-		wpjam_query: function(callback, term){
-			let data_type	= $(this).data('data_type');
-			let query_args	= $(this).data('query_args');
+		wpjam_query_label: function(label){
+			if(label){
+				let $this	= $(this);
 
-			if(term){
-				if(data_type == 'post_type'){
-					query_args.s		= term;
-				}else{
-					query_args.search	= term;
-				}
-			}
-
-			$.wpjam_post({
-				action:		'wpjam-query',
-				data_type:	data_type,
-				query_args:	query_args
-			}, (data) => callback.call($(this), data.items));
-		},
-
-		wpjam_color: function(){
-			this.each(function(){
-				let $input	= $(this).attr('type', 'text').val($(this).attr('value')).wpColorPicker();
-
-				$input.next('.description').appendTo($(this).parents('.wp-picker-container'));
-
-				if($input.data('button_text')){
-					$input.closest('.wp-picker-container').find('.wp-color-result-text').text($input.data('button_text'));
-				}
-			});
-		},
-
-		wpjam_editor: function(){
-			if(this.length){
-				if(wp.editor){
-					this.each(function(){
-						let id	= $(this).attr('id');
-
-						wp.editor.remove(id);
-						wp.editor.initialize(id, $(this).data('editor'));
+				$this.before($('<span class="query-title '+($this.data('class') || '')+'">'+label+'</span>').prepend($('<span class="dashicons-before dashicons-dismiss"></span>').on('click', function(e){
+					$(this).parent().fadeOut(300, function(){
+						$(this).next('input').val('').change().end().remove();
 					});
+				})));
+			}
 
-					$(this).removeAttr('data-editor').removeData('editor');
+			return this;
+		},
+
+		wpjam_mu_item: function(item){
+			$this	= $(this);
+			$tmpl	= $this.find('> .mu-item').last();
+
+			let $new	= $tmpl.clone().find('.new-item').remove().end();
+
+			if($this.is('.mu-img, .mu-image, .mu-file')){
+				if($this.is('.mu-img')){
+					$('<img src="'+item.url+$this.data('thumb_args')+'" />').on('click', ()=> wpjam.preview(item.url)).prependTo($new);
+
+					item	= item.value;
+				}
+
+				$new.find('input').val(item).end().insertBefore($tmpl);
+			}else if($this.is('.mu-text')){
+				let $input	= $new.find(':input').removeClass('ui-autocomplete-input');
+
+				if(item){
+					if(typeof(item) == 'object'){
+						if($input.data('data_type') && $input.is('input') && item.label){
+							$input.wpjam_query_label(item.label);
+						}
+
+						item	= item.value;
+					}
+
+					$input.val(item);
+
+					$new.insertBefore($tmpl);
 				}else{
-					console.log('请在页面加载 add_action(\'admin_footer\', \'wp_enqueue_editor\');');
+					$input.val('');
+
+					$tmpl.find('a.new-item').insertAfter($input);
+					$new.insertAfter($tmpl).find('.query-title').remove();
 				}
+
+				$new.wpjam_form_init();
+			}else if($this.is('.mu-fields')){
+				let i	= $this.data('i') || $this.find(' > .mu-item').length-1;
+				let t	= $new.find('template').html().replace(/\$\{i\}/g, i);
+
+				$this.data('i', i+1);
+				$new.find('template').replaceWith(t).end().insertBefore($tmpl).wpjam_form_init();
 			}
 		},
 
-		wpjam_sortable: function(){
-			if(this.length){
-				let args	= {cursor: 'move'};
+		wpjam_show_if: function(val){
+			let $el		= $(this);
+			let data	= $el.data('show_if');
 
-				if(!$(this).hasClass('mu-img')){
-					args.handle	= '.dashicons-menu';
-				}
+			if(data.compare || !data.query_arg){
+				let show	= val === null ? false : wpjam.compare(val, data);
 
-				$(this).sortable(args);
-			}
-		},
+				$el.add($el.next('br')).toggleClass('hidden', !show);
 
-		wpjam_tabs: function(){
-			$(this).tabs({
-				activate: function(event, ui){
-					ui.oldTab.find('a').removeClass('nav-tab-active');
-
-					$.wpjam_state('replace', window.location.href.split('#')[0]+ui.newTab.find('a').addClass('nav-tab-active').attr('href'));
-				},
-				create: function(event, ui){
-					ui.tab.find('a').addClass('nav-tab-active');
-				}
-			});
-		},
-
-		wpjam_remaining: function(sub){
-			let	max_items	= parseInt($(this).data('max_items'));
-
-			if(max_items){
-				let count	= $(this).find(sub).length;
-
-				if($(this).hasClass('mu-img') || $(this).hasClass('mu-fields') || $(this).hasClass('direction-row')){
-					count --;
-				}
-
-				if(count >= max_items){
-					alert('最多支持'+max_items+'个');
-
-					return 0;
+				if($el.is('option')){
+					$el.prop('disabled', !show).parents('select').prop('selectedIndex', (i, v) => (!show && $el.is(':selected')) ? 0 : v).trigger('change.show_if');
+				}else if($el.is(':input')){
+					$el.prop('disabled', !show).trigger('change.show_if');
 				}else{
-					return max_items - count;
+					$el.find(':input:not(.disabled)').prop('disabled', !show);
+					$el.find('.show_if_key').trigger('change.show_if');
 				}
 			}
 
-			return -1;
-		}
-	});
+			if(!$el.hasClass('hidden') && data.query_arg && $el.data('query_el')){
+				let $query_el	= $el.data('query_el');
+				let query_args	= $query_el.data('query_args');
+				let query_var	= data.query_arg;
 
-	$.extend({
-		wpjam_select_media: function(callback){
-			wp.media.frame.state().get('selection').map((attachment) => callback(attachment.toJSON()) );
-		},
+				if(query_args[query_var] != val){
+					$query_el.data('query_args', { ...query_args, [query_var] : val });
 
-		wpjam_attachment_url(attachment){
-			return attachment.url+'?'+$.param({orientation:attachment.orientation, width:attachment.width, height:attachment.height});
-		},
+					if($query_el.is('input')){
+						$query_el.val('').removeClass('hidden');
+					}else if($query_el.is('select')){
+						$query_el.find('option').filter((i, item) => item.value).remove();
+						$el.addClass('hidden');
 
-		wpjam_form_init: function(event){
-			$(':checked[data-wrap_id]').parent('label').addClass('checked');
-			$('.sortable[class^="mu-"]').not('.ui-sortable').wpjam_sortable();
-			$('.tabs').not('.ui-tabs').wpjam_tabs();
-			$('[data-show_if]').not('.show_if').wpjam_show_if_init();
-			$('[data-custom_validity]').wpjam_custom_validity();
-			$('.plupload[data-plupload]').wpjam_uploader_init();
-			$('input[data-data_type]').not('.ui-autocomplete-input').wpjam_autocomplete();
-			$('input[type="color"]').wpjam_color();
-			$('textarea[data-editor]').wpjam_editor();
-		}
-	});
+						$query_el.wpjam_query(function(items){
+							if(items.length){
+								items.forEach(item => $query_el.append('<option value="'+item.value+'">'+item.label+'</option>'));
 
-	$('body').on('change', '[data-wrap_id]', function(){
-		let wrap_id	= $(this).data('wrap_id');
+								$el.removeClass('hidden');
+							}
 
-		if($(this).is(':radio')){
-			if($(this).is(':checked')){
-				$('#'+wrap_id+' label').removeClass('checked');
-			}
-		}else if($(this).is(':checked')){
-			if(!$('#'+wrap_id).wpjam_remaining('input:checkbox:checked')){
-				$(this).prop('checked', false);
-
-				return false;
-			}
-		}
-
-		if($(this).is(':checked')){
-			$(this).parent('label').addClass('checked');
-		}else{
-			$(this).parent('label').removeClass('checked');
-		}
-	});
-
-	$('body').on('change', '.show_if_key', $.fn.wpjam_show_if);
-
-	$.wpjam_form_init();
-
-	$('body').on('list_table_action_success', $.wpjam_form_init);
-	$('body').on('page_action_success', $.wpjam_form_init);
-	$('body').on('option_action_success', $.wpjam_form_init);
-
-	$('body').on('click', '.query-title span.dashicons', function(){
-		$(this).parent().fadeOut(300, function(){
-			$(this).prev('input').val('').removeClass('hidden').change();
-		});
-	});
-
-	$('body').on('click', '[data-modal]', function(e){
-		wpjam_modal($(this).data('modal'));
-	});
-
-	$('body').on('click', '.wpjam-file a, .wpjam-image a', function(e){
-		let _this	= $(this);
-
-		let item_type	= _this.parent().data('item_type');
-		let title		= _this.text();
-
-		wp.media({
-			id:			'uploader_'+_this.prev('input').prop('id'),
-			title:		title,
-			library:	{ type: item_type },
-			// button:		{ text: title },
-			multiple:	false
-		}).on('select', function(){
-			$.wpjam_select_media((attachment) => _this.prev('input').val(item_type == 'image' ? $.wpjam_attachment_url(attachment) : attachment.url));
-		}).open();
-
-		return false;
-	});
-
-	//上传单个图片
-	$('body').on('click', '.wpjam-img', function(e){
-		if($(this).hasClass('readonly')){
-			return false;
-		}
-
-		let _this	= $(this);
-		let args	= {
-			id:			'uploader_'+_this.find('input').prop('id'),
-			title:		'选择图片',
-			library:	{ type: 'image' },
-			multiple:	false
-		};
-
-		let action	= 'select';
-
-		if(wp.media.view.settings.post.id){
-			args.frame	= 'post';
-			action		= 'insert';
-		}
-
-		wp.media(args).on('open',function(){
-			$('.media-frame').addClass('hide-menu');
-		}).on(action, function(){
-			$.wpjam_select_media((attachment) => {
-				let src	= attachment.url+_this.data('thumb_args');
-
-				if(_this.find('a.add-media').length){
-					_this.find('input').val(_this.data('item_type') == 'url' ? $.wpjam_attachment_url(attachment) : attachment.id);
-					_this.find('img').prop('src', src).fadeIn(300, function(){
-						_this.show();
-					});
+							$query_el.trigger('change.show_if');
+						});
+					}
 				}else{
-					_this.find('img').remove();
-					_this.find('a.del-img').remove();
-					_this.append('<img src="'+src+'" /><a href="javascript:;" class="del-img dashicons dashicons-no-alt"></a>');
+					if($query_el.is('select')){
+						if($query_el.find('option').filter((i, item) => item.value).length == 0){
+							$el.addClass('hidden');
+						}
+					}
 				}
-			});
-		}).open();
+			}
+		},
 
-		return false;
-	});
+		wpjam_val: function(){
+			let $this	= $(this);
+			let val		= $this.val();
 
-	$('body').on('click', 'a.new-item', function(e){
-		let mu	= $(this).parent().parent();
+			if($this.prop('disabled')){
+				val	= null;
+			}else if($this.is('span')){
+				val	= $this.data('value');
+			}else if($this.is('.checkable')){
+				val	= $this.find('input:checked').toArray().map(item => item.value);
+				val	= $this.find('input').is(':radio') ? (val.length ? val[0] : null) : val;
+			}else if($this.is(':checkbox, :radio')){
+				let $wrap	= $this.parents('.checkable');
 
-		let remaining	= mu.wpjam_remaining(' > div.mu-item');
-		let selected	= 0;
+				val	= $wrap.length ? $wrap.wpjam_val() : ($this.is(':checked') ? val : $this.is(':checkbox') ? 0 : null);
+			}
 
-		if(!remaining){
-			return false;
-		}
+			return val;
+		},
 
-		let _this		= $(this);
-		let _parent		= _this.parent();
-		let new_item	= _parent.clone(); 
-		let item_type	= _this.data('item_type');
-
-		if(mu.hasClass('mu-text')){	// 添加多个选项
-			new_item.find(':input').val('').end().find('input[data-data_type]').removeClass('hidden').wpjam_autocomplete().end().insertAfter(_parent);
-
-			_this.remove();
-		}else if(mu.hasClass('mu-fields')){
-			let i		= _this.data('i');
-			let render	= wp.template(_this.data('tmpl_id'));
-
-			new_item.find('script, .new-item').remove().end().prepend($(render({i:i}))).insertBefore(_parent);
-
-			_this.data('i', i+1);
-
-			$.wpjam_form_init();
-		}else if(mu.hasClass('mu-img')){	//上传多个图片
-			let args	= {
-				id:			'uploader_'+mu.prop('id'),
-				title:		'选择图片',
-				library:	{ type: 'image' },
-				multiple:	true
-			};
-
+		wpjam_media: function(args){
+			let $this	= $(this);
+			let type	= $this.data('item_type') || ($this.is('.wpjam-img, .mu-img') ? 'id' : ($this.is('.wpjam-image, .mu-image') ? 'image' : ''));
 			let action	= 'select';
+
+			args	= {
+				...args,
+				id:			'uploader_'+args.id,
+				title:		$this.data('button_text'),
+				library:	{type: $this.is('.wpjam-img, .wpjam-image, .mu-img, .mu-image') ? 'image' : type},
+				// button:		{text: title}
+			};
 
 			if(wp.media.view.settings.post.id){
 				args.frame	= 'post';
 				action		= 'insert';
 			}
 
-			wp.media(args).on('selection:toggle', function(){
-				let length	= wp.media.frame.state().get('selection').length;
+			let frame	= wp.media.frames.wpjam = wp.media(args);
 
-				if(remaining != -1){
-					if(length > remaining && length > selected){
-						alert('最多还能选择'+remaining+'个');
+			frame.on('open', function(){
+				frame.$el.addClass('hide-menu');
+
+				wp.hooks.doAction('wpjam_media', frame, args);
+			}).on(action, function(){
+				frame.state().get('selection').map((attachment)=> {
+					let data	= attachment.toJSON();
+					let val		= data.url;
+
+					if(['image', 'url'].includes(type)){
+						val	+= '?'+$.param({orientation:data.orientation, width:data.width, height:data.height});
+					}else if(type == 'id'){
+						val	= data.id;
 					}
 
-					$('.media-toolbar .media-button').prop('disabled', length > remaining);
-				}
-
-				selected	= length;
-			}).on('open', function(){
-				$('.media-frame').addClass('hide-menu');
-			}).on(action, function(){
-				$.wpjam_select_media((attachment) => {
-					let val	= item_type == 'url' ? $.wpjam_attachment_url(attachment) : attachment.id;
-					let img	= '<img src="'+attachment.url+_this.data('thumb_args')+'" data-modal="'+attachment.url+'" />';
-
-					new_item.find('.new-item').remove().end().find('input').val(val).end().prepend(img).insertBefore(_parent);
+					wp.hooks.doAction('wpjam_media_selected', val, data.url);
 				});
-			}).open();
-		}else if(mu.hasClass('mu-file') || mu.hasClass('mu-image')){	//上传多个图片或者文件
-			wp.media({
-				id:			'uploader_'+_this.parents(parent).prop('id'),
-				title:		_this.text(),
-				library:	{ type: item_type },
-				multiple:	true
-			}).on('select', function(){
-				$.wpjam_select_media((attachment) => {
-					let val	= item_type == 'image' ? $.wpjam_attachment_url(attachment) : attachment.url;
 
-					new_item.find('.new-item').remove().end().find('input').val(val).end().insertBefore(_parent);
-				});
-			}).on('selection:toggle', function(e){
-				console.log(wp.media.frame.state().get('selection'));
+				wp.hooks.removeAction('wpjam_media_selected', 'wpjam');
 			}).open();
+
+			return false;
 		}
-
-		return false;
 	});
 
-	// 删除图片
-	$('body').on('click', 'a.del-img', function(){
-		let $parent	= $(this).parent();
+	Color.fn.fromHex	= function(color){
+		color	= color.replace(/^#|^0x/, '');
+		let l	= color.length;
 
-		$parent.find('input').val('');
+		if(3 === l || 4 === l){
+			color = color.split('').map(c => c + c).join('');
+		}else if(8 == l){
+			if(/^[0-9A-F]{8}$/i.test(color)){
+				this.a(parseInt(color.substring(6), 16)/255);
 
-		$(this).parent().find('img').fadeOut(300, function(){
-			if($parent.find('a.add-media').length){
-				$(this).removeAttr('src');
-			}else{
-				$(this).remove();
+				color	= color.substring(0, 6);
 			}
+		}
+
+		this.error	= !/^[0-9A-F]{6}$/i.test(color);
+
+		return this.fromInt(parseInt(color, 16));
+	}
+
+	Color.fn.toString	= function(){
+		return this.error ? '' : '#'+(parseInt(this._color, 10).toString(16).padStart(6, '0'))+(this._alpha < 1 ? parseInt(255*this._alpha, 10).toString(16).padStart(2, '0') : '');
+	};
+
+	$.widget('wpjam.iris', $.a8c.iris, {
+		_change: function(){
+			if(!this.element.data('alpha-enabled')){
+				return this._super();
+			}
+
+			let self	= this;
+			let color	= self._color;
+			let rgb		= color.toString().substring(0, 7) || '#000000';
+			let rgba	= self.options.color = color.toString() || '#FFFFFF80';
+			let bg		= 'url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAAHnlligAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAHJJREFUeNpi+P///4EDBxiAGMgCCCAGFB5AADGCRBgYDh48CCRZIJS9vT2QBAggFBkmBiSAogxFBiCAoHogAKIKAlBUYTELAiAmEtABEECk20G6BOmuIl0CIMBQ/IEMkO0myiSSraaaBhZcbkUOs0HuBwDplz5uFJ3Z4gAAAABJRU5ErkJggg==)';
+
+			let alpha	= color.a();
+			self.hue	= color.a(1).h();
+
+			self._super();
+			color.a(alpha);
+
+			self.controls.alpha	= self.controls.alpha || self.controls.strip.width(18).clone(false, false).find('> div').slider({
+				orientation:	'vertical',
+				slide:	function(event, ui){
+					self.active	= 'strip';
+					color.a(parseFloat(ui.value/100));
+					self._change();
+				}
+			}).end().insertAfter(self.controls.strip);
+
+			self.controls.alpha.css({'background': 'linear-gradient(to bottom, '+rgb+', '+rgb+'00), '+bg}).find('> div').slider('value', parseInt(alpha*100));
+
+			self.element.removeClass('iris-error').val(rgba).wpColorPicker('instance').toggler.css('background', 'linear-gradient('+rgba+', '+rgba+'),'+bg);
+		}
+	});
+
+	$('body').on('list_table_action_success page_action_success option_action_success', function(){
+		$(this).wpjam_form_init();
+	}).on('click', '.wpjam-img, .wpjam-img .add-media, .wpjam-image .add-media, .wpjam-file .add-media', function(e){
+		let $this	= $(this).is('.wpjam-img') ? $(this) : $(this).parent();
+
+		if($this.hasClass('readonly')){
+			return false;
+		}
+
+		wp.hooks.addAction('wpjam_media_selected', 'wpjam', function(value, url){
+			$this.find('input').val(value).end().find('img').prop('src', url+$this.data('thumb_args')).fadeIn(300, ()=> $this.show());
+		});
+
+		return $this.wpjam_media({id: $this.find('input').prop('id')});
+	}).on('click', 'a.del-img', function(){
+		$(this).parent().find('input').val('').end().find('img').fadeOut(300, function(){
+			$(this).removeAttr('src');
 		});
 
 		return false;
-	});
-
-	// 删除选项
-	$('body').on('click', 'a.del-item', function(){
-		let next_input	= $(this).parent().next('input');
-		if(next_input.length > 0){
-			next_input.val('');
-		}
-
+	}).on('click', 'a.del-item, a.del-icon', function(){
 		$(this).parent().fadeOut(300, function(){
 			$(this).remove();
 		});
 
 		return false;
-	});
+	}).on('mouseenter', '[data-tooltip]', function(e){
+		if(!$('#tooltip').length){
+			$('body').append('<div id="tooltip"></div>');
+		}
+
+		$('#tooltip').html($(this).data('tooltip')).show().css({top: e.pageY+22, left: e.pageX-10});
+	}).on('mousemove', '[data-tooltip]', function(e){
+		$('#tooltip').css({top: e.pageY+22, left: e.pageX-10});
+	}).on('mouseleave mouseout', '[data-tooltip]', function(){
+		$('#tooltip').remove();
+	}).wpjam_form_init();
 });
 
 if(self != top){
 	document.getElementsByTagName('html')[0].className += ' TB_iframe';
 }
-
-function isset(obj){
-	if(typeof(obj) != 'undefined' && obj !== null){
-		return true;
-	}else{
-		return false;
-	}
-}
-
-function wpjam_modal(src, type, css){
-	type	= type || 'img';
-
-	if(jQuery('#wpjam_modal_wrap').length == 0){
-		jQuery('body').append('<div id="wpjam_modal_wrap" class="hidden"><div id="wpjam_modal"></div></div>');
-		jQuery("<a id='wpjam_modal_close' class='dashicons dashicons-no-alt del-icon'></a>")
-		.on('click', function(e){
-			e.preventDefault();
-			jQuery('#wpjam_modal_wrap').remove();
-		})
-		.prependTo('#wpjam_modal_wrap');
-	}
-
-	if(type == 'iframe'){
-		css	= css || {};
-		css = jQuery.extend({}, {width:'300px', height:'500px'}, css);
-
-		jQuery('#wpjam_modal').html('<iframe style="width:100%; height: 100%;" src='+src+'>你的浏览器不支持 iframe。</iframe>');
-		jQuery('#wpjam_modal_wrap').css(css).removeClass('hidden');
-	}else if(type == 'img'){
-		let img_preloader	= new Image();
-		let img_tag			= '';
-
-		img_preloader.onload	= function(){
-			img_preloader.onload	= null;
-
-			let width	= img_preloader.width/2;
-			let height	= img_preloader.height/2;
-
-			if(width > 400 || height > 500){
-				let radio	= (width / height >= 400 / 500) ? (400 / width) : (500 / height);
-
-				width	= width * radio;
-				height	= height * radio;
-			}
-
-			jQuery('#wpjam_modal').html('<img src="'+src+'" width="'+width+'" height="'+height+'" />');
-			jQuery('#wpjam_modal_wrap').css({width:width+'px', height:height+'px'}).removeClass('hidden');
-		}
-
-		img_preloader.src	= src;
-	}
-}
-
-function wpjam_iframe(src, css){
-	wpjam_modal(src, 'iframe', css);
-}
-
-
-( function ( $, undef ) {
-
-	var wpColorPickerAlpha = {
-		'version': 304
-	};
-
-	// Always try to use the last version of this script.
-	if ( 'wpColorPickerAlpha' in window && 'version' in window.wpColorPickerAlpha ) {
-		var version = parseInt( window.wpColorPickerAlpha.version, 10 );
-		if ( !isNaN( version ) && version >= wpColorPickerAlpha.version ) {
-			return;
-		}
-	}
-
-	// Prevent multiple initiations
-	if ( Color.fn.hasOwnProperty( 'to_s' ) ) {
-		return;
-	}
-
-	// Create new method to replace the `Color.toString()` inside the scripts.
-	Color.fn.to_s = function ( type ) {
-		if ( this.error ) {
-			return '';
-		}
-		type = ( type || 'hex' );
-		// Change hex to rgba to return the correct color.
-		if ( 'hex' === type && this._alpha < 1 ) {
-			type = 'rgba';
-		}
-
-		var color = '';
-		if ( 'hex' === type ) {
-			color = this.toString();
-		} else if ( 'octohex' === type ) {
-			color = this.toString();
-			var alpha = parseInt( 255 * this._alpha, 10 ).toString( 16 );
-			if ( alpha.length === 1 ) {
-				alpha = `0${alpha}`;
-			}
-			color += alpha;
-		} else {
-			color = this.toCSS( type ).replace( /\(\s+/, '(' ).replace( /\s+\)/, ')' );
-		}
-
-		return color;
-	}
-
-	Color.fn.fromHex = function ( color ) {
-		color = color.replace( /^#/, '' ).replace( /^0x/, '' );
-		if ( 3 === color.length || 4 === color.length ) {
-			var extendedColor = '';
-			for ( var index = 0; index < color.length; index++ ) {
-				extendedColor += '' + color[ index ];
-				extendedColor += '' + color[ index ];
-			}
-			color = extendedColor;
-		}
-
-		if ( color.length === 8 ) {
-			if ( /^[0-9A-F]{8}$/i.test( color ) ) {
-				var alpha = parseInt( color.substring( 6 ), 16 );
-				if ( !isNaN( alpha ) ) {
-					this.a( alpha / 255 );
-				} else {
-					this._error();
-				}
-			} else {
-				this._error();
-			}
-			color = color.substring( 0, 6 );
-		}
-
-		if ( !this.error ) {
-			this.error = ! /^[0-9A-F]{6}$/i.test( color );
-		}
-
-		// console.log(color + ': ' + this.a())
-		return this.fromInt( parseInt( color, 16 ) );
-	}
-
-	// Register the global variable.
-	window.wpColorPickerAlpha = wpColorPickerAlpha;
-
-	// Background image encoded
-	var backgroundImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAAHnlligAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAHJJREFUeNpi+P///4EDBxiAGMgCCCAGFB5AADGCRBgYDh48CCRZIJS9vT2QBAggFBkmBiSAogxFBiCAoHogAKIKAlBUYTELAiAmEtABEECk20G6BOmuIl0CIMBQ/IEMkO0myiSSraaaBhZcbkUOs0HuBwDplz5uFJ3Z4gAAAABJRU5ErkJggg==';
-
-	/**
-	 * Iris
-	 */
-	$.widget( 'a8c.iris', $.a8c.iris, {
-		/**
-		 * Alpha options
-		 *
-		 * @since 3.0.0
-		 *
-		 * @type {Object}
-		 */
-		alphaOptions: {
-			alphaEnabled: false,
-		},
-		/**
-		 * Get the current color or the new color.
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @param {Object|*} The color instance if not defined return the current color.
-		 *
-		 * @return {string} The element's color.
-		 */
-		_getColor: function ( color ) {
-			if ( color === undef ) {
-				color = this._color;
-			}
-
-			if ( this.alphaOptions.alphaEnabled ) {
-				color = color.to_s( this.alphaOptions.alphaColorType );
-				if ( !this.alphaOptions.alphaColorWithSpace ) {
-					color = color.replace( /\s+/g, '' );
-				}
-				return color;
-			}
-			return color.toString();
-		},
-		/**
-		 * Create widget
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @return {void}
-		 */
-		_create: function () {
-			try {
-				// Try to get the wpColorPicker alpha options.
-				this.alphaOptions = this.element.wpColorPicker( 'instance' ).alphaOptions;
-			} catch ( e ) { }
-
-			// We make sure there are all options
-			$.extend( {}, this.alphaOptions, {
-				alphaEnabled: false,
-				alphaCustomWidth: 130,
-				alphaReset: false,
-				alphaColorType: 'hex',
-				alphaColorWithSpace: false,
-				alphaSkipDebounce: false,
-				alphaDebounceTimeout: 100,
-			} );
-
-			this._super();
-		},
-		/**
-		 * Binds event listeners to the Iris.
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @return {void}
-		 */
-		_addInputListeners: function ( input ) {
-			var self = this,
-				callback = function ( event ) {
-					var val = input.val(),
-						color = new Color( val ),
-						val = val.replace( /^(#|(rgb|hsl)a?)/, '' ),
-						type = self.alphaOptions.alphaColorType;
-
-					input.removeClass( 'iris-error' );
-
-					if ( !color.error ) {
-						// let's not do this on keyup for hex shortcodes
-						if ( 'hex' !== type || !( event.type === 'keyup' && val.match( /^[0-9a-fA-F]{3}$/ ) ) ) {
-							// Compare color ( #AARRGGBB )
-							if ( color.toIEOctoHex() !== self._color.toIEOctoHex() ) {
-								self._setOption( 'color', self._getColor( color ) );
-							}
-						}
-					} else if ( val !== '' ) {
-						input.addClass( 'iris-error' );
-					}
-				};
-
-			input.on( 'change', callback );
-
-			if ( !self.alphaOptions.alphaSkipDebounce ) {
-				input.on( 'keyup', self._debounce( callback, self.alphaOptions.alphaDebounceTimeout ) );
-			}
-
-			// If we initialized hidden, show on first focus. The rest is up to you.
-			if ( self.options.hide ) {
-				input.one( 'focus', function () {
-					self.show();
-				} );
-			}
-		},
-		/**
-		 * Init Controls
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @return {void}
-		 */
-		_initControls: function () {
-			this._super();
-
-			if ( this.alphaOptions.alphaEnabled ) {
-				// Create Alpha controls
-				var self = this,
-					stripAlpha = self.controls.strip.clone( false, false ),
-					stripAlphaSlider = stripAlpha.find( '.iris-slider-offset' ),
-					controls = {
-						stripAlpha: stripAlpha,
-						stripAlphaSlider: stripAlphaSlider
-					};
-
-				stripAlpha.addClass( 'iris-strip-alpha' );
-				stripAlphaSlider.addClass( 'iris-slider-offset-alpha' );
-				stripAlpha.appendTo( self.picker.find( '.iris-picker-inner' ) );
-
-				// Push new controls
-				$.each( controls, function ( k, v ) {
-					self.controls[ k ] = v;
-				} );
-
-				// Create slider
-				self.controls.stripAlphaSlider.slider( {
-					orientation: 'vertical',
-					min: 0,
-					max: 100,
-					step: 1,
-					value: parseInt( self._color._alpha * 100 ),
-					slide: function ( event, ui ) {
-						self.active = 'strip';
-						// Update alpha value
-						self._color._alpha = parseFloat( ui.value / 100 );
-						self._change.apply( self, arguments );
-					}
-				} );
-			}
-		},
-		/**
-		 * Create the controls sizes
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @param {bool} reset Set to True for recreate the controls sizes.
-		 *
-		 * @return {void}
-		 */
-		_dimensions: function ( reset ) {
-			this._super( reset );
-
-			if ( this.alphaOptions.alphaEnabled ) {
-				var self = this,
-					opts = self.options,
-					controls = self.controls,
-					square = controls.square,
-					strip = self.picker.find( '.iris-strip' ),
-					innerWidth, squareWidth, stripWidth, stripMargin, totalWidth;
-
-				/**
-				 * I use Math.round() to avoid possible size errors,
-				 * this function returns the value of a number rounded
-				 * to the nearest integer.
-				 *
-				 * The width to append all widgets,
-				 * if border is enabled, 22 is subtracted.
-				 * 20 for css left and right property
-				 * 2 for css border
-				 */
-				innerWidth = Math.round( self.picker.outerWidth( true ) - ( opts.border ? 22 : 0 ) );
-				// The width of the draggable, aka square.
-				squareWidth = Math.round( square.outerWidth() );
-				// The width for the sliders
-				stripWidth = Math.round( ( innerWidth - squareWidth ) / 2 );
-				// The margin for the sliders
-				stripMargin = Math.round( stripWidth / 2 );
-				// The total width of the elements.
-				totalWidth = Math.round( squareWidth + ( stripWidth * 2 ) + ( stripMargin * 2 ) );
-
-				// Check and change if necessary.
-				while ( totalWidth > innerWidth ) {
-					stripWidth = Math.round( stripWidth - 2 );
-					stripMargin = Math.round( stripMargin - 1 );
-					totalWidth = Math.round( squareWidth + ( stripWidth * 2 ) + ( stripMargin * 2 ) );
-				}
-
-				square.css( 'margin', '0' );
-				strip.width( stripWidth ).css( 'margin-left', stripMargin + 'px' );
-			}
-		},
-		/**
-		 * Callback to update the controls and the current color.
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @return {void}
-		 */
-		_change: function () {
-			var self = this,
-				active = self.active;
-
-			self._super();
-
-			if ( self.alphaOptions.alphaEnabled ) {
-				var controls = self.controls,
-					alpha = parseInt( self._color._alpha * 100 ),
-					color = self._color.toRgb(),
-					gradient = [
-						'rgb(' + color.r + ',' + color.g + ',' + color.b + ') 0%',
-						'rgba(' + color.r + ',' + color.g + ',' + color.b + ', 0) 100%'
-					],
-					target = self.picker.closest( '.wp-picker-container' ).find( '.wp-color-result' );
-
-				self.options.color = self._getColor();
-				// Generate background slider alpha, only for CSS3.
-				controls.stripAlpha.css( { 'background': 'linear-gradient(to bottom, ' + gradient.join( ', ' ) + '), url(' + backgroundImage + ')' } );
-				// Update alpha value
-				if ( active ) {
-					controls.stripAlphaSlider.slider( 'value', alpha );
-				}
-
-				if ( !self._color.error ) {
-					self.element.removeClass( 'iris-error' ).val( self.options.color );
-				}
-
-				self.picker.find( '.iris-palette-container' ).on( 'click.palette', '.iris-palette', function () {
-					var color = $( this ).data( 'color' );
-					if ( self.alphaOptions.alphaReset ) {
-						self._color._alpha = 1;
-						color = self._getColor();
-					}
-					self._setOption( 'color', color );
-				} );
-			}
-		},
-		/**
-		 * Paint dimensions.
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @param {string} origin  Origin (position).
-		 * @param {string} control Type of the control,
-		 *
-		 * @return {void}
-		 */
-		_paintDimension: function ( origin, control ) {
-			var self = this,
-				color = false;
-
-			// Fix for slider hue opacity.
-			if ( self.alphaOptions.alphaEnabled && 'strip' === control ) {
-				color = self._color;
-				self._color = new Color( color.toString() );
-				self.hue = self._color.h();
-			}
-
-			self._super( origin, control );
-
-			// Restore the color after paint.
-			if ( color ) {
-				self._color = color;
-			}
-		},
-		/**
-		 * To update the options, see original source to view the available options.
-		 *
-		 * @since 3.0.0
-		 *
-		 * @param {string} key   The Option name.
-		 * @param {mixed} value  The Option value to update.
-		 *
-		 * @return {void}
-		 */
-		_setOption: function ( key, value ) {
-			var self = this;
-			if ( 'color' === key && self.alphaOptions.alphaEnabled ) {
-				// cast to string in case we have a number
-				value = '' + value;
-				newColor = new Color( value ).setHSpace( self.options.mode );
-				// Check if error && Check the color to prevent callbacks with the same color.
-				if ( !newColor.error && self._getColor( newColor ) !== self._getColor() ) {
-					self._color = newColor;
-					self.options.color = self._getColor();
-					self.active = 'external';
-					self._change();
-				}
-			} else {
-				return self._super( key, value );
-			}
-		},
-		/**
-		 * Returns the iris object if no new color is provided. If a new color is provided, it sets the new color.
-		 *
-		 * @param newColor {string|*} The new color to use. Can be undefined.
-		 *
-		 * @since 3.0.0
-		 *
-		 * @return {string} The element's color.
-		 */
-		color: function ( newColor ) {
-			if ( newColor === true ) {
-				return this._color.clone();
-			}
-			if ( newColor === undef ) {
-				return this._getColor();
-			}
-			this.option( 'color', newColor );
-		},
-	} );
-
-	/**
-	 * wpColorPicker
-	 */
-	$.widget( 'wp.wpColorPicker', $.wp.wpColorPicker, {
-		/**
-		 * Alpha options
-		 *
-		 * @since 3.0.0
-		 *
-		 * @type {Object}
-		 */
-		alphaOptions: {
-			alphaEnabled: false,
-		},
-		/**
-		 * Get the alpha options.
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @return {object} The current alpha options.
-		 */
-		_getAlphaOptions: function () {
-			var el = this.element,
-				type = ( el.data( 'type' ) || this.options.type ),
-				color = ( el.data( 'defaultColor' ) || el.val() ),
-				options = {
-					alphaEnabled: ( el.data( 'alphaEnabled' ) || false ),
-					alphaCustomWidth: 130,
-					alphaReset: false,
-					alphaColorType: 'rgb',
-					alphaColorWithSpace: false,
-					alphaSkipDebounce: ( !!el.data( 'alphaSkipDebounce' ) || false ),
-				};
-
-			if ( options.alphaEnabled ) {
-				options.alphaEnabled = ( el.is( 'input' ) && 'full' === type );
-			}
-
-			if ( !options.alphaEnabled ) {
-				return options;
-			}
-
-			options.alphaColorWithSpace = ( color && color.match( /\s/ ) );
-
-			$.each( options, function ( name, defaultValue ) {
-				var value = ( el.data( name ) || defaultValue );
-				switch ( name ) {
-					case 'alphaCustomWidth':
-						value = ( value ? parseInt( value, 10 ) : 0 );
-						value = ( isNaN( value ) ? defaultValue : value );
-						break;
-					case 'alphaColorType':
-						if ( !value.match( /^((octo)?hex|(rgb|hsl)a?)$/ ) ) {
-							if ( color && color.match( /^#/ ) ) {
-								value = 'hex';
-							} else if ( color && color.match( /^hsla?/ ) ) {
-								value = 'hsl';
-							} else {
-								value = defaultValue;
-							}
-						}
-						break;
-					default:
-						value = !!value;
-						break;
-				}
-				options[ name ] = value;
-			} );
-
-			return options;
-		},
-		/**
-		 * Create widget
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @return {void}
-		 */
-		_create: function () {
-			// Return early if Iris support is missing.
-			if ( !$.support.iris ) {
-				return;
-			}
-
-			// Set the alpha options for the current instance.
-			this.alphaOptions = this._getAlphaOptions();
-
-			// Create widget.
-			this._super();
-		},
-		/**
-		 * Binds event listeners to the color picker and create options, etc...
-		 *
-		 * @since 3.0.0
-		 * @access private
-		 *
-		 * @return {void}
-		 */
-		_addListeners: function () {
-			if ( !this.alphaOptions.alphaEnabled ) {
-				return this._super();
-			}
-
-			var self = this,
-				el = self.element,
-				isDeprecated = self.toggler.is( 'a' );
-
-			this.alphaOptions.defaultWidth = el.width();
-			if ( this.alphaOptions.alphaCustomWidth ) {
-				el.width( parseInt( this.alphaOptions.defaultWidth + this.alphaOptions.alphaCustomWidth, 10 ) );
-			}
-
-			self.toggler.css( {
-				'position': 'relative',
-				'background-image': 'url(' + backgroundImage + ')'
-			} );
-
-			if ( isDeprecated ) {
-				self.toggler.html( '<span class="color-alpha" />' );
-			} else {
-				self.toggler.append( '<span class="color-alpha" />' );
-			}
-
-			self.colorAlpha = self.toggler.find( 'span.color-alpha' ).css( {
-				'width': '30px',
-				'height': '100%',
-				'position': 'absolute',
-				'top': 0,
-				'background-color': el.val(),
-			} );
-
-			// Define the correct position for ltr or rtl direction.
-			if ( 'ltr' === self.colorAlpha.css( 'direction' ) ) {
-				self.colorAlpha.css( {
-					'border-bottom-left-radius': '2px',
-					'border-top-left-radius': '2px',
-					'left': 0
-				} );
-			} else {
-				self.colorAlpha.css( {
-					'border-bottom-right-radius': '2px',
-					'border-top-right-radius': '2px',
-					'right': 0
-				} );
-			}
-
-
-			el.iris( {
-				/**
-				 * @summary Handles the onChange event if one has been defined in the options.
-				 *
-				 * Handles the onChange event if one has been defined in the options and additionally
-				 * sets the background color for the toggler element.
-				 *
-				 * @since 3.0.0
-				 *
-				 * @param {Event} event    The event that's being called.
-				 * @param {HTMLElement} ui The HTMLElement containing the color picker.
-				 *
-				 * @returns {void}
-				 */
-				change: function ( event, ui ) {
-					self.colorAlpha.css( { 'background-color': ui.color.to_s( self.alphaOptions.alphaColorType ) } );
-
-					// fire change callback if we have one
-					if ( typeof self.options.change === 'function' ) {
-						self.options.change.call( this, event, ui );
-					}
-				}
-			} );
-
-
-			/**
-			 * Prevent any clicks inside this widget from leaking to the top and closing it.
-			 *
-			 * @since 3.0.0
-			 *
-			 * @param {Event} event The event that's being called.
-			 *
-			 * @return {void}
-			 */
-			self.wrap.on( 'click.wpcolorpicker', function ( event ) {
-				event.stopPropagation();
-			} );
-
-			/**
-			 * Open or close the color picker depending on the class.
-			 *
-			 * @since 3.0.0
-			 */
-			self.toggler.on( 'click', function () {
-				if ( self.toggler.hasClass( 'wp-picker-open' ) ) {
-					self.close();
-				} else {
-					self.open();
-				}
-			} );
-
-			/**
-			 * Checks if value is empty when changing the color in the color picker.
-			 * If so, the background color is cleared.
-			 *
-			 * @since 3.0.0
-			 *
-			 * @param {Event} event The event that's being called.
-			 *
-			 * @return {void}
-			 */
-			el.on( 'change', function ( event ) {
-				var val = $( this ).val();
-
-				if ( el.hasClass( 'iris-error' ) || val === '' || val.match( /^(#|(rgb|hsl)a?)$/ ) ) {
-					if ( isDeprecated ) {
-						self.toggler.removeAttr( 'style' );
-					}
-
-					self.colorAlpha.css( 'background-color', '' );
-
-					// fire clear callback if we have one
-					if ( typeof self.options.clear === 'function' ) {
-						self.options.clear.call( this, event );
-					}
-				}
-			} );
-
-			/**
-			 * Enables the user to either clear the color in the color picker or revert back to the default color.
-			 *
-			 * @since 3.0.0
-			 *
-			 * @param {Event} event The event that's being called.
-			 *
-			 * @return {void}
-			 */
-			self.button.on( 'click', function ( event ) {
-				if ( $( this ).hasClass( 'wp-picker-default' ) ) {
-					el.val( self.options.defaultColor ).change();
-				} else if ( $( this ).hasClass( 'wp-picker-clear' ) ) {
-					el.val( '' );
-					if ( isDeprecated ) {
-						self.toggler.removeAttr( 'style' );
-					}
-
-					self.colorAlpha.css( 'background-color', '' );
-
-					// fire clear callback if we have one
-					if ( typeof self.options.clear === 'function' ) {
-						self.options.clear.call( this, event );
-					}
-
-					el.trigger( 'change' );
-				}
-			} );
-		},
-	} );
-} )( jQuery );

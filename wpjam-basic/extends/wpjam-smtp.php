@@ -28,7 +28,7 @@ class WPJAM_SMTP extends WPJAM_Option_Model{
 			'fields'		=> [
 				'to'		=> ['title'=>'收件人',	'type'=>'email',	'required'],
 				'subject'	=> ['title'=>'主题',		'type'=>'text',		'required'],
-				'message'	=> ['title'=>'内容',		'type'=>'textarea',	'class'=>'',	'rows'=>8,	'required'],
+				'message'	=> ['title'=>'内容',		'type'=>'textarea',	'class'=>'',	'required'],
 			]
 		];
 	}

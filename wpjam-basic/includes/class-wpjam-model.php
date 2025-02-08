@@ -267,9 +267,7 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 			return $args[0];
 		}
 
-		if(str_ends_with($method, '_by_handler')){
-			$method	= wpjam_remove_postfix($method, '_by_handler');
-		}
+		try_remove_suffix($method, '_by_handler');
 
 		return wpjam_call_handler(static::get_handler(), $method, ...$args);
 	}
@@ -315,7 +313,7 @@ class WPJAM_Handler{
 
 		try{
 			if(str_ends_with($method, '_multi') && !method_exists($object, $method)){
-				$method	= wpjam_remove_postfix($method, '_multi');
+				$method	= substr($method, 0, -6);
 
 				array_walk($args[0], fn($item)=> wpjam_try([$object, $method], $item));
 
@@ -434,22 +432,20 @@ class WPJAM_DB extends WPJAM_Args{
 	}
 
 	public function __call($method, $args){
-		if(str_starts_with($method, 'where_')){
-			$type	= wpjam_remove_prefix($method, 'where_');
-
-			if($type == 'fragment'){
+		if(try_remove_prefix($method, 'where_')){
+			if($method == 'fragment'){
 				$this->where(null, $args[0]);
-			}elseif(in_array($type, ['any', 'all'])){
+			}elseif(in_array($method, ['any', 'all'])){
 				$value	= '';
 
 				if($args[0] && is_array($args[0])){
 					$where	= wpjam_map($args[0], fn($v, $k)=> $this->where($k, $v, 'value'));
-					$value	= $this->parse_where($where, ($type == 'any' ? 'OR' : 'AND'));
+					$value	= $this->parse_where($where, ($method == 'any' ? 'OR' : 'AND'));
 				}
 
 				return (!isset($args[1]) || $args[1] == 'object') ? $this->where_fragment($value) : $value;
 			}elseif(isset($args[1])){
-				$compare	= $this->get_operator()[$type] ?? '';	
+				$compare	= $this->get_operator()[$method] ?? '';	
 
 				if($compare){
 					$this->where($args[0], ['value'=>$args[1], 'compare'=>$compare]);
@@ -483,9 +479,7 @@ class WPJAM_DB extends WPJAM_Args{
 			$args	= [$this->get_sql($field), ...($method == 'get_row' ? [ARRAY_A] : [])];
 
 			return $GLOBALS['wpdb']->$method(...$args);
-		}elseif(str_ends_with($method, '_by_db')){
-			$method	= wpjam_remove_postfix($method, '_by_db');
-
+		}elseif(try_remove_suffix($method, '_by_db')){
 			return $GLOBALS['wpdb']->$method(...$args);
 		}elseif(str_contains($method, '_meta')){
 			$object	= wpjam_get_meta_type_object($this->meta_type);
@@ -494,16 +488,12 @@ class WPJAM_DB extends WPJAM_Args{
 				return $object->$method(...$args);
 			}
 		}elseif(str_starts_with($method, 'cache_')){
-			if(str_ends_with($method, '_force')){
-				$method	= wpjam_remove_postfix($method, '_force');
-			}else{
-				if(!$this->cache){
-					return false;
-				}
+			if(!try_remove_suffix($method, '_force') && !$this->cache){
+				return false;
 			}
 
 			return (WPJAM_Cache::create($this))->$method(...$args);
-		}elseif(str_ends_with($method, '_last_changed')){
+		}elseif(try_remove_suffix($method, '_last_changed')){
 			$key	= 'last_changed';
 
 			if($this->group_cache_key){
@@ -518,7 +508,7 @@ class WPJAM_DB extends WPJAM_Args{
 				}
 			}
 
-			if($method == 'get_last_changed'){
+			if($method == 'get'){
 				$value	= $this->cache_get($key);
 
 				if(!$value){
@@ -528,7 +518,7 @@ class WPJAM_DB extends WPJAM_Args{
 				}
 
 				return $value;
-			}elseif($method == 'delete_last_changed'){
+			}elseif($method == 'delete'){
 				$this->cache_delete($key);
 			}
 		}
@@ -1159,9 +1149,8 @@ class WPJAM_DB extends WPJAM_Args{
 					$value		= $value ? reset($value) : '\'\'';
 				}
 			}elseif(in_array($compare, ['LIKE', 'NOT LIKE'])){
-				$left	= str_starts_with($value, '%');
-				$right	= str_ends_with($value, '%');
-				$value	= trim($value, '%');
+				$left	= try_remove_prefix($value, '%');
+				$right	= try_remove_suffix($value, '%');
 				$value	= ($left ? '%' : '').$this->esc_like_by_db($value).($right ? '%' : '');
 				$value	= $this->format($value, '%s');
 			}else{
@@ -1299,12 +1288,11 @@ class WPJAM_DB extends WPJAM_Args{
 				$this->search($value);
 			}else{
 				if(str_contains($key, '__')){
-					$operator	= $this->get_operator();
-					$type		= array_find_key($operator, fn($v, $k)=> str_ends_with($key, '__'.$k));
-
-					if($type){
-						$key	= wpjam_remove_postfix($key, '__'.$type);
-						$value	= ['value'=>$value, 'compare'=>$operator[$type]];
+					foreach($this->get_operator() as $k => $v){
+						if(try_remove_suffix($key, '__'.$k)){
+							$value	= ['value'=>$value, 'compare'=>$v];
+							break;
+						}
 					}
 				}
 
@@ -1764,7 +1752,7 @@ class WPJAM_Lazyloader{
 		}elseif($name == 'comment'){
 			_prime_comment_caches($ids);
 		}elseif(in_array($name, ['term_meta', 'comment_meta', 'blog_meta'])){
-			wp_metadata_lazyloader()->queue_objects(wpjam_remove_postfix($name, '_meta'), $ids);
+			wp_metadata_lazyloader()->queue_objects(substr($name, 0, -5), $ids);
 		}else{
 			self::call_pending('add', $name, $ids);
 		}
@@ -1807,7 +1795,7 @@ class WPJAM_Lazyloader{
 			if($filter){
 				if($method == 'remove_filter'){
 					if($filter == 'get_'.$name.'data'){
-						update_meta_cache(wpjam_remove_postfix($name, '_meta'), $args[1]);
+						update_meta_cache(substr($name, 0, -5), $args[1]);
 					}else{
 						$setting['callback']($args[1]);
 					}
@@ -1815,8 +1803,8 @@ class WPJAM_Lazyloader{
 
 				$method($filter, [self::class, 'callback_'.$name]);
 			}
-		}elseif(str_starts_with($method, 'callback_')){
-			self::call_pending('load', wpjam_remove_prefix($method, 'callback_'));
+		}elseif(try_remove_prefix($method, 'callback_')){
+			self::call_pending('load', $method);
 
 			return array_shift($args);
 		}

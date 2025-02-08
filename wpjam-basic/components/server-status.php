@@ -23,7 +23,7 @@ class WPJAM_Server_Status{
 			
 			if(@is_readable('/proc/meminfo')){
 				$mems	= explode("\n", trim(file_get_contents('/proc/meminfo')));
-				$mem	= (int)wpjam_remove_prefix(array_find($mems, fn($m) => str_starts_with($m, 'MemTotal:')), 'MemTotal:');
+				$mem	= (int)substr(array_find($mems, fn($m) => str_starts_with($m, 'MemTotal:')), 9);
 				$base[]	= round($mem/1024/1024).'G';
 			}
 

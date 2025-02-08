@@ -165,20 +165,8 @@ function _mb_strimwidth($str, $start, $width, $trimmarker=''){
 	return $result.$trimmarker;
 }
 
-function wpjam_add_prefix($str, $prefix, &$added=false){
-	return wpjam_fix('add', 'prev', $str, $prefix, $added);
-}
-
-function wpjam_replace_prefix($str, $prefix, $replace, &$replaced=false){
-	return wpjam_fix('replace', 'prev', $str, $prefix, $replaced, $replace);
-}
-
-function wpjam_add_postfix($str, $postfix, &$added=false){
-	return wpjam_fix('add', 'post', $str, $postfix, $added);
-}
-
-function wpjam_replace_postfix($str, $postfix, $replace, &$replaced=false){
-	return wpjam_fix('replace', 'post', $str, $postfix, $removed);
+function wpjam_remove_postfix($str, $postfix, &$removed=false){
+	return wpjam_remove_suffix($str, $postfix, $removed);
 }
 
 function wpjam_toggle_url_scheme($url){
@@ -539,7 +527,9 @@ function wpjam_parse_fields($fields, $args=[]){
 }
 
 function wpjam_field_get_icon($name){
-	return WPJAM_Field::get_icon($name);
+	if($name == 'multiply'){
+		return '✖️';
+	}
 }
 
 function wpjam_form_field_tmpls(){

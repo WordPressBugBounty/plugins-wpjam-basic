@@ -116,6 +116,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 
 			if($action == 'login'){
 				$type	= $type ?: apply_filters('wpjam_default_login_type', 'login');
+				$type	= $type ?: ($_SERVER['REQUEST_METHOD'] == 'POST' ? 'login' : array_key_first($objects));
 
 				if(isset($objects[$type])){
 					$login_action	= $objects[$type]->login_action;
@@ -127,10 +128,6 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 
 				if(empty($_COOKIE[TEST_COOKIE])){
 					$_COOKIE[TEST_COOKIE]	= 'WP Cookie check';
-				}
-
-				if(!$type && $_SERVER['REQUEST_METHOD'] == 'POST'){
-					$type = 'login';
 				}
 
 				$objects['login']	= '使用账号和密码登录';

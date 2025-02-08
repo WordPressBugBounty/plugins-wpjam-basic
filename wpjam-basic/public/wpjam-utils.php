@@ -18,15 +18,7 @@ if(!function_exists('base64_urldecode')){
 }
 
 function wpjam_parse_args($args){
-	if(!$args){
-		return [];
-	}
-
-	if(count($args) == 1 && !is_array($args[0])){
-		return $args[0];
-	}
-
-	return is_array($args[0]) ? $args[0] : [$args[0]=>$args[1]];
+	return $args ? ((count($args) == 1 || is_array($args[0])) ? $args[0] : [$args[0]=>$args[1]]) : [];
 }
 
 // JWT
@@ -64,7 +56,7 @@ function wpjam_verify_jwt($token){
 function wpjam_get_jwt($key='access_token', $required=false){
 	$header	= $_SERVER['HTTP_AUTHORIZATION'] ?? '';
 
-	return ($header && str_starts_with($header, 'Bearer')) ? trim(wpjam_remove_prefix($header, 'Bearer')) : wpjam_get_parameter($key, ['required'=>$required]);
+	return ($header && str_starts_with($header, 'Bearer')) ? trim(substr($header, 6)) : wpjam_get_parameter($key, ['required'=>$required]);
 }
 
 // Crypt
@@ -294,7 +286,10 @@ function wpjam_parse_ip($ip=''){
 
 // File
 function wpjam_import($file, $columns=[]){
-	$file	= $file ? wpjam_fix('add', 'prefix', $file, wp_get_upload_dir()['basedir']) : '';
+	if($file){
+		$basedir	= wp_get_upload_dir()['basedir'];
+		$file		= str_starts_with($file, $basedir) ? $file : $basedir.$file;
+	}
 
 	if(!$file || !file_exists($file)){
 		return new WP_Error('file_not_exists', '文件不存在');
@@ -304,26 +299,19 @@ function wpjam_import($file, $columns=[]){
 
 	if($ext == 'csv'){
 		if(($handle = fopen($file, 'r')) !== false){
-			$i	= 0;
-
 			while(($row = fgetcsv($handle)) !== false){
-				$i ++;
-
-				if($i == 1){
-					$encoding	= mb_detect_encoding(implode('', $row), mb_list_encodings(), true);
-				}
+				$encoding	??= mb_detect_encoding(implode('', $row), mb_list_encodings(), true);
 
 				if($encoding != 'UTF-8'){
 					$row	= array_map(fn($v) => mb_convert_encoding($v, 'UTF-8', 'GBK'), $row);
 				}
 
-				if($i == 1){
-					[$row, $columns]	= array_map(fn($v)=> array_flip(array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $v)), [$row, $columns]);
-
-					$indexes	= array_intersect_key($row, $columns);;
-					$indexes	= array_combine(wp_array_slice_assoc($columns, array_keys($indexes)), $indexes);
+				if(isset($map)){
+					$data[]		= array_map(fn($i)=> preg_replace('/="([^"]*)"/', '$1', $row[$i]), $map);
 				}else{
-					$data[]	= wpjam_map($indexes, fn($index)=> $row[$index]);
+					$row		= array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $row);
+					$columns	= array_flip(array_map('trim', $columns));
+					$map		= wpjam_array($row, fn($k, $v)=> isset($columns[$v]) ? [$columns[$v], $k] : null);
 				}
 			}
 
@@ -421,10 +409,14 @@ function wpjam_compare($value, $compare, ...$args){
 			return in_array($value, $value2, $strict);
 		}
 	}elseif($compare == 'BETWEEN'){
-		return $value >= $value2[0] && $value <= $value2[1];
+		return wpjam_between($value, ...$value2);
 	}
 
 	return false;
+}
+
+function wpjam_between($value, $min, $max){
+	return $value >= $min && $value <= $max;
 }
 
 function wpjam_if($item, $args){
@@ -520,6 +512,10 @@ function wpjam_array($arr=null, $callback=null){
 
 function wpjam_fill($keys, $callback){
 	return wpjam_array($keys, fn($i, $k)=> [$k, $callback($k)]);
+}
+
+function wpjam_pick($arr, $keys){
+	return is_object($arr) ? wpjam_array($keys, fn($i, $k)=> isset($arr->$k) ? [$k, $arr->$k] : null) : wp_array_slice_assoc($arr, $keys);
 }
 
 function wpjam_flatten($arr, $key, $callback, $depth=0){
@@ -923,19 +919,38 @@ function_alias('wpjam_add_at',	'array_add_at');
 function_alias('wpjam_merge',	'merge_deep');
 
 function wpjam_move($arr, $id, $data){
-	if(!in_array($id, $arr)){
+	$arr	= array_values($arr);
+	$index	= array_search($id, $arr);
+	$arr	= array_values(array_diff($arr, [$id]));
+
+	if($index === false){
 		return new WP_Error('invalid_id', '无效的 ID');
 	}
 
-	$k	= array_find(['next', 'prev'], fn($k)=> isset($data[$k]));
-	$to	= $k ? $data[$k] : null;
+	if(isset($data['pos'])){
+		$index	= $data['pos'];
+	}elseif(!empty($data['up'])){
+		if($index == 0){
+			return new WP_Error('invalid_position', '已经是第一个了，不可上移了！');
+		}
 
-	if(is_null($to) || !in_array($to, $arr)){
-		return new WP_Error('invalid_position', '无效的移动位置');
+		$index--;
+	}elseif(!empty($data['down'])){
+		if($index == count($arr)){
+			return new WP_Error('invalid_position', '已经最后一个了，不可下移了！');
+		}
+
+		$index++;		
+	}else{
+		$k		= array_find(['next', 'prev'], fn($k)=> isset($data[$k]));
+		$index	= ($k && isset($data[$k])) ? array_search($data[$k], $arr) : false;
+
+		if($index === false){
+			return new WP_Error('invalid_position', '无效的移动位置');
+		}
+
+		$index	+= $k == 'prev' ? 1 : 0;
 	}
-
-	$arr	= array_values(array_diff($arr, [$id]));
-	$index	= array_search($to, $arr)+($k == 'prev' ? 1 : 0);
 
 	return wpjam_add_at($arr, $index, null, $id);
 }
@@ -961,6 +976,36 @@ function wpjam_create_uuid(){
 }
 
 // Str
+if(!function_exists('try_remove_prefix')){
+	function try_remove_prefix(&$str, $prefix){
+		$res	= str_starts_with($str, $prefix);
+		$str	= $res ? substr($str, strlen($prefix)) : $str;
+
+		return $res;
+	}
+}
+
+if(!function_exists('try_remove_suffix')){
+	function try_remove_suffix(&$str, $suffix){
+		$res	= str_ends_with($str, $suffix);
+		$str	= $res ? substr($str, 0, -strlen($suffix)) : $str;
+
+		return $res;
+	}
+}
+
+function wpjam_remove_prefix($str, $prefix, &$removed=false){
+	$removed	= try_remove_prefix($str, $prefix);
+
+	return $str;
+}
+
+function wpjam_remove_suffix($str, $suffix, &$removed=false){
+	$removed	= try_remove_suffix($str, $suffix);
+
+	return $str;
+}
+
 function wpjam_echo($str){
 	echo $str;
 }
@@ -969,35 +1014,6 @@ function wpjam_join($sep, ...$args){
 	$arr	= ($args && is_array($args[0])) ? $args[0] : $args;
 
 	return join($sep, array_filter($arr));
-}
-
-function wpjam_fix($action, $type, $str, $fix, &$acted=false, $replace=''){
-	if($fix){
-		$prev	= in_array($type, ['prefix', 'prev']);
-		$has	= $prev ? str_starts_with($str, $fix) : str_ends_with($str, $fix);
-
-		if(($action == 'add') XOR $has){
-			$acted	= true;
-
-			if($has){
-				$len	= strlen($fix);
-
-				return $prev ? $replace.substr($str, $len) : substr($str, 0, strlen($str) - $len).$replace;
-			}else{
-				return $prev ? $fix.$str : $str.$fix;
-			}
-		}
-	}
-
-	return $str;
-}
-
-function wpjam_remove_prefix($str, $prefix, &$removed=false){
-	return wpjam_fix('remove', 'prev', $str, $prefix, $removed);
-}
-
-function wpjam_remove_postfix($str, $postfix, &$removed=false){
-	return wpjam_fix('remove', 'post', $str, $postfix, $removed);
 }
 
 function wpjam_remove_pre_tab($str, $times=1){
@@ -1301,8 +1317,10 @@ function wpjam_clear_cookie($key){
 	wpjam_set_cookie($key, null, time()-YEAR_IN_SECONDS);
 }
 
-function wpjam_get_filter_name($name='', $type=''){
-	return wpjam_fix('add', 'prev', str_replace('-', '_', $name).'_'.$type, 'wpjam_');
+function wpjam_get_filter_name($name, $type){
+	$name	= str_replace('-', '_', $name).'_'.$type;
+
+	return str_starts_with($name, 'wpjam_') ? $name : 'wpjam_'.$name;
 }
 
 function wpjam_get_filesystem(){

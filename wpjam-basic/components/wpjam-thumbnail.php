@@ -16,7 +16,7 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 			'size'			=> ['type'=>'size',		'before'=>'缩略图尺寸：',		'show_if'=>$show_if],
 		];
 
-		$tax_options	= wpjam_map($tax_options, fn($v, $k)=> ['title'=>$v, 'show_if'=>['term_thumbnail_taxonomies', 'IN', $k, ['prefix'=>'', 'postfix'=>'']]]);
+		$tax_options	= wpjam_map($tax_options, fn($v, $k)=> ['title'=>$v, 'show_if'=>['term_thumbnail_taxonomies', 'IN', $k]]);
 		$order_options	= [
 			''			=> '请选择来源',
 			'first'		=> '第一张图',
@@ -26,14 +26,9 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 			],
 			'term'		=>[
 				'label'		=> '分类缩略图',
-				'show_if'	=> ['term_thumbnail_type', 'IN', ['img','image'], ['prefix'=>'',	'postfix'=>'']],
+				'show_if'	=> ['term_thumbnail_type', 'IN', ['img','image']],
 				'fields'	=> ['taxonomy'=>['options'=>[''=>'请选择分类模式']+$tax_options]]
 			]
-		];
-
-		$post_fields	= [
-			'view'		=> ['type'=>'view',			'value'=>'首先使用文章特色图片，如未设置，将按照下面的顺序获取：'],
-			'orders'	=> ['type'=>'mu-fields',	'group'=>true,	'max_items'=>5,	'fields'=>['type'=>['options'=>$order_options]]]
 		];
 
 		return [
@@ -41,10 +36,11 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 				0	=>'修改主题代码，手动使用 <a href="https://blog.wpjam.com/m/wpjam-basic-thumbnail-functions/" target="_blank">WPJAM 的缩略图函数</a>。',
 				1	=>'无需修改主题，自动应用 WPJAM 的缩略图设置。'
 			]],
-			'pdf'		=> ['title'=>'PDF预览图',		'name'=>'disable_pdf_preview',	'label'=>'屏蔽生成 PDF 预览图功能。'],
+			'pdf'		=> ['title'=>'PDF预览图',		'name'=>'disable_pdf_preview',	'label'=>'屏蔽 PDF 生成预览图功能。'],
 			'default'	=> ['title'=>'默认缩略图',	'type'=>'mu-img',	'item_type'=>'url'],
 			'term_set'	=> ['title'=>'分类缩略图',	'prefix'=>'term_thumbnail',	'fields'=>$term_fields],
-			'post_set'	=> ['title'=>'文章缩略图',	'prefix'=>'post_thumbnail',	'fields'=>$post_fields]
+
+			'post_thumbnail_orders'	=> ['title'=>'文章缩略图',	'type'=>'mu-fields',	'group'=>true,	'max_items'=>5,	'before'=>'首先使用文章特色图片，如未设置，将按照下面的顺序获取：<br />',	'fields'=>['type'=>['options'=>$order_options]]]
 		];
 	}
 

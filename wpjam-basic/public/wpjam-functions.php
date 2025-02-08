@@ -46,10 +46,20 @@ function wpjam_get_item($name, $key, $field=''){
 }
 
 function wpjam_add_item($name, $key, ...$args){
-	$object	= wpjam_get_item_object($name);
-	$result	= $object->add_item($key, ...$args);
+	if(is_object($name)){
+		if($key){
+			if(is_array($key)){
+				wpjam_map($key, fn($v, $k)=> $name->add_item($k, $v, ...$args));
+			}elseif($args){
+				$name->add_item($key, ...$args);
+			}
+		}
+	}else{
+		$object	= wpjam_get_item_object($name);
+		$result	= $object->add_item($key, ...$args);
 
-	return (!$args || !$object->is_keyable($key)) ? $key : ($args[0] ?? null);
+		return (!$args || !$object->is_keyable($key)) ? $key : ($args[0] ?? null);
+	}
 }
 
 function wpjam_set_item($name, $key, $item, $field=''){
@@ -156,16 +166,16 @@ function wpjam_get_path_fields($platforms=null, $args=[]){
 	return $object->get_fields($args, $for == 'qrcode');
 }
 
-function wpjam_parse_path_item($item, $platform=null, $postfix=''){
+function wpjam_parse_path_item($item, $platform=null, $suffix=''){
 	$object	= WPJAM_Platforms::get_instance($platform);
 
-	return $object ? $object->parse_item($item, $postfix) : ['type'=>'none'];
+	return $object ? $object->parse_item($item, $suffix) : ['type'=>'none'];
 }
 
-function wpjam_validate_path_item($item, $platforms, $postfix='', $title=''){
+function wpjam_validate_path_item($item, $platforms, $suffix='', $title=''){
 	$object	= WPJAM_Platforms::get_instance($platforms);
 
-	return $object ? $object->validate_item($item, $postfix, $title) : true;
+	return $object ? $object->validate_item($item, $suffix, $title) : true;
 }
 
 function wpjam_get_path_item_link_tag($parsed, $text){
@@ -348,16 +358,8 @@ function wpjam_get_post_type_object($name){
 function wpjam_add_post_type_field($post_type, ...$args){
 	$object	= WPJAM_Post_Type::get($post_type);
 
-	if($object){
-		wpjam_map(wpjam_parse_args($args), fn($v, $k)=> $object->add_item($k, $v, '_fields'));
-	}
-}
-
-function wpjam_remove_post_type_field($post_type, $key){
-	$object	= WPJAM_Post_Type::get($post_type);
-
-	if($object){
-		$object->delete_item($key, '_fields');
+	if($object && $args && $args[0]){
+		wpjam_add_item($object, ...[...$args, '_fields']);
 	}
 }
 
@@ -589,16 +591,8 @@ function wpjam_get_taxonomy_object($name){
 function wpjam_add_taxonomy_field($taxonomy, ...$args){
 	$object	= WPJAM_Taxonomy::get($taxonomy);
 
-	if($object){
-		wpjam_map(wpjam_parse_args($args), fn($v, $k)=> $object->add_item($k, $v, '_fields'));
-	}
-}
-
-function wpjam_remove_taxonomy_field($taxonomy, $key){
-	$object	= WPJAM_Taxonomy::get($taxonomy);
-
-	if($object){
-		$object->delete_item($key, '_fields');
+	if($object && $args[0] && $args[0]){
+		wpjam_add_item($object, ...[...$args, '_fields']);
 	}
 }
 
@@ -819,11 +813,11 @@ function wpjam_file($value, $to, $from='file'){
 			$base	= $dir['basedir'];
 		}
 
-		$path	= wpjam_remove_prefix($value, $base, $removed);
-
-		if(!$removed){
+		if(!str_starts_with($value, $base)){
 			return null;
 		}
+
+		$path	= substr($value, strlen($base));
 	}
 
 	if($to == 'path'){
@@ -991,7 +985,7 @@ function wpjam_get_thumbnail($img, ...$args){
 
 	$url	= remove_query_arg(['orientation', 'width', 'height'], wpjam_zh_urlencode($url));
 
-	if(!$args){// 1. 无参数
+	if(!$args){	// 1. 无参数
 		$size	= [];
 	}elseif(count($args) == 1){
 		// 2. ['width'=>100, 'height'=>100]	标准版
@@ -1025,6 +1019,7 @@ function wpjam_get_thumbnail_args($size){
 // $size, $ratio, [$max_width, $max_height]
 // $size, [$max_width, $max_height]
 function wpjam_parse_size($size, ...$args){
+	$size	= $size ?: 0;
 	$ratio	= ($args && !is_array($args[0])) ? (int)array_shift($args) : 1;
 	$max	= ($args && is_array($args[0])) ? array_shift($args) : [];
 
@@ -1066,7 +1061,7 @@ function wpjam_parse_size($size, ...$args){
 
 	if(count($max) >= 2 && $max[0] && $max[1]){
 		$max	= ($size['width'] && $size['height']) ? wp_constrain_dimensions($size['width'], $size['height'], $max[0], $max[1]) : $max;
-		$size	= array_merge($size, wpjam_map(['width', 'height'], fn($v, $k)=> min($size[$v], $max[$k])));
+		$size	= array_merge($size, wpjam_array(['width', 'height'], fn($k, $v)=> [$v, min($size[$v], $max[$k])]));
 	}
 
 	return $size;
@@ -1087,7 +1082,8 @@ function wpjam_is_image($value, $type=''){
 	$type	= $type ?: (is_numeric($value) ? 'id' : 'url');
 
 	if($type == 'url'){
-		$url	= wpjam_remove_postfix(explode('?', $value)[0], '#');
+		$url	= explode('?', $value)[0];
+		$url	= str_ends_with($url, '#') ? substr($url, 0, -1) : $url;
 
 		return preg_match('/\.('.implode('|', wp_get_ext_types()['image']).')$/i', $url);
 	}elseif($type == 'file'){
@@ -1219,10 +1215,10 @@ function wpjam_add_pattern($key, $args){
 }
 
 function wpjam_icon($icon){
-	if(str_starts_with($icon, 'dashicons-')){
-		return wpjam_tag('span', ['dashicons', $icon]);
-	}elseif(str_starts_with($icon, 'ri-')){
+	if(str_starts_with($icon, 'ri-')){
 		return wpjam_tag('i', $icon);
+	}else{
+		return wpjam_tag('span', ['dashicons', (str_starts_with($icon, 'dashicons-') ? '' : 'dashicons-').$icon]);
 	}
 }
 

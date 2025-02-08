@@ -178,18 +178,18 @@ if(class_exists('Memcached')){
 		}
 
 		protected function internal($action, $id, $group, $data=null){
-			$key	= $this->build_key($id, $group);
+			$group	= $this->parse_group($group);
 
 			if($action == 'get'){
-				$data	= $this->cache[$key] ?? false;
+				$data	= $this->cache[$group][$id] ?? false;
 
 				return is_object($data) ? clone $data : $data;
 			}elseif($action == 'add'){
-				$this->cache[$key]	= is_object($data) ? clone $data : $data;
+				$this->cache[$group][$id]	= is_object($data) ? clone $data : $data;
 
 				return true;
 			}elseif($action == 'del'){
-				unset($this->cache[$key]);
+				unset($this->cache[$group][$id]);
 			}
 		}
 
@@ -343,7 +343,7 @@ if(class_exists('Memcached')){
 				$keys[]	= $this->build_key($id, $group);
 			}
 
-			return $this->is_non_persistent_group($group) ? true : $this->mc->deleteMulti($keys);
+			return (empty($keys) || $this->is_non_persistent_group($group)) ? true : $this->mc->deleteMulti($keys);
 		}
 
 		public function add_global_groups($groups){
@@ -364,17 +364,15 @@ if(class_exists('Memcached')){
 			return $group ? isset($this->non_persistent_groups[$group]) : false;
 		}
 
-		private function is_queries_group($group){
-			$len	= strlen('-queries');
-
-			return substr($group, -$len, $len) === '-queries';
-		}
-
-		public function build_key($id, $group='default'){
+		private function parse_group($group){
 			$group	= $group ?: 'default';
 			$prefix	= isset($this->global_groups[$group]) ? $this->global_prefix : $this->blog_prefix;
 
-			return preg_replace('/\s+/', '', WP_CACHE_KEY_SALT.$prefix.$group.':'.$id);
+			return WP_CACHE_KEY_SALT.$prefix.$group;
+		}
+
+		public function build_key($id, $group='default'){
+			return preg_replace('/\s+/', '', $this->parse_group($group).':'.$id);
 		}
 
 		public function get_stats(){

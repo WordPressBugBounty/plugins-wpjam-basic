@@ -13,83 +13,57 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 	}
 
 	public static function get_fields(){
-		$other_fields	= [];
-		$number_field 	= ['type'=>'number',	'class'=>'small-text'];
+		$field 	= ['type'=>'number',	'class'=>'small-text'];
 
-		$fields['posts_per_page']	= $number_field+[
-			'title'			=> '全局',
-			'value'			=> get_option('posts_per_page'),
-			'description'	=> '博客全局设置的文章列表数量，空或者0则使用全局设置'
+		$fields	= [
+			'posts_per_page'	=> $field+['title'=>'全局',	'value_callback'=>fn()=> get_option('posts_per_page'),	'description'=>'博客全局设置的文章列表数量'],
+			'home'				=> $field+['title'=>'首页'],
+			'posts_per_rss'		=> $field+['title'=>'Feed',	'value_callback'=>fn()=> get_option('posts_per_rss')]
 		];
 
-		$other_fields	= wpjam_map(['author'=>'作者页','search'=>'搜索页','archive'=>'存档页'], fn($v)=>$number_field+['title'=>$v]);
-		$tax_objects	= get_taxonomies(['public'=>true,'show_ui'=>true], 'objects');
-
-		if($tax_objects){
-			$tax_fields = [];
-
-			foreach(wpjam_sort($tax_objects, ['hierarchical'=>'DESC']) as $taxonomy => $tax_object){
-				if(wpjam_get_taxonomy_setting($taxonomy, 'posts_per_page')){
-					continue;
-				}
-
-				$title	= wpjam_get_taxonomy_setting($taxonomy, 'title');
-
-				if($tax_object->hierarchical){
-					$tax_fields[$taxonomy.'_set']	= ['title'=>$title,	'type'=>'fields',	'fields'=>[
-						$taxonomy				=> $number_field,
-						$taxonomy.'_individual'	=> ['type'=>'checkbox',	'description'=>'每个'.$title.'可独立设置数量',	'show_if'=>[$taxonomy, '!=', '']]
-					]];
-				}else{
-					$tax_fields[$taxonomy] = $number_field+['title'=>$title];
-				}
-			}
-		}
-
-		$pt_objects	= WPJAM_Post_Type::get_registereds(['exclude_from_search'=>false, '_builtin'=>false], 'objects');
-
-		if($pt_objects){
+		if($pt_objects = WPJAM_Post_Type::get_registereds(['exclude_from_search'=>false, '_builtin'=>false], 'objects')){
 			$options		= ['post'=>'文章']+wp_list_pluck($pt_objects, 'title');
-			$ptype_field 	= ['title'=>'文章类型',	'type'=>'checkbox',	'value'=>['post'],	'options'=>$options];
+			$ptype_field 	= ['before'=>'文章类型：',	'type'=>'checkbox',	'value'=>['post'],	'options'=>$options];
 
-			$fields['home_set']	= ['title'=>'首页',	'type'=>'fieldset',	'fields'=>[
-				'home'				=> $number_field+['title'=>'文章数量'],
+			$fields['home']	= ['title'=>'首页',	'fields'=>[
+				'home'				=> $field+['before'=>'文章数量：'],
 				'home_post_types'	=> $ptype_field,
 			]];
 
-			$fields['posts_per_rss_set']	= ['title'=>'Feed页',	'type'=>'fieldset',	'fields'=>[
-				'posts_per_rss'		=> $number_field+['title'=>'文章数量',	'value'=>get_option('posts_per_rss')],
+			$fields['posts_per_rss']	= ['title'=>'Feed',	'fields'=>[
+				'posts_per_rss'		=> wpjam_except($fields['posts_per_rss'], 'title')+['before'=>'文章数量：'],
 				'feed_post_types'	=> $ptype_field,
 			]];
-
-			$fields['other']	= ['title'=>'其他页面',	'type'=>'fieldset',	'fields'=>$other_fields];
-
-			if($tax_fields){
-				$fields['tax_set']	= ['title'=>'分类模式',	'type'=>'fieldset',	'fields'=>$tax_fields];
-			}
-		}else{
-			$fields['home']				= $number_field+['title'=>'首页'];
-			$fields['posts_per_rss']	= $number_field+['title'=>'Feed页',	'value'=>get_option('posts_per_rss'),	'description'=>'Feed中最近文章列表数量'];
-
-			$fields	+= $other_fields+$tax_fields;
 		}
 
-		$post_types	= get_post_types(['public'=>true, 'has_archive'=>true]);
-
-		if($post_types){
-			$pt_field = [];
-
-			foreach($post_types as $post_type){
-				if(wpjam_get_post_type_setting($post_type, 'posts_per_page')){
-					continue;
-				}
-
-				$pt_field[$post_type]	= $number_field+['title'=>wpjam_get_post_type_setting($post_type, 'title')];
+		foreach(wpjam_sort(get_taxonomies(['public'=>true,'show_ui'=>true], 'objects'), ['hierarchical'=>'DESC']) as $tax => $tax_object){
+			if(isset($tax_object->posts_per_page)){
+				continue;
 			}
 
-			if($pt_field){
-				$fields['post_type_set']	= ['title'=>'文章类型<br />存档页面',	'type'=>'fieldset',	'fields'=>$pt_field];
+			$title	= wpjam_get_taxonomy_setting($tax, 'title');
+
+			$tax_fields[$tax]	= ['title'=>$title,	'group'=>'tax'] + $field;
+
+			if($tax_object->hierarchical){
+				$individual[$tax.'_individual']	= ['label'=>'每个'.$title.'可独立设置',	'show_if'=>[$tax, '!=', '']];
 			}
+		}
+
+		$other_fields		= wpjam_map(['author'=>'作者页','search'=>'搜索页','archive'=>'存档页'], fn($v)=>$field+['title'=>$v]);
+		$fields['other']	= ['title'=>'其他页面',	'wrap_tag'=>'fieldset',	'group'=>true,	'fields'=>$other_fields];
+		$fields['tax']		= ['title'=>'分类模式',	'wrap_tag'=>'fieldset',	'fields'=>$tax_fields + (empty($individual) ? [] : $individual)];
+
+		foreach(get_post_types(['public'=>true, 'has_archive'=>true]) as $post_type){
+			if(wpjam_get_post_type_setting($post_type, 'posts_per_page')){
+				continue;
+			}
+
+			$pt_field[$post_type]	= $field+['title'=>wpjam_get_post_type_setting($post_type, 'title')];
+		}
+
+		if(!empty($pt_field)){
+			$fields['post_type_set']	= ['title'=>'文章类型<br />存档页面',	'group'=>true,	'wrap_tag'=>'fieldset','fields'=>$pt_field];
 		}
 
 		return $fields;
@@ -114,15 +88,12 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 	}
 
 	public static function on_pre_get_posts($wp_query){
-		if(!$wp_query->is_main_query()){
+		if(!$wp_query->is_main_query() || (wp_doing_ajax() && get_current_screen())){
 			return;
 		}
 
-		if(isset($wp_query->query['post_type'])){
-			$required	= false;
-		}else{
-			$required	= (bool)get_post_types(['exclude_from_search'=>false, '_builtin'=>false]);
-		}
+		$required	= isset($wp_query->query['post_type']) ? false : (bool)get_post_types(['exclude_from_search'=>false, '_builtin'=>false]);
+		$object		= $wp_query->get_queried_object();
 
 		if(is_front_page()){
 			$number	= self::get_setting('home');
@@ -138,52 +109,41 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 			$number	= self::get_setting('author');
 
 			if($required){
-				$post_types	= get_post_types_by_support('author');
-				$post_types	= array_intersect($post_types, get_post_types(['public'=>true]));
+				$post_types	= array_intersect(get_post_types_by_support('author'), get_post_types(['public'=>true]));
 			}
 		}elseif(is_tax() || is_category() || is_tag()){
-			$term		= $wp_query->get_queried_object();
-			$taxonomy	= $term ? $term->taxonomy : null;
+			if($object){
+				$tax	= $object->taxonomy;
+				$number	= wpjam_get_taxonomy_setting($tax, 'posts_per_page') ?: self::get_setting($tax);
 
-			if($taxonomy){
-				$number		= wpjam_get_taxonomy_setting($taxonomy, 'posts_per_page');
-				$number		= $number ?: self::get_setting($taxonomy);
-				$individual	= self::get_setting($taxonomy.'_individual');
-
-				if($individual && metadata_exists('term', $term->term_id, 'posts_per_page')){
-					$number	= get_term_meta($term->term_id, 'posts_per_page', true);
+				if(self::get_setting($tax.'_individual')){
+					$number	= get_term_meta($object->term_id, 'posts_per_page', true) ?: $number;
 				}
 
-				if(is_category() || is_tag()){
-					$post_types	= get_taxonomy($taxonomy)->object_type;
-					$post_types	= array_intersect($post_types, get_post_types(['public'=>true]));
+				if($required && (is_category() || is_tag())){
+					$post_types	= array_intersect(get_taxonomy($tax)->object_type, get_post_types(['public'=>true]));
 				}
 			}
 		}elseif(is_post_type_archive()){
-			$pt_object	= $wp_query->get_queried_object();
-			$post_type	= $pt_object ? $pt_object->name : null;
-
-			if($post_type){
-				$number		= wpjam_get_post_type_setting($post_type, 'posts_per_page');
-				$number		= $number ?: self::get_setting($pt_object->name);
+			if($object){
+				$number	= wpjam_get_post_type_setting($object->name, 'posts_per_page') ?: self::get_setting($object->name);
 			}
 		}elseif(is_search()){
 			$number		= self::get_setting('search');
 		}elseif(is_archive()){
 			$number		= self::get_setting('archive');
-			$post_types	= 'any';
+
+			if($required){
+				$post_types	= 'any';
+			}
 		}
 
-		if(isset($number)){
+		if(!empty($number)){
 			$wp_query->set('posts_per_page', $number);
 		}
 
 		if($required && !empty($post_types)){
-			if(is_array($post_types) && count($post_types) == 1) {
-				$post_types	= $post_types[0];
-			}
-
-			$wp_query->set('post_type', $post_types);
+			$wp_query->set('post_type', (is_array($post_types) && count($post_types) == 1) ? reset($post_types) : $post_types);
 		}
 	}
 

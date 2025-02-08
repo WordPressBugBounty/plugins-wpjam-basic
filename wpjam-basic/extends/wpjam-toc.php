@@ -8,8 +8,8 @@ Version: 1.0
 class WPJAM_Toc_Setting extends WPJAM_Option_Model{
 	public static function get_fields(){
 		$fields	= [
-			'script'	=> ['title'=>'JS代码',	'type'=>'textarea',	'class'=>''],
-			'css'		=> ['title'=>'CSS代码',	'type'=>'textarea',	'class'=>'']
+			'script'	=> ['title'=>'JS代码：',	'type'=>'textarea',	'class'=>''],
+			'css'		=> ['title'=>'CSS代码：',	'type'=>'textarea',	'class'=>'']
 		];
 
 		if(current_theme_supports('style', 'toc')){
@@ -24,7 +24,7 @@ class WPJAM_Toc_Setting extends WPJAM_Option_Model{
 			'individual'=> ['title'=>'单独设置',	'type'=>'checkbox',	'value'=>1,	'label'=>'文章列表和编辑页面可以单独设置是否显示文章目录以及显示到第几级。'],
 			'depth'		=> ['title'=>'显示到：',	'type'=>'select',	'value'=>6,	'options'=>['2'=>'h2','3'=>'h3','4'=>'h4','5'=>'h5','6'=>'h6']],
 			'position'	=> ['title'=>'显示位置',	'type'=>'select',	'value'=>'content',	'options'=>['content'=>'显示在文章内容前面','shortcode'=>'使用[toc]插入内容中','function'=>'调用函数<code>wpjam_get_toc()</code>显示']],
-		]+($fields ? ['auto'=> ['title'=>'自动插入',	'type'=>'checkbox', 'value'=>1,	'fields'=>$fields,	'label'=>'自动插入文章目录的 JavaScript 和 CSS 代码。<br /><br />如不自动插入也可以将相关的代码复制主题的对应文件中。<br />请点击这里获取<a href="https://blog.wpjam.com/m/toc-js-css-code/" target="_blank">文章目录的默认 JS 和 CSS</a>。']] : []);
+		]+($fields ? ['auto'=>['title'=>'自动插入',	'fields'=>['auto'=> ['type'=>'checkbox', 'value'=>1,	'fields'=>$fields,	'label'=>'自动插入文章目录的 JavaScript 和 CSS 代码。。', 'description'=>'如不自动插入也可以将相关的代码复制主题的对应文件中。<br />请点击这里获取<a href="https://blog.wpjam.com/m/toc-js-css-code/" target="_blank">文章目录的默认 JS 和 CSS</a>']] ]] : []);
 	}
 
 	public static function filter_content($content){

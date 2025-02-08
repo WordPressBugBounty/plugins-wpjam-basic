@@ -92,7 +92,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		if(in_array($name, ['dx', 'dy'])){
 			$name	= 'distance.'.['dx'=>'width', 'dy'=>'height'][$name];
 		}elseif(in_array($name, ['wm_width', 'wm_height'])){
-			$name	= 'wm_size.'.wpjam_remove_prefix($name, 'wm_');
+			$name	= 'wm_size.'.substr($name, 3);
 		}
 
 		$value	= parent::get_setting($name, ...$args);
@@ -193,7 +193,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 
 		$local	= array_find($locals, fn($v)=> str_starts_with($str, $v));
 
-		return $local ? $to.wpjam_remove_prefix($str, $local) : $str;
+		return $local ? $to.substr($str, strlen($local)) : $str;
 	}
 
 	public static function filter_html($html){
@@ -206,7 +206,17 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		return preg_replace($regex, CDN_HOST.'/$2', self::replace($html, false, true));
 	}
 
-	public static function filter_content_img_tag($img_tag, $context, $attachment_id){
+	public static function resize($proc, $size, $max){
+		if($max && $size['width'] > $max){
+			$size	= ['width'=>$max, 'height'=>(int)($max/$size['width']*$size['height'])];
+
+			array_walk($size, fn($v, $k)=> $v ? $proc->set_attribute($k, $v) : null);
+		}
+
+		return $size;
+	}
+
+	public static function filter_content_img_tag($img_tag, $context, $id){
 		$proc	= $context == 'the_content' ? wpjam_html_tag_processor($img_tag) : '';
 		$src	= $proc ? $proc->get_attribute('src') : '';
 	
@@ -215,38 +225,32 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		}
 
 		$attr	= ['width', 'height'];
+		$valid	= fn($size)=> array_all($size, fn($v)=> is_numeric($v));
 		$size	= wpjam_fill($attr, fn($k)=> $proc->get_attribute($k) ?: 0);
 		$max	= (int)self::get_setting('max_width', ($GLOBALS['content_width'] ?? 0));
-		$meta	= $attachment_id ? wp_get_attachment_metadata($attachment_id) : null;
+		$meta	= $id ? wp_get_attachment_metadata($id) : null;
 
-		if($meta && is_array($meta) && !$size['width'] && !$size['height']){
+		if($meta && is_array($meta) && !array_filter($size)){
 			$name	= $proc->get_attribute('data-size');
-			$size	= wpjam_slice((($name && $name != 'full' && isset($meta['sizes'][$name])) ? $meta['sizes'][$name] : $meta), $attr);
-			$size	= ($max && $size['width'] > $max) ? ['width'=>$max, 'height'=>(int)($max/$size['width']*$size['height'])] : $size;
-			$update	= true;
+			$size	= self::resize($proc, wpjam_slice((($name && $name != 'full') ? ($meta['sizes'][$name] ?? $meta) : $meta), $attr), $max);
 		}else{
 			if($max){
-				if($size['width'] > $max){
-					$size	= ['width'=>$max, 'height'=>(int)($max/$size['width']*$size['height'])];
-					$update	= true;
-				}elseif($size['width'] == 0){
-					if($size['height'] == 0){
-						$size['width']	= $max;
-					}
+				if($valid($size) && $size['width'] > $max){
+					$size	= self::resize($proc, $size, $max);
+				}elseif(!array_filter($size)){
+					$size['width']	= $max;
 				}
 			}
 		}
 
-		if(!empty($update)){
-			array_walk($size, fn($v, $k)=> $v ? $proc->set_attribute($k, $v) : null);
-		}
+		if($meta && is_array($meta) && $valid($size)){
+			$s2	= wpjam_fill($attr, fn($k)=> $size[$k]*2 >= $meta[$k]);
 
-		if($meta && is_array($meta) && is_numeric($size['width']) && is_numeric($size['height'])){
-			if($size['width']*2 >= $meta['width'] && $size['height']*2 >= $meta['height']){
+			if($s2['width'] && $s2['height']){
 				unset($size['width'], $size['height']);
-			}elseif($size['width']*2 >= $meta['width'] && !$size['height']){
+			}elseif($s2['width'] && !$size['height']){
 				unset($size['width']);
-			}elseif($size['height']*2 >= $meta['height'] && !$size['width']){
+			}elseif($s2['height'] && !$size['width']){
 				unset($size['height']);
 			}
 		}
@@ -269,7 +273,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 			}
 
 			if($size){
-				array_walk($size, fn($v, $k)=> !$proc->get_attribute($k) ? $proc->set_attribute($k, wpjam_remove_postfix($v, 'px')) : null);
+				array_walk($size, fn($v, $k)=> $proc->get_attribute($k) || $proc->set_attribute($k, str_ends_with($v, 'px') ? substr($v, 0, -2) : $v));
 			}
 
 			return (string)$proc;

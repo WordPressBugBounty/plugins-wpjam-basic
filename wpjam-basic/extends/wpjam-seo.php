@@ -25,7 +25,7 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 			Disallow: $path/comments/
 			Disallow: $path/search/", 3);
 
-			$robots_field	= ['type'=>'textarea', 'class'=>'', 'rows'=>10, 'value'=>$robots];
+			$robots_field	= ['type'=>'textarea', 'value'=>$robots];
 		}
 
 		if(file_exists(ABSPATH.'sitemap.xml')){
@@ -38,15 +38,14 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		}
 
 		$wp_sitemap	= 'sitemap 地址：<a href="'.home_url('/wp-sitemap.xml').'" target="_blank">'.home_url('/wp-sitemap.xml').'</a>';
-		$unique		= '如果当前主题或其他插件也会生成摘要和关键字，可以通过勾选该选项移除。<br />如果当前主题没有<code>wp_head</code>Hook，也可以通过勾选该选项确保生成摘要和关键字。';
 
 		return [
-			'home_set'	=> ['title'=>'首页设置',	'type'=>'fieldset',	'summary'=>'设置首页 SEO',	'fields'=>[
-				'home_title'		=> ['title'=>'标题',		'placeholder'=>'不填则使用标题'],
-				'home_description'	=> ['title'=>'描述',		'type'=>'textarea', 'class'=>''],
-				'home_keywords'		=> ['title'=>'关键字'],
+			'home_set'	=> ['title'=>'首页设置',	'type'=>'fieldset',	'wrap_tag'=>'fieldset',	'fields'=>[
+				'home_title'		=> ['title'=>'标题：',	'class'=>'regular-text, expandable',	'placeholder'=>'不填则使用标题'],
+				'home_description'	=> ['title'=>'描述：',	'type'=>'textarea'],
+				'home_keywords'		=> ['title'=>'关键字：',	'class'=>'regular-text, expandable'],
 			]],
-			'post_set'	=> ['title'=>'文章和分类页',	'type'=>'fieldset',	'fields'=>[
+			'post_set'	=> ['title'=>'文章和分类页',	'type'=>'fieldset',	'group'=>true,	'fields'=>[
 				'individual'	=> ['type'=>'select', 	'options'=>[
 					'0'	=> [
 						'label'			=> '自动获取摘要和关键字',
@@ -54,17 +53,17 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 					],
 					'1'	=> [
 						'label'		=> '单独设置 SEO TDK',
-						'fields'	=> ['list_table'=>['type'=>'select', 'value'=>1, 'options'=>['1'=>'编辑和列表页都可设置', '0'=>'仅可在编辑页设置', 'only'=>'仅可在列表页设置']]]
+						'fields'	=> ['list_table'=>['value'=>1, 'options'=>['1'=>'编辑和列表页都可设置', '0'=>'仅可在编辑页设置', 'only'=>'仅可在列表页设置']]]
 					]
 				]],
 			]],
-			'unique'	=> ['title'=>'确保唯一设置',	'type'=>'checkbox',	'description'=>$unique],
+			'unique'	=> ['title'=>'确保唯一设置',	'label'=>'如果当前主题或其他插件也会生成摘要和关键字，可以通过勾选该选项确保唯一。',	'description'=>'如果当前主题没有<code>wp_head</code>Hook，也可以通过勾选该选项确保生成摘要和关键字。'],
 			'robots'	=> ['title'=>'robots.txt']+$robots_field,
-			'sitemap'	=> ['title'=>'Sitemap',		'type'=>'select',	'options'=>[0=>['label'=>'使用 WPJAM 生成的','description'=>$wpjam_sitemap], 'wp'=>['label'=>'使用 WordPress 内置的','description'=>$wp_sitemap]]]
+			'sitemap'	=> ['title'=>'Sitemap',		'options'=>[0=>['label'=>'使用 WPJAM 生成的','description'=>$wpjam_sitemap], 'wp'=>['label'=>'使用 WordPress 内置的','description'=>$wp_sitemap]]]
 		];
 	}
 
-	public static function get_meta_value($type='title', $output='html'){
+	public static function get_value($type='title', $output='html'){
 		if(is_front_page()){
 			if(get_query_var('paged') < 2){
 				$value	= self::get_setting('home_'.$type);
@@ -100,18 +99,12 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 			if($type == 'title'){
 				$value	= esc_textarea($value);
 
-				if($output == 'html'){
-					return '<title>'.$value.'</title>'."\n";
-				}
+				return $output == 'html' ? '<title>'.$value.'</title>'."\n" : $value;
 			}else{
 				$value	= esc_attr($value);
 
-				if($output == 'html'){
-					return "<meta name='{$type}' content='{$value}' />\n";
-				}
+				return $output == 'html' ? "<meta name='{$type}' content='{$value}' />\n" : $value;
 			}
-
-			return $value;
 		}
 	}
 
@@ -168,57 +161,23 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 	}
 
 	public static function filter_html($html){
-		$title 	= self::get_meta_value('title');
-		$values	= array_filter(wpjam_fill(['description', 'keywords'], [self::class, 'get_meta_value']));
+		$title 	= self::get_value('title');
+		$meta	= array_filter(wpjam_fill(['description', 'keywords'], [self::class, 'get_value']));
 
-		if($values){
-			$html	= preg_replace('#<meta\s{1,}name=[\'"]('.implode('|', array_keys($values)).')[\'"]\s{1,}content=[\'"].*?[\'"]\s{1,}\/>#is', '', $html);
+		if($meta){
+			$html	= preg_replace('#<meta\s{1,}name=[\'"]('.implode('|', array_keys($meta)).')[\'"]\s{1,}content=[\'"].*?[\'"]\s{1,}\/>#is', '', $html);
+			$title	= ($title ?: '\1')."\n".implode('', $meta);
 		}
 
-		if($title || $values){
-			$title	= $title ?: '\1';
-			$values	= $values ? "\n".implode('', $values) : '';
-			$html	= preg_replace('#(<title>.*?<\/title>)#is', $title.$values, $html);
-		}
-
-		return $html;
+		return $title ? preg_replace('#(<title>.*?<\/title>)#is', $title, $html) : $html;
 	}
 
 	public static function on_wp_head(){
 		remove_action('wp_head', '_wp_render_title_tag', 1);
 
-		echo self::get_meta_value('title') ?: _wp_render_title_tag();
-		echo self::get_meta_value('description');
-		echo self::get_meta_value('keywords');
-	}
-
-	public static function builtin_page_load($screen){
-		if(!self::get_setting('individual')){
-			return;
-		}
-
-		$args	= [
-			'title'			=> 'SEO设置',
-			'page_title'	=> 'SEO设置',
-			'submit_text'	=> '设置',
-			'list_table'	=> self::get_setting('list_table', 1),
-			'fields'		=> [
-				'seo_title'			=> ['title'=>'SEO标题',	'class'=>'large-text',	'placeholder'=>'不填则使用标题'],
-				'seo_description'	=> ['title'=>'SEO描述',	'type'=>'textarea'],
-				'seo_keywords'		=> ['title'=>'SEO关键字','class'=>'large-text']
-			]
-		];
-
-		if(in_array($screen->base, ['edit', 'post']) 
-			&& $screen->post_type != 'attachment' 
-			&& is_post_type_viewable($screen->post_type)
-		){
-			wpjam_register_post_option('seo', $args+['context'=>'side']);
-		}elseif(in_array($screen->base, ['edit-tags', 'term']) 
-			&& is_taxonomy_viewable($screen->taxonomy)
-		){
-			wpjam_register_term_option('seo', $args+['action'=>'edit']);
-		}
+		echo self::get_value('title') ?: _wp_render_title_tag();
+		echo self::get_value('description');
+		echo self::get_value('keywords');
 	}
 
 	public static function add_hooks(){
@@ -229,7 +188,7 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		}
 
 		add_filter('robots_txt',		fn($output, $public)=> $output.($public ? self::get_setting('robots') : ''), 10, 2);
-		add_filter('document_title',	fn($title)=> self::get_meta_value('title', '') ?: $title);
+		add_filter('document_title',	fn($title)=> self::get_value('title', '') ?: $title);
 
 		if(self::get_setting('sitemap') == 0){
 			wpjam_register_route('sitemap', [
@@ -240,6 +199,23 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 				],
 			]);
 		}
+
+		if(is_admin() && self::get_setting('individual')){
+			$args	= [
+				'title'			=> 'SEO设置',
+				'page_title'	=> 'SEO设置',
+				'submit_text'	=> '设置',
+				'list_table'	=> self::get_setting('list_table', 1),
+				'fields'		=> [
+					'seo_title'			=> ['title'=>'SEO标题',	'class'=>'large-text',	'placeholder'=>'不填则使用标题'],
+					'seo_description'	=> ['title'=>'SEO描述',	'type'=>'textarea'],
+					'seo_keywords'		=> ['title'=>'SEO关键字','class'=>'large-text']
+				]
+			];
+
+			wpjam_register_post_option('seo', $args+['context'=>'side',	'post_type'=>fn($v)=> $v != 'attachment' && is_post_type_viewable($v) ]);
+			wpjam_register_term_option('seo', $args+['action'=>'edit',	'taxonomy'=>fn($v)=> is_taxonomy_viewable($v)]);
+		}
 	}
 }
 
@@ -249,6 +225,5 @@ wpjam_register_option('wpjam-seo', [
 	'flush_rewrite_rules'	=> true,
 	'plugin_page'			=> 'wpjam-seo',
 	'current_tab'			=> 'seo',
-	'menu_page'				=> ['tab_slug'=>'seo', 'order'=>20, 'summary'=>__FILE__],
-	'admin_load'			=> ['base'=>['post','edit', 'edit-tags', 'term']]
+	'menu_page'				=> ['tab_slug'=>'seo', 'order'=>20, 'summary'=>__FILE__]
 ]);

@@ -7,9 +7,9 @@ Version: 1.0
 */
 class WPJAM_Site_Stats{
 	public static function get_sections(){
-		return ['custom'=>['fields'=>['stats'	=> ['title'=>'统计代码',	'type'=>'fieldset',	'fields'=>[
-			'baidu_tongji_id'		=>['title'=>'百度统计',		'type'=>'text'],
-			'google_analytics_id'	=>['title'=>'Google分析',	'type'=>'text'],
+		return ['custom'=>['fields'=>['stats'	=> ['title'=>'统计代码',	'type'=>'fieldset',	'wrap_tag'=>'fieldset',	'fields'=>[
+			'baidu_tongji_id'		=>['title'=>'百度统计 ID：',		'type'=>'text'],
+			'google_analytics_id'	=>['title'=>'Google分析 ID：',	'type'=>'text'],
 		]]]]];
 	}
 

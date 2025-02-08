@@ -54,7 +54,7 @@ class WPJAM_Post{
 
 	public function __call($method, $args){
 		if(in_array($method, ['get_content', 'get_excerpt', 'get_first_image_url'])){
-			$function	= 'wpjam_get_post_'.wpjam_remove_prefix($method, 'get_');
+			$function	= 'wpjam_get_post_'.substr($method, 4);
 
 			return $function($this->post, ...$args);
 		}elseif(in_array($method, ['get_thumbnail_url', 'get_images'])){
@@ -196,7 +196,7 @@ class WPJAM_Post{
 			'suppress_filter'	=> false,
 		];
 
-		$json	= wpjam_fill(['id', 'type', 'post_type', 'status', 'views', 'icon'], fn($field)=> $this->$field);
+		$json	= wpjam_pick($this, ['id', 'type', 'post_type', 'status', 'views', 'icon']);
 		$json	+= wpjam_fill(['title', 'excerpt'],	fn($field)=> $this->supports($field) ? html_entity_decode(call_user_func('get_the_'.$field, $this->id)) : '');
 		$fields	= ['title', 'excerpt', 'thumbnail', 'images', 'author', 'date', 'modified', 'password', 'name', 'menu_order', 'format'];
 		$json	= array_reduce($fields, fn($carry, $field)=> array_merge($carry, $this->parse_field($field, $args)), $json);
@@ -369,7 +369,7 @@ class WPJAM_Post{
 			$data['id']				= $data['ID'];
 			$data['post_content']	= is_serialized($data['post_content']) ? unserialize($data['post_content']) : $data['post_content'];
 
-			$data	+= wpjam_array($data, fn($k, $v)=> [wpjam_remove_prefix($k, 'post_'), $v]);
+			$data	+= wpjam_array($data, fn($k, $v)=> str_starts_with($k, 'post_') ? [substr($k, 5), $v] : null);
 		}
 
 		return $data;
@@ -727,7 +727,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 
 			if($this->_jam){
 				if($this->hierarchical){
-					$this->supports		= [...$this->supports, 'page-attributes'];
+					$this->supports		= array_merge($this->supports, ['page-attributes']);
 				}
 
 				if($this->rewrite){
@@ -737,7 +737,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 			}
 
 			if($this->menu_icon){
-				$this->menu_icon	= wpjam_fix('add', 'prev', $this->menu_icon, 'dashicons-');
+				$this->menu_icon	= (str_starts_with($this->menu_icon, 'dashicons-') ? '' : 'dashicons-').$this->menu_icon;
 			}
 		}
 
@@ -754,7 +754,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 			$fields['post_title']	= ['title'=>'标题',	'type'=>'text',	'required'];
 
 			if($this->supports('excerpt')){
-				$fields['post_excerpt']	= ['title'=>'摘要',	'type'=>'textarea',	'class'=>'',	'rows'=>3];
+				$fields['post_excerpt']	= ['title'=>'摘要',	'type'=>'textarea'];
 			}
 
 			if($this->supports('thumbnail')){
@@ -1140,8 +1140,8 @@ class WPJAM_Posts{
 				$terms	= $object->get_terms($tax);
 
 				if($terms){
-					$post_type	= [...$post_type, ...get_taxonomy($tax)->object_type];
-					$tt_ids		= [...$tt_ids, ...array_column($terms, 'term_taxonomy_id')];
+					$post_type	= array_merge($post_type, get_taxonomy($tax)->object_type);
+					$tt_ids		= array_merge($tt_ids, array_column($terms, 'term_taxonomy_id'));
 				}
 			}
 

@@ -413,7 +413,7 @@ class WPJAM_Bind extends WPJAM_Register{
 
 	public function get_by_user_email($meta_type, $email){
 		if($email && str_ends_with($email, '@'.$this->get_domain())){
-			$openid	= wpjam_remove_postfix($email, '@'.$this->get_domain());
+			$openid	= substr($email, 0, 0-strlen('@'.$this->get_domain()));
 
 			return $this->get_value($openid, $meta_type.'_id');
 		}

@@ -319,7 +319,7 @@ class WPJAM_Term{
 				$field	= ['type'=>'number']+self::parse_option_args($args);
 
 				return array_merge($args, [
-					'type'		=> 'fields',
+					'sep'		=> ' ',
 					'fields'	=> wpjam_array(range(0, $object->levels-1), fn($k, $v)=> ['level_'.$v, $field]),
 					'render'	=> function($args){
 						$tax	= $this->taxonomy;

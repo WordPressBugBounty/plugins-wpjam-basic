@@ -24,7 +24,7 @@ class WPJAM_API{
 					$v	= ($v && is_string($v) && str_starts_with($v, '{')) ? wpjam_json_decode($v) : wp_parse_args($v);
 
 					return wpjam_merge($carry, $v);
-				}, (self::get_parameter('query_data', 'POST') ?? [])));
+				}, []));
 			}else{
 				$data	= ['POST'=>$_POST, 'REQUEST'=>$_REQUEST][$method] ?? $_GET;
 
@@ -224,7 +224,7 @@ class WPJAM_API{
 
 class WPJAM_Route{
 	public static function __callStatic($method, $args){
-		array_map('wpjam_'.$method, array_column(wpjam_get_items('route'), wpjam_remove_prefix($method, 'add_')));
+		array_map('wpjam_'.$method, array_column(wpjam_get_items('route'), substr($method, 4)));
 	}
 
 	public static function add($name, $args){
@@ -409,8 +409,8 @@ class WPJAM_JSON extends WPJAM_Register{
 
 		add_filter('wp_die'.$part.'_handler',	fn()=> ['WPJAM_Error', 'wp_die_handler']);
 
-		$name	= wpjam_remove_prefix($action, 'mag.');
-		$name	= wpjam_remove_prefix($name, 'mag.');	// 兼容
+		$name	= substr($action, 4);
+		$name	= substr($name, str_starts_with($name, '.mag') ? 4 : 0);	// 兼容 
 		$name	= str_replace('/', '.', $name);
 		$name	= apply_filters('wpjam_json_name', $name);
 		$result	= wpjam_var('json', $name);
@@ -544,12 +544,20 @@ class WPJAM_Extend extends WPJAM_Args{
 	}
 
 	private function handle($extend, $action='include'){
-		if($extend == 'extends.php'){
+		if(str_ends_with($extend, '.php')){
+			$extend	= substr($extend, 0, -4);
+		}
+
+		if($action == 'parse'){
+			return $extend;
+		}
+
+		if($extend == 'extends'){
 			return;
 		}
 
 		$file	= $this->dir.'/'.$extend;
-		$file	.= is_dir($file) ? '/'.$extend.'.php' : (str_ends_with($extend, '.php') ? '' : '.php');
+		$file	.= is_dir($file) ? '/'.$extend.'.php' : '.php';
 
 		if(is_file($file)){
 			if($action == 'get_data'){
@@ -563,12 +571,12 @@ class WPJAM_Extend extends WPJAM_Args{
 	}
 
 	private function get_option($site=false){
-		return $this->sanitize_callback(array_filter($this->option->get_option($site)));
+		return $this->sanitize_callback($this->option->get_option($site));
 	}
 
 	public function get_fields(){
 		return wpjam_sort(wpjam_array(array_diff(scandir($this->dir), ['.', '..']), function($k, $extend){
-			$extend	= wpjam_remove_postfix($extend, '.php');
+			$extend	= $this->handle($extend, 'parse');
 			$data	= $this->handle($extend, 'get_data');
 
 			if($data && $data['Name']){
@@ -594,7 +602,7 @@ class WPJAM_Extend extends WPJAM_Args{
 	}
 
 	public function sanitize_callback($data){
-		return wpjam_array(array_filter($data), fn($k)=> wpjam_remove_postfix($k, '.php'));
+		return wpjam_array(array_filter($data), fn($k)=> $this->handle($k, 'parse'));
 	}
 
 	public static function get_file_data($file){
@@ -643,7 +651,7 @@ class WPJAM_Platform extends WPJAM_Register{
 			$item	= $this->get_item(array_shift($args));
 			$object	= wpjam_get_data_type_object(wpjam_pull($item, 'page_type'), $item);
 
-			return $object ? [$object, wpjam_remove_postfix($method, '_by_page_type')](...$args) : null;
+			return $object ? [$object, substr($method, 0, -13)](...$args) : null;
 		}
 
 		return $this->call_dynamic_method($method, ...$args);
@@ -728,13 +736,13 @@ class WPJAM_Platform extends WPJAM_Register{
 		return $paths ?? [];
 	}
 
-	public function parse_path($args, $postfix=''){
-		$page_key	= wpjam_pull($args, 'page_key'.$postfix);
+	public function parse_path($args, $suffix=''){
+		$page_key	= wpjam_pull($args, 'page_key'.$suffix);
 
 		if($page_key == 'none'){
 			return ($video = $args['video'] ?? '') ? ['type'=>'video', 'video'=>wpjam_get_qqv_id($video) ?: $video] : ['type'=>'none'];
 		}elseif($this->get_item($page_key)){
-			$args	= $postfix ? wpjam_map($this->get_fields($page_key), fn($v, $k)=> $args[$k.$postfix] ?? null) : $args;
+			$args	= $suffix ? wpjam_map($this->get_fields($page_key), fn($v, $k)=> $args[$k.$suffix] ?? null) : $args;
 			$path	= $this->get_path($page_key, $args);
 
 			return (is_wp_error($path) || is_array($path)) ? $path : (isset($path) ? ['type'=>'', 'page_key'=>$page_key, 'path'=>$path] : null);
@@ -805,31 +813,31 @@ class WPJAM_Platforms{
 	public function get_fields($args, $strict=false){
 		$prepend	= wpjam_pull($args, 'prepend_name');
 		$prepend	= $prepend ? ['prepend_name'=>$prepend] : [];
-		$postfix	= wpjam_pull($args, 'postfix');
+		$suffix		= wpjam_pull($args, 'suffix');
 		$title		= wpjam_pull($args, 'title') ?: '页面';
-		$key		= 'page_key'.$postfix;
+		$key		= 'page_key'.$suffix;
 		$backup		= (count($this->platforms) > 1 && !$strict) ? $key.'_backup' : '';
 		$paths		= WPJAM_Path::get_by($args);
-		$cache_key	= md5(serialize($prepend+['postfix'=>$postfix, 'strict'=>$strict, 'page_keys'=>array_keys($paths)]));
+		$cache_key	= md5(serialize($prepend+['suffix'=>$suffix, 'strict'=>$strict, 'page_keys'=>array_keys($paths)]));
 		$cache		= $this->cache[$cache_key] ?? [];
 
 		if(!$cache){
 			$groups	= WPJAM_Path::get_groups($strict);
 			$cache	= [$key=>$groups]+($backup ? ['show_if'=>[], $backup=>$groups] : []);
-			$parser	= fn($path, $postfix)=> [$path->name=> [
+			$parser	= fn($path, $suffix)=> [$path->name=> [
 				'label'		=> $path->title,
-				'fields'	=> wpjam_array($path->get_fields($this->platforms), fn($k, $v)=> [$k.$postfix, wpjam_except($v, 'title')+$prepend])
+				'fields'	=> wpjam_array($path->get_fields($this->platforms), fn($k, $v)=> [$k.$suffix, wpjam_except($v, 'title')+$prepend])
 			]];
 
 			foreach($paths as $path){
 				if($this->has_path($path->name, 'OR', $strict)){
 					$group	= $path->group ?: ($path->tabbar ? 'tabbar' : 'others');
 
-					$cache[$key][$group]['options']	+= $parser($path, $postfix);
+					$cache[$key][$group]['options']	+= $parser($path, $suffix);
 
 					if($backup){
 						if($this->has_path($path->name, 'AND')){
-							$cache[$backup][$group]['options']	+= $parser($path, $postfix.'_backup');
+							$cache[$backup][$group]['options']	+= $parser($path, $suffix.'_backup');
 						}else{
 							$cache['show_if'][]	= $path->name;
 						}
@@ -840,14 +848,10 @@ class WPJAM_Platforms{
 			$this->cache[$cache_key] = $cache;
 		}
 
-		foreach([$key, $backup] as $k){
-			if($k){
-				$fields[$k.'_set']	= ['type'=>'fieldset', 'fields'=>[$k=>['options'=>array_filter($cache[$k], fn($item)=> $item['options'])]+$prepend]];
-				$fields[$k.'_set']	+= $k == $backup ? ['title'=>'备用'.$title, 'show_if'=>[$key, 'IN', $cache['show_if']]] : ['title'=>$title];
-			}
-		}
-
-		return $fields;
+		return wpjam_array([$key, $backup], fn($i, $k)=> !$k ? null : [
+			$k.'_set',
+			['type'=>'fieldset', 'label'=>true, 'fields'=>[$k=>['options'=>array_filter($cache[$k], fn($item)=> $item['options'])]+$prepend]]+($k == $backup ? ['title'=>'备用'.$title, 'show_if'=>[$key, 'IN', $cache['show_if']]] : ['title'=>$title])
+		]);
 	}
 
 	public function get_current($output='object'){
@@ -858,24 +862,24 @@ class WPJAM_Platforms{
 		}
 	}
 
-	public function parse_item($item, $postfix=''){
+	public function parse_item($item, $suffix=''){
 		$platform	= $this->get_current();
-		$parsed		= $platform->parse_path($item, $postfix);
+		$parsed		= $platform->parse_path($item, $suffix);
 
 		if((!$parsed || is_wp_error($parsed)) && count($this->platforms) > 1){
-			$parsed	= $platform->parse_path($item, $postfix.'_backup');
+			$parsed	= $platform->parse_path($item, $suffix.'_backup');
 		}
 
 		return ($parsed && !is_wp_error($parsed)) ? $parsed : ['type'=>'none'];
 	}
 
-	public function validate_item($item, $postfix='', $title=''){
+	public function validate_item($item, $suffix='', $title=''){
 		foreach($this->platforms as $platform){
-			$result	= $platform->parse_path($item, $postfix);
+			$result	= $platform->parse_path($item, $suffix);
 
 			if(is_wp_error($result) || $result){
-				if(!$result && count($this->platforms) > 1 && !str_ends_with($postfix, '_backup')){
-					return $this->validate_item($item, $postfix.'_backup', '备用'.$title);
+				if(!$result && count($this->platforms) > 1 && !str_ends_with($suffix, '_backup')){
+					return $this->validate_item($item, $suffix.'_backup', '备用'.$title);
 				}
 
 				return $result ?: new WP_Error('invalid_page_key', '无效的'.$title.'页面。');
@@ -1022,16 +1026,15 @@ class WPJAM_Data_Type extends WPJAM_Register{
 
 	public function query_label($id, $field=null){
 		if($this->query_label){
-			return $id ? call_user_func($this->query_label, $id, $field) : '';
-		}elseif($this->model && $this->label_field){
 			if($id){
-				$data	= $this->model::get($id);
-				$value	= $data ? $data[$this->label_field] : null;
-
-				return $value ?? $id;
+				return call_user_func($this->query_label, $id, $field);
 			}
+		}elseif($this->model && $this->label_field){
+			$data	= $id ? $this->model::get($id) : null;
 
-			return '';
+			if($data){
+				return wpjam_get($data, $this->label_field);
+			}
 		}
 	}
 
@@ -1141,6 +1144,30 @@ class WPJAM_Data_Type extends WPJAM_Register{
 	}
 }
 
+class WPJAM_Chainable{
+	private $object;
+	private $value;
+
+	public function __construct($object, $value=null){
+		$this->object	= $object;
+		$this->value	= $value;
+	}
+
+	public function __call($method, $args){
+		if($method == 'value'){
+			if(!$args){
+				return $this->value;
+			}
+
+			$this->value	= $args[0];
+		}else{
+			$this->value	= wpjam_try([$this->object, $method], $this->value, ...$args);
+		}
+
+		return $this;
+	}
+}
+
 class WPJAM_Error{
 	public static function filter($data){
 		$error	= wpjam_get_setting('wpjam_errors', $data['errcode']);
@@ -1161,12 +1188,10 @@ class WPJAM_Error{
 		return $data;
 	}
 
-	public static function parse_message($code, $message=[]){
+	public static function parse_message($key, $message=[]){
 		$fn	= fn($map, $key)=> $map[$key] ?? ucwords($key);
 
-		if(str_starts_with($code, 'invalid_')){
-			$key	= wpjam_remove_prefix($code, 'invalid_');
-
+		if(try_remove_prefix($key, 'invalid_')){
 			if($key == 'parameter'){
 				return $message ? '无效的参数：'.$message[0].'。' : '参数错误。';
 			}elseif($key == 'callback'){
@@ -1195,22 +1220,17 @@ class WPJAM_Error{
 					'qrcode'		=> '二维码',
 				], $key);
 			}
-		}elseif(str_starts_with($code, 'illegal_')){
-			$key	= wpjam_remove_prefix($code, 'illegal_');
-
+		}elseif(try_remove_prefix($key, 'illegal_')){
 			return $fn([
 				'access_token'	=> 'Access Token ',
 				'refresh_token'	=> 'Refresh Token ',
 				'verify_code'	=> '验证码',
 			], $key).'无效或已过期。';
-		}elseif(str_ends_with($code, '_required')){
-			$key	= wpjam_remove_postfix($code, '_required');
+		}elseif(try_remove_suffix($key, '_required')){
 			$format	= $key == 'parameter' ? '参数%s' : '%s的值';
 
 			return $message ? sprintf($format.'为空或无效。', ...$message) : '参数或者值无效';
-		}elseif(str_ends_with($code, '_occupied')){
-			$key	= wpjam_remove_postfix($code, '_occupied');
-
+		}elseif(try_remove_suffix($key, '_occupied')){
 			return $fn([
 				'phone'		=> '手机号码',
 				'email'		=> '邮箱地址',
