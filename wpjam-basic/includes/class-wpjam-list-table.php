@@ -150,7 +150,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		if($method == 'get_arg'){
 			return $this->{$args[0]};
 		}elseif($method == 'exists'){
-			return method_exists($this->model, $args[0]);
+			return $this->model ? method_exists($this->model, $args[0]) : false;
 		}elseif(str_ends_with($method, '_by_builtin')){
 			if($this->builtin){
 				$GLOBALS['wp_list_table'] ??= _get_list_table($this->builtin, ['screen'=>$this->screen]);
@@ -675,8 +675,14 @@ class WPJAM_List_Table extends WP_List_Table{
 		}
 
 		$pattern	= $this->layout == 'calendar' ? '/<td id="date-(.*?)".*?>.*?<\/td>/is' : '/<tr id="'.$this->singular.'-(.*?)".*?>.*?<\/tr>/is';
+		$result		= preg_replace_callback($pattern, fn($m)=> $this->filter_display($m[0], $m[1]), $html);
+		 
+		if(is_null($result)){
+			trigger_error(preg_last_error_msg());
+			return $html;
+		}
 
-		return preg_replace_callback($pattern, fn($m)=> $this->filter_display($m[0], $m[1]), $html);
+		return $result;
 	}
 
 	public static function call_type($type, $method, ...$args){
