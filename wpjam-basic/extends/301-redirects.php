@@ -50,12 +50,12 @@ class WPJAM_Redirect extends WPJAM_Model{
 			}
 
 			if(!get_option('page_comments') && str_contains($url, 'comment-page-')){
-				wp_redirect(preg_replace('/comment-page-(.*)\//', '',  $url), 301);
+				wp_redirect(wpjam_replace('/comment-page-(.*)\//', '',  $url), 301);
 				exit;
 			}
 
 			if(str_contains($url, 'page/')){
-				wp_redirect(preg_replace('/page\/(.*)\//', '',  $url), 301);
+				wp_redirect(wpjam_replace('/page\/(.*)\//', '',  $url), 301);
 				exit;
 			}
 		}

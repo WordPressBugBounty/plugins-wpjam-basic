@@ -1020,6 +1020,21 @@ function wpjam_remove_pre_tab($str, $times=1){
 	return preg_replace('/^\t{'.$times.'}/m', '', $str);
 }
 
+function wpjam_replace($pattern, $replace, $subject, $limit=-1, &$count=null, $flags=0){
+	if(is_closure($replace)){
+		$result	= preg_replace_callback($pattern, $replace, $subject, $limit, $count, $flags);
+	}else{
+		$result	= preg_replace($pattern, $replace, $subject, $limit, $count);
+	}
+
+	if(is_null($result)){
+		trigger_error(preg_last_error_msg());
+		return $subject;
+	}
+
+	return $result;
+}
+
 function wpjam_unserialize($serialized, $callback=null){
 	if($serialized){
 		$result	= @unserialize($serialized);
@@ -1120,26 +1135,26 @@ function wpjam_expandable($str, $num=10, $name=null){
 }
 
 // Shortcode
-function wpjam_do_shortcode($content, $tagnames, $ignore_html=false){
-	if(str_contains($content, '[') && preg_match_all('@\[([^<>&/\[\]\x00-\x20=]++)@', $content, $matches)){
-		$tagnames	= array_intersect((array)$tagnames, $matches[1]);
-		$content	= do_shortcodes_in_html_tags($content, $ignore_html, $tagnames);
-		$pattern	= get_shortcode_regex($tagnames);
-		$content	= preg_replace_callback("/$pattern/", 'do_shortcode_tag', $content);
-		$content	= unescape_invalid_shortcodes($content);
+function wpjam_do_shortcode($content, $tags, $ignore_html=false){
+	if($tags){
+		if(wpjam_is_assoc_array($tags)){
+			array_walk($tags, fn($callback, $tag)=> add_shortcode($tag, $callback));
+
+			$tags	= array_keys($tags);
+		}
+
+		if(array_any($tags, fn($tag)=> str_contains($content, '['.$tag))){
+			$content	= do_shortcodes_in_html_tags($content, $ignore_html, $tags);
+			$content	= preg_replace_callback('/'.get_shortcode_regex($tags).'/', 'do_shortcode_tag', $content);
+			$content	= unescape_invalid_shortcodes($content);
+		}
 	}
 
 	return $content;
 }
 
-function wpjam_parse_shortcode_attr($str, $tagnames=null){
-	$pattern = get_shortcode_regex([$tagnames]);
-
-	if(preg_match("/$pattern/", $str, $m)){
-		return shortcode_parse_atts($m[3]);
-	}
-
-	return [];
+function wpjam_parse_shortcode_attr($str, $tag){
+	return preg_match('/'.get_shortcode_regex((array)$tag).'/', $str, $m) ? shortcode_parse_atts($m[3]) : [];
 }
 
 function wpjam_get_current_page_url(){

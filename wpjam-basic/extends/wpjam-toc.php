@@ -102,7 +102,7 @@ class WPJAM_Toc{
 	protected $items	= [];
 
 	public function __construct(&$content, $depth=6){
-		$content	= preg_replace_callback('#<h([1-'.$depth.'])(.*?)>(.*?)</h\1>#', [$this, 'add_item'], $content);
+		$content	= wpjam_replace('#<h([1-'.$depth.'])\b([^>]*)>(.*?)</h\1>#', fn($m)=> $this->add_item($m), $content);
 	}
 
 	public function get_toc(){

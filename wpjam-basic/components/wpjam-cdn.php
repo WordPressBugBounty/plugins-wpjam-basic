@@ -203,7 +203,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		$dirs	= $dirs ? '('.implode('|', array_map(fn($dir)=> preg_quote(trim($dir, '/')), $dirs)).')\/' : '';
 		$regex	= '#('.$local.')\/('.$dirs.'[^\s\?\\\'\"\;\>\<]{1,}\.('.implode('|', $exts).')'.'[\"\\\'\)\s\]\?]{1})#';
 
-		return preg_replace($regex, CDN_HOST.'/$2', self::replace($html, false, true));
+		return wpjam_replace($regex, CDN_HOST.'/$2', self::replace($html, false, true));
 	}
 
 	public static function resize($proc, $size, $max){

@@ -160,32 +160,27 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		exit;
 	}
 
-	public static function filter_html($html){
-		$title 	= self::get_value('title');
-		$meta	= array_filter(wpjam_fill(['description', 'keywords'], [self::class, 'get_value']));
-
-		if($meta){
-			$html	= preg_replace('#<meta\s{1,}name=[\'"]('.implode('|', array_keys($meta)).')[\'"]\s{1,}content=[\'"].*?[\'"]\s{1,}\/>#is', '', $html);
-			$title	= ($title ?: '\1')."\n".implode('', $meta);
-		}
-
-		return $title ? preg_replace('#(<title>.*?<\/title>)#is', $title, $html) : $html;
-	}
-
 	public static function on_wp_head(){
-		remove_action('wp_head', '_wp_render_title_tag', 1);
+		$title	= self::get_value('title');
+		$meta	= array_filter(wpjam_fill(['description', 'keywords'], fn($k)=> self::get_value($k)));
 
-		echo self::get_value('title') ?: _wp_render_title_tag();
-		echo self::get_value('description');
-		echo self::get_value('keywords');
+		echo implode($meta);
+
+		if(self::get_setting('unique')){
+			if($meta){
+				add_filter('wpjam_html', fn($html)=> wpjam_replace('#<meta\s+name=([\'"])('.implode('|', array_keys($meta)).')\1(.*?)\/>#is', '', $html));
+
+				$title	= ($title ?: '\1')."\n".implode($meta);
+			}
+
+			if($title){
+				add_filter('wpjam_html', fn($html)=> wpjam_replace('#(<title>[^<]*<\/title>)#is', $title, $html));
+			}
+		}
 	}
 
 	public static function add_hooks(){
-		if(self::get_setting('unique')){
-			add_filter('wpjam_html',	[self::class, 'filter_html']);
-		}else{
-			add_action('wp_head',		[self::class, 'on_wp_head'], 0);
-		}
+		add_action('wp_head', [self::class, 'on_wp_head']);
 
 		add_filter('robots_txt',		fn($output, $public)=> $output.($public ? self::get_setting('robots') : ''), 10, 2);
 		add_filter('document_title',	fn($title)=> self::get_value('title', '') ?: $title);

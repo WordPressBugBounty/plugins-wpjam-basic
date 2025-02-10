@@ -96,11 +96,11 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		$object	= get_screen_option('object');
 
 		if(get_current_screen()->base == 'edit'){
-			$row	= preg_replace('/(<strong>.*?<a class=\"row-title\".*?<\/a>.*?)(<\/strong>)/is', '$1 [row_action name="set" class="row-action" dashicon="edit"]$2', $row);
+			$row	= wpjam_replace('/(<strong>.*?<a class=\"row-title\".*?<\/a>.*?)(<\/strong>)/is', '$1 [row_action name="set" class="row-action" dashicon="edit"]$2', $row);
 
 			if(self::get_setting('post_list_ajax', 1)){
 				$columns	= array_map(fn($tax)=> 'column-'.preg_quote($tax->column_name, '/'), $object->get_taxonomies(['show_in_quick_edit'=>true]));
-				$row		= preg_replace('/(<td class=\'[^\']*('.implode('|', array_merge($columns, ['column-author'])).')[^\']*\'.*?>.*?)(<\/td>)/is', '$1 <a title="快速编辑" href="javascript:;" class="editinline row-action dashicons dashicons-edit"></a>$3', $row);
+				$row		= wpjam_replace('/(<td class=\'[^\']*('.implode('|', array_merge($columns, ['column-author'])).')[^\']*\'.*?>.*?)(<\/td>)/is', '$1 <a title="快速编辑" href="javascript:;" class="editinline row-action dashicons dashicons-edit"></a>$3', $row);
 			}
 
 			if(self::get_setting('post_list_set_thumbnail', 1) && array_any(['thumbnail', 'images'], fn($v)=> $object->supports($v))){
@@ -226,10 +226,6 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 
 			if($ptype != 'attachment'){
 				add_filter('wpjam_single_row',	[self::class, 'filter_single_row'], 10, 2);
-
-				if($object->in_taxonomy('category')){
-					add_filter('disable_categories_dropdown', '__return_true');
-				}
 
 				if(self::get_setting('upload_external_images')){
 					wpjam_register_list_table_action('upload_external_images', [
