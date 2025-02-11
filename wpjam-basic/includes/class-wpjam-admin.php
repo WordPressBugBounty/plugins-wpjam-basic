@@ -850,15 +850,9 @@ class WPJAM_Plugin_Page extends WPJAM_Menu_Page{
 	}
 
 	public function render(){
-		$tag	= wpjam_tag(($this->tab_page ? 'h2' : 'h1'), ['wp-heading-inline'], ($this->page_title ?? $this->title));
-		$tag	= $tag->after([
-			$this->function == 'list_table' ? "\n".wpjam_tag('a', ['page-title-action'], '') : '',
-			"\n".wpjam_tag('hr', ['wp-header-end'])
-		]);
+		$tag	= wpjam_tag('h1', ['wp-heading-inline'], ($this->page_title ?? $this->title))->after('hr', ['wp-header-end']);
 
-		$summary	= $this->summary;
-
-		if($summary){
+		if($summary = $this->summary){
 			if(is_callable($summary)){
 				$summary	= $summary(...$this->cb_args);
 			}elseif(is_array($summary)){
@@ -887,7 +881,7 @@ class WPJAM_Plugin_Page extends WPJAM_Menu_Page{
 		}
 
 		if($this->tab_page){
-			return $tag;
+			return $tag->tag('h2');
 		}
 
 		echo $tag->wrap('div', ['wrap']);

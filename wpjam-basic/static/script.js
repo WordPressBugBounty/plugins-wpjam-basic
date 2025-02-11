@@ -484,6 +484,12 @@ jQuery(function($){
 					this.add_modal('notice_modal');
 				}
 
+				if(this.page_title_action){
+					$('a.page-title-action').remove();
+
+					$('.wp-heading-inline').last().after(this.page_title_action || '');
+				}
+
 				if(list_table){
 					list_table.load();
 				}
@@ -909,8 +915,8 @@ jQuery(function($){
 						let $el	= $(document.activeElement);
 						let id	= $el.attr('id');
 
-						if(['doaction', 'doaction2', 'bulk-action-selector-top', 'bulk-action-selector-bottom'].includes(id)){
-							let $select	= $el.is('select') ? $el : $el.prev('select');
+						if(['doaction', 'doaction2'].includes(id)){
+							let $select	= $el.prev('select');
 							let name	= $select.val();
 							let ids		= $form.find('th.check-column input[type="checkbox"]:checked').toArray().map(cb => cb.value);
 							let action	= list_table.bulk_actions ? list_table.bulk_actions[name] : null;
@@ -925,11 +931,33 @@ jQuery(function($){
 								return false;
 							}
 						}else if(wpjam.ajax_list_action !== false){
-							if($form.wpjam_validity()){
-								$form.wpjam_query(id == 'current-page-selector' ? _.extend(wpjam.params, {paged: parseInt($el.val())}) : '');
-							}
+							if($el.is('[name=filter_action]') || id == 'search-submit'){
+								if($form.wpjam_validity()){
+									$form.wpjam_query();
+								}
 
-							return false;
+								return false;
+							}
+						}
+					}).on('keydown', '.tablenav :input', function(e){
+						if(e.key === 'Enter' && wpjam.ajax_list_action !== false){
+							let $input	= $(this);
+
+							if($input.is('#current-page-selector')){
+								if($form.wpjam_validity()){
+									$form.wpjam_query(_.extend(wpjam.params, {paged: parseInt($input.val())}));
+								}
+
+								return false;
+							}else{
+								let $el	= $input.closest(':has(:submit)').find(':submit');
+
+								if($el.length){
+									$el.first().focus().click();
+
+									return false;
+								}
+							}
 						}
 					}).on('click', '.tablenav .prev-day, .tablenav .next-day', function(e){
 						let $day	= $(this);
@@ -985,6 +1013,7 @@ jQuery(function($){
 
 						$left.prop('novalidate', true).on('init', function(){
 							$left_paged	= $left.find('input.current-page').addClass('expandable');
+
 							let paged	= parseInt($left_paged.val());
 							let total	= parseInt($left_paged.attr('max'));
 
@@ -1104,11 +1133,14 @@ jQuery(function($){
 				}
 
 				if(update.table || update.tablenav){
-					let $nav		= $form.find('.tablenav.top').find('.overall-action').remove().end();			
-					let $actions	= $nav.find('div.actions');
+					if($left.length && $('a.page-title-action').length){
+						this.overall_actions.unshift($('a.page-title-action').hide().clone().show().toggleClass('page-title-action button').prop('outerHTML'));
+					}
 
-					if($actions.length){
-						$actions.last().append(this.overall_actions || '');
+					let $nav	= $form.find('.tablenav.top').find('.overall-action').remove().end();
+
+					if($nav.find('div.actions').length){
+						$nav.find('div.actions').last().append(this.overall_actions || '');
 					}else{
 						$nav.prepend(this.overall_actions || '');
 					}
