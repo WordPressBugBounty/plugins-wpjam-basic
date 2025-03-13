@@ -105,7 +105,7 @@ class WPJAM_Shortcode{
 			if($th == 4){ $output .=  "\t".'<tfoot>'."\n".$thead."\t".'</tfoot>'."\n"; }
 
 			$output	.= "\t".'<tbody>'."\n".$tbody."\t".'</tbody>'."\n";
-			$attr	= wpjam_slice($attr, ['border', 'cellpading', 'cellspacing', 'width', 'class']);
+			$attr	= wpjam_pick($attr, ['border', 'cellpading', 'cellspacing', 'width', 'class']);
 			
 			return wpjam_tag('table', $attr, $output);
 		}

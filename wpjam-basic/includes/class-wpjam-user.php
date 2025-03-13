@@ -237,7 +237,7 @@ class WPJAM_User{
 				}
 			}
 
-			$data	= wpjam_slice($args, ['user_login', 'user_pass', 'user_email', 'role']);
+			$data	= wpjam_pick($args, ['user_login', 'user_pass', 'user_email', 'role']);
 
 			if($args['nickname']){
 				$data['nickname']	= $data['display_name']	= $args['nickname'];
@@ -318,11 +318,7 @@ class WPJAM_Bind extends WPJAM_Register{
 	}
 
 	protected function get_object($meta_type, $object_id){
-		$callback	= 'wpjam_get_'.$meta_type.'_object';
-
-		if(is_callable($callback)){
-			return $callback($object_id);
-		}
+		return wpjam_call('wpjam_get_'.$meta_type.'_object', $object_id);
 	}
 
 	public function get_openid($meta_type, $object_id){
@@ -682,7 +678,7 @@ class WPJAM_User_Signup extends WPJAM_Register{
 		$action	= wpjam_pull($data, 'action');
 		$method	= $action == 'login' ? 'signup' : $action;
 		$args	= $method == 'unbind' ? [] : [$data];
-		$result = wpjam_catch([$this, $method], ...$args);
+		$result = $this->catch($method, ...$args);
 
 		return is_wp_error($result) ? $result : true;
 	}

@@ -29,7 +29,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 				'backend'	=>['title'=>'后台功能',	'fields'=>[
 					'disable_privacy'			=>['label'=>'移除为欧洲通用数据保护条例生成的页面。',	'value'=>1],
 					'disable_dashboard_primary'	=>['label'=>'移除仪表盘的「WordPress 活动及新闻」。'],
-					'disable_backend'			=>['sep'=>'&emsp;',	'before'=>'移除后台界面右上角：',		'fields'=>[
+					'disable_backend'			=>['sep'=>'&emsp;',	'before'=>'移除后台界面右上角：',	'fields'=>[
 						'disable_help_tabs'			=>['label'=>'帮助'],
 						'disable_screen_options'	=>['label'=>'选项。',],
 					]]

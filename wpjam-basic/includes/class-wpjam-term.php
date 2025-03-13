@@ -41,11 +41,10 @@ class WPJAM_Term{
 	}
 
 	public function update_callback($data, $defaults){
-		$term_data	= wpjam_pull($data, self::get_field_keys());
-		$result		= $term_data ? $this->save($term_data) : true;
+		$result	= $this->save(self::pick($data, true));
 
 		if(!is_wp_error($result) && $data){
-			return $this->meta_input($data, wpjam_except($defaults, self::get_field_keys()));
+			return $this->meta_input($data, $defaults);
 		}
 
 		return $result;
@@ -60,7 +59,7 @@ class WPJAM_Term{
 	}
 
 	public function save($data){
-		return self::update($this->id, $data, false);
+		return $data ? self::update($this->id, $data, false) : true;
 	}
 
 	public function is_object_in($object_id){
@@ -145,16 +144,15 @@ class WPJAM_Term{
 
 	public static function get($term){
 		$data	= $term ? self::get_term($term, '', ARRAY_A) : [];
-
-		if($data && !is_wp_error($data)){
-			$data['id']	= $data['term_id'];
-		}
+		$data	+= ($data && !is_wp_error($data)) ? ['id'=>$data['term_id']] : [];
 
 		return $data;
 	}
 
-	protected static function get_field_keys(){
-		return ['name', 'parent', 'slug', 'description', 'alias_of'];
+	protected static function pick(&$data, $pull=false){
+		$keys	= ['name', 'parent', 'slug', 'description', 'alias_of'];
+
+		return $pull ? wpjam_pull($data, $keys) : wpjam_pick($data, $keys);
 	}
 
 	public static function insert($data){
@@ -165,24 +163,23 @@ class WPJAM_Term{
 		}
 
 		if(isset($data['taxonomy'])){
-			$taxonomy	= $data['taxonomy'];
+			$tax	= $data['taxonomy'];
 
 			if(!taxonomy_exists($taxonomy)){
 				return new WP_Error('invalid_taxonomy');
 			}
 		}else{
-			$taxonomy	= self::get_current_taxonomy();
+			$tax	= self::get_current_taxonomy();
 		}
 
-		$data		= static::sanitize_data($data);
-		$meta_input	= wpjam_pull($data, 'meta_input');
-		$name		= wpjam_pull($data, 'name');
-		$args		= wpjam_slice($data, self::get_field_keys());
-		$result		= wp_insert_term(wp_slash($name), $taxonomy, wp_slash($args));
+		$data	= static::sanitize_data($data);
+		$meta	= wpjam_pull($data, 'meta_input');
+		$name	= wpjam_pull($data, 'name');
+		$result	= wp_insert_term(wp_slash($name), $tax, wp_slash(self::pick($data)));
 
 		if(!is_wp_error($result)){
-			if($meta_input){
-				wpjam_update_metadata('term', $result['term_id'], $meta_input);
+			if($meta){
+				wpjam_update_metadata('term', $result['term_id'], $meta);
 			}
 
 			return $result['term_id'];
@@ -206,14 +203,14 @@ class WPJAM_Term{
 			return $result;
 		}
 
-		$taxonomy	= $data['taxonomy'] ?? get_term_field('taxonomy', $term_id);
-		$data		= static::sanitize_data($data);
-		$meta_input	= wpjam_pull($data, 'meta_input');
-		$args		= wpjam_slice($data, self::get_field_keys());
-		$result		= $args ? wp_update_term($term_id, $taxonomy, wp_slash($args)) : true;
+		$tax	= $data['taxonomy'] ?? get_term_field('taxonomy', $term_id);
+		$data	= static::sanitize_data($data);
+		$meta	= wpjam_pull($data, 'meta_input');
+		$args	= self::pick($data);
+		$result	= $args ? wp_update_term($term_id, $tax, wp_slash($args)) : true;
 
-		if(!is_wp_error($result) && $meta_input){
-			wpjam_update_metadata('term', $term_id, $meta_input);
+		if(!is_wp_error($result) && $meta){
+			wpjam_update_metadata('term', $term_id, $meta);
 		}
 
 		return $result;
@@ -780,11 +777,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 				add_filter('pre_term_link',	[$this, 'filter_link'], 1, 2);
 			}
 
-			$callback	= $this->registered_callback;
-
-			if($callback && is_callable($callback)){
-				$callback($name, $object);
-			}
+			wpjam_call($this->registered_callback, $name, $this);
 		}
 	}
 

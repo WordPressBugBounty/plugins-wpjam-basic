@@ -100,7 +100,7 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 					'loading'	=> 'lazy'
 				]);
 
-				return (string)wpjam_tag('img', $attr)->attr(wpjam_slice(wpjam_parse_size($size), ['width', 'height']));
+				return (string)wpjam_tag('img', $attr)->attr(wpjam_pick(wpjam_parse_size($size), ['width', 'height']));
 			}
 		}
 

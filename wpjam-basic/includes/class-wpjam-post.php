@@ -35,16 +35,12 @@ class WPJAM_Post{
 			return $this->supports('images') ? array_values(get_post_meta($this->id, 'images', true) ?: []) : [];
 		}elseif($key == 'post'){
 			return get_post($this->id);
+		}elseif($key == 'data'){
+			return $this->post->to_array();
+		}elseif(!str_starts_with($key, 'post_') && isset($this->post->{'post_'.$key})){
+			return $this->post->{'post_'.$key};
 		}else{
-			$_post	= get_post($this->id);
-
-			if($key == 'data'){
-				return $_post->to_array();
-			}elseif(!str_starts_with($key, 'post_') && isset($_post->{'post_'.$key})){
-				return $_post->{'post_'.$key};
-			}else{
-				return $_post->$key ?? $this->meta_get($key);
-			}
+			return $this->post->$key ?? $this->meta_get($key);
 		}
 	}
 
@@ -78,12 +74,12 @@ class WPJAM_Post{
 		if(array_any(['post_status', 'status'], fn($k)=> wpjam_get($data, $k) == 'publish')){
 			$result	= $this->is_publishable();
 
-			if(is_wp_error($result) || !$result){
+			if(!wpjam_if_error($result, null)){
 				return $result ?: new WP_Error('unpublishable', '不可发布');
 			}
 		}
 
-		return self::update($this->id, $data, false);
+		return $data ? self::update($this->id, $data, false) : true;
 	}
 
 	public function set_status($status){
@@ -123,7 +119,7 @@ class WPJAM_Post{
 	}
 
 	public function parse_thumbnail_url($size='thumbnail', $crop=1){
-		$thumbnail	= $this->thumbnail ?: ($this->images ? $this->images[0] : apply_filters('wpjam_post_thumbnail_url', '', $this->post));
+		$thumbnail	= $this->thumbnail ?: (wpjam_at($this->images, 0) ?: apply_filters('wpjam_post_thumbnail_url', '', $this->post));
 
 		return $thumbnail ? wpjam_get_thumbnail($thumbnail, ($size ?: ($this->get_type_setting('thumbnail_size') ?: 'thumbnail')), $crop) : '';
 	}
@@ -133,49 +129,51 @@ class WPJAM_Post{
 			return [];
 		}
 
-		$get_size	= function($key){
-			$setting	= $this->get_type_setting('images_sizes');
+		foreach(['large', 'thumbnail'] as $k){
+			$v	= $k == 'large' ? $large_size : $thumbnail_size;
 
-			if($setting){
-				if($key == 'large'){
-					return $setting[0];
-				}
-
-				if(count($this->images) == 1){
-					$query	= wpjam_parse_image_query($this->images[0]);
-
-					if(!$query){
-						$query	= wpjam_get_image_size($this->images[0], 'url') ?: ['width'=>0, 'height'=>0];
-
-						update_post_meta($this->id, 'images', [add_query_arg($query, $this->images[0])]);
-					}
-
-					if(!empty($query['orientation'])){
-						$i	= ['landscape'=>2, 'portrait'=>3][$query['orientation']] ?? 1;
-
-						return $setting[$i] ?? $setting[1];
-					}
-				}
-
-				return $setting[1];
+			if($v === false){
+				continue;
 			}
 
-			return $this->get_type_setting($key.'_size') ?: $key;
-		};
+			if(!$v){
+				$setting	= $this->get_type_setting('images_sizes');
 
-		$sizes	= wpjam_array(['large'=>$large_size, 'thumbnail'=>$thumbnail_size], fn($k, $v)=> $v === false ? null : [$k, $v ?: $get_size($k)]);
+				if($setting){
+					$i	= $k == 'large' ? 0 : 1;
+					$v	= $setting[$i];
+
+					if($i && count($this->images) == 1){
+						$image	= $this->images[0];
+						$query	= wpjam_parse_image_query($image);
+
+						if(!$query){
+							$query	= wpjam_get_image_size($image, 'url') ?: ['width'=>0, 'height'=>0];
+
+							update_post_meta($this->id, 'images', [add_query_arg($query, $image)]);
+						}
+
+						if(!empty($query['orientation'])){
+							$i	= ['landscape'=>2, 'portrait'=>3][$query['orientation']] ?? 1;
+							$v	= $setting[$i] ?? $v;
+						}
+					}
+				}else{
+					$v	= $this->get_type_setting($k.'_size');
+				}
+			}
+
+			$sizes[$k]	= $v ?: $k;
+		}
+
+		if(empty($sizes) || $full_size){
+			$sizes['full']	= 'full';
+		}
 
 		foreach($this->images as $image){
-			if(!$sizes || $full_size){
-				$sizes['full']	= 'full';
-			}
-
 			$parsed	= array_map(fn($s)=> wpjam_get_thumbnail($image, $s), $sizes);
 			$query	= wpjam_parse_image_query($image);
-
-			if($query){
-				$parsed	= array_merge($parsed, ['width'=>0, 'height'=>0], wpjam_slice($query, ['orientation', 'width', 'height']));
-			}
+			$parsed	= $query ? array_merge($parsed, ['width'=>0, 'height'=>0], wpjam_pick($query, ['orientation', 'width', 'height'])) : $parsed;
 
 			if(isset($sizes['thumbnail'])){
 				$size	= wpjam_parse_size($sizes['thumbnail']);
@@ -312,9 +310,7 @@ class WPJAM_Post{
 	// update/insert 方法同时支持 title 和 post_xxx 字段写入 post 中，meta 字段只支持 meta_input
 	// update_callback 方法只支持 post_xxx 字段写入 post 中，其他字段都写入 meta_input
 	public function update_callback($data, $defaults){
-		$current	= $this->data;
-		$post_data	= wpjam_pull($data, [...array_keys($current), 'tax_input']);
-		$result		= $post_data ? $this->save($post_data) : true;
+		$result	= $this->save(wpjam_pull($data, [...array_keys($this->data), 'tax_input']));
 
 		return (!is_wp_error($result) && $data) ? $this->meta_input($data, $defaults) : $result;
 	}
@@ -395,9 +391,9 @@ class WPJAM_Post{
 			}
 
 			$data		+= ['post_author'=>get_current_user_id(), 'post_date'=> wpjam_date('Y-m-d H:i:s')];
-			$post_id	= wp_insert_post(wp_slash($data), true, true);
+			$post_id	= wpjam_try('wp_insert_post', wp_slash($data), true, true);
 
-			if($meta && !is_wp_error($post_id)){
+			if($meta){
 				wpjam_update_metadata('post', $post_id, $meta);
 			}
 
@@ -410,15 +406,15 @@ class WPJAM_Post{
 	public static function update($post_id, $data, $validate=true){
 		try{
 			if($validate){
-				wpjam_throw_if_error(self::validate($post_id));
+				wpjam_try(fn()=> static::validate($post_id));
 			}
 
 			$data	= static::prepare_data($data, $post_id);
 			$data	= array_merge($data, ['ID'=>$post_id]);
 			$meta	= wpjam_pull($data, 'meta_input');
-			$result	= wp_update_post(wp_slash($data), true, true);
+			$result	= wpjam_try('wp_update_post', wp_slash($data), true, true);
 
-			if($meta && !is_wp_error($result)){
+			if($meta){
 				wpjam_update_metadata('post', $post_id, $meta);
 			}
 
@@ -439,7 +435,7 @@ class WPJAM_Post{
 	}
 
 	protected static function sanitize_data($data, $post_id=0){
-		$data	+= wpjam_array(wpjam_slice($data, ['title', 'content', 'excerpt', 'name', 'status', 'author', 'parent', 'password', 'date', 'date_gmt', 'modified', 'modified_gmt']), fn($k)=> 'post_'.$k);
+		$data	+= wpjam_array(get_class_vars('WP_Post'), fn($k, $v)=> try_remove_prefix($k, 'post_') && isset($data[$k]) ? ['post_'.$k, $data[$k]] : null);
 
 		if(isset($data['post_content']) && is_array($data['post_content'])){
 			$data['post_content']	= serialize($data['post_content']);
@@ -900,11 +896,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 				add_permastruct($name, $this->permastruct, array_merge($object->rewrite, ['feed'=>$this->rewrite['feeds']]));
 			}
 
-			$callback	= $this->registered_callback;
-
-			if($callback && is_callable($callback)){
-				$callback($name, $object);
-			}
+			wpjam_call($this->registered_callback, $name, $object);
 		}
 	}
 

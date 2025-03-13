@@ -196,7 +196,7 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 				add_action('wp_after_insert_post',			[self::class, 'on_after_insert_post'], 10, 2);
 				add_action('post_submitbox_misc_actions',	[self::class, 'on_post_submitbox_misc_actions'],11);
 
-				wp_add_inline_style('list-tables', '#post-body #baidu_zz_section:before{content: "\f103"; color:#82878c; font: normal 20px/1 dashicons; speak: none; display: inline-block; margin-left: -1px; padding-right: 3px; vertical-align: top; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }');
+				wpjam_add_admin_inline_style('#post-body #baidu_zz_section:before{content: "\f103"; color:#82878c; font: normal 20px/1 dashicons; speak: none; display: inline-block; margin-left: -1px; padding-right: 3px; vertical-align: top; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }');
 			}
 		}
 	}

@@ -27,46 +27,9 @@ jQuery(function($){
 					$this.wrapInner('<div class="mu-item"></div>');
 				}
 
-				$('<a class="new-item button">'+($this.hasClass('mu-img') ? '' : $this.data('button_text'))+'</a>').on('click', function(){
-					let	max		= parseInt($this.data('max_items'));
-					let rest	= max ? (max - ($this.children().length - ($this.is('.mu-img, .mu-fields, .direction-row') ? 1 : 0))) : 0;
-
-					if(max && rest <= 0){
-						alert('最多支持'+max+'个');
-
-						return false;
-					}
-
-					if($this.is('.mu-text, .mu-fields')){
-						$this.wpjam_mu_item();
-					}else if($this.is('.mu-img, .mu-file, .mu-image')){
-						wp.hooks.addAction('wpjam_media', 'wpjam', function(frame, args){
-							if(args.rest){
-								frame.state().get('selection').on('update', function(){
-									if(this.length > args.rest){
-										this.reset(this.first(args.rest));
-
-										alert('最多可以选择'+args.rest+'个');
-									}
-								});
-							}
-
-							wp.hooks.removeAction('wpjam_media', 'wpjam');
-						});
-
-						wp.hooks.addAction('wpjam_media_selected', 'wpjam', function(value, url){
-							$this.wpjam_mu_item($this.is('.mu-img') ? {value: value, url: url} : value);
-						});
-
-						$this.wpjam_media({
-							id:			$this.prop('id'),
-							multiple: 	true,
-							rest:		rest
-						});
-					}
-
-					return false;
-				}).appendTo($this.find('> .mu-item').last());
+				if($this.data('button_text') || $this.hasClass('mu-img')){
+					$('<a class="new-item button">'+($this.hasClass('mu-img') ? '' : $this.data('button_text'))+'</a>').on('click', ()=> $this.wpjam_new_item()).appendTo($this.find('> .mu-item').last());
+				}
 
 				if($this.hasClass('mu-text')){
 					if($this.find('select').length && !$this.find('option').toArray().some((opt) => $(opt).val() == '')){
@@ -76,6 +39,20 @@ jQuery(function($){
 					if($this.hasClass('direction-row') && value.length <= 1){
 						value.push(null);
 					}
+
+					$this.on('keydown', 'input', function(e){
+						if((e.key === 'Enter' || e.keyCode === 13)){
+							if($this.hasClass('direction-row') && $(this).val()){
+								let $inputs	= $this.find('input:visible');
+
+								if($inputs.index(this) === $inputs.length -1){
+									return $this.wpjam_new_item();
+								}
+							}
+
+							return false;
+						}
+					});
 				}
 
 				if(value){
@@ -153,7 +130,7 @@ jQuery(function($){
 					select: function(event, ui){
 						let item	= $this.data('autocomplete_items').find(item => (_.isObject(item) ? item.value : item) == ui.item.value);
 
-						if(_.isObject(item) && item.label){
+						if(_.isObject(item) && _.has(item, 'label')){
 							$this.wpjam_query_label(item.label);
 						}
 					},
@@ -314,6 +291,10 @@ jQuery(function($){
 			$(this).find('textarea:not([rows]), textarea:not([cols])').each(function(){
 				let $this	= $(this);
 
+				if($this.hasClass('wp-editor-area')){
+					return;
+				}
+
 				if(!$this.attr('rows')){
 					$this.one('click', function(){
 						let from	= $this.height();
@@ -384,6 +365,12 @@ jQuery(function($){
 				});
 			});
 
+			$(this).find('[class*="dashicons-ri-"]').each(function(){
+				let classes	= $(this).removeClass('dashicons-before').attr('class').replace('dashicons-ri-', 'ri-');
+
+				$(this).removeClass().addClass(classes).addClass('wp-menu-ri');
+			});
+
 			return this;
 		},
 
@@ -392,19 +379,30 @@ jQuery(function($){
 				let $this	= $(this);
 
 				$this.before($('<span class="query-title '+($this.data('class') || '')+'">'+label+'</span>').prepend($('<span class="dashicons-before dashicons-dismiss"></span>').on('click', function(e){
-					$(this).parent().fadeOut(300, function(){
-						$(this).next('input').val('').change().end().remove();
+					let $parent	= $(this).parent();
+
+					if($this.closest('.mu-item').length && !$this.closest('.mu-item').find('.new-item').length){
+						$parent	= $this.closest('.mu-item');
+					}
+
+					$parent.fadeOut(300, function(){
+						$this.val('').change();
+
+						$(this).remove();
 					});
 				})));
+
+				if($this.closest('.mu-text').length){
+					$this.closest('.mu-text').wpjam_new_item(false);
+				}
 			}
 
 			return this;
 		},
 
 		wpjam_mu_item: function(item){
-			$this	= $(this);
-			$tmpl	= $this.find('> .mu-item').last();
-
+			let $this	= $(this);
+			let $tmpl	= $this.find('> .mu-item').last();
 			let $new	= $tmpl.clone().find('.new-item').remove().end();
 
 			if($this.is('.mu-img, .mu-image, .mu-file')){
@@ -419,8 +417,8 @@ jQuery(function($){
 				let $input	= $new.find(':input').removeClass('ui-autocomplete-input');
 
 				if(item){
-					if(typeof(item) == 'object'){
-						if($input.data('data_type') && $input.is('input') && item.label){
+					if(_.isObject(item)){
+						if($input.is('input') && item.label){
 							$input.wpjam_query_label(item.label);
 						}
 
@@ -437,6 +435,13 @@ jQuery(function($){
 					$new.insertAfter($tmpl).find('.query-title').remove();
 				}
 
+				let	max	= parseInt($this.data('max_items'));
+
+				if(max && max == $this.wpjam_mu_count()-1){
+					$tmpl.find('a.new-item').insertAfter($input);
+					$tmpl.remove();
+				}
+
 				$new.wpjam_form_init();
 			}else if($this.is('.mu-fields')){
 				let i	= $this.data('i') || $this.find(' > .mu-item').length-1;
@@ -445,6 +450,54 @@ jQuery(function($){
 				$this.data('i', i+1);
 				$new.find('template').replaceWith(t).end().insertBefore($tmpl).wpjam_form_init();
 			}
+		},
+
+		wpjam_mu_count: function(){
+			return $(this).children().length - ($(this).is('.mu-img, .mu-fields, .direction-row') ? 1 : 0);
+		},
+
+		wpjam_new_item: function(should_alert){
+			let $this	= $(this);
+			let	max		= parseInt($this.data('max_items'));
+			let rest	= max ? (max - $this.wpjam_mu_count()) : 0;
+
+			if(max && rest <= 0){
+				if(should_alert === undefined || should_alert){
+					alert('最多支持'+max+'个');
+				}
+
+				return false;
+			}
+
+			if($this.is('.mu-text, .mu-fields')){
+				$this.wpjam_mu_item();
+			}else if($this.is('.mu-img, .mu-file, .mu-image')){
+				wp.hooks.addAction('wpjam_media', 'wpjam', function(frame, args){
+					if(args.rest){
+						frame.state().get('selection').on('update', function(){
+							if(this.length > args.rest){
+								this.reset(this.first(args.rest));
+
+								alert('最多可以选择'+args.rest+'个');
+							}
+						});
+					}
+
+					wp.hooks.removeAction('wpjam_media', 'wpjam');
+				});
+
+				wp.hooks.addAction('wpjam_media_selected', 'wpjam', function(value, url){
+					$this.wpjam_mu_item($this.is('.mu-img') ? {value: value, url: url} : value);
+				});
+
+				$this.wpjam_media({
+					id:			$this.prop('id'),
+					multiple: 	true,
+					rest:		rest
+				});
+			}
+
+			return false;
 		},
 
 		wpjam_show_if: function(val){
@@ -647,14 +700,14 @@ jQuery(function($){
 		});
 
 		return false;
-	}).on('mouseenter', '[data-tooltip]', function(e){
-		if(!$('#tooltip').length){
-			$('body').append('<div id="tooltip"></div>');
-		}
+	}).on('mouseenter mousemove', '[data-tooltip]', function(e){
+		let $tooltip	= $('#tooltip').length ? $('#tooltip') : $('<div id="tooltip"></div>').html($(this).data('tooltip')).appendTo('body').show();
 
-		$('#tooltip').html($(this).data('tooltip')).show().css({top: e.pageY+22, left: e.pageX-10});
-	}).on('mousemove', '[data-tooltip]', function(e){
-		$('#tooltip').css({top: e.pageY+22, left: e.pageX-10});
+		$tooltip.css({
+			top: e.pageY + 22,
+			left: Math.min(e.pageX - 10, window.innerWidth - $tooltip.outerWidth() - 20),
+			'--arrow-left': (e.pageX - $tooltip.offset().left)+'px'
+		});
 	}).on('mouseleave mouseout', '[data-tooltip]', function(){
 		$('#tooltip').remove();
 	}).wpjam_form_init();

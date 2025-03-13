@@ -77,6 +77,15 @@ jQuery(function($){
 				}
 			}));
 
+
+			$row.find('td').each(function(){
+				let $cell	= $(this);
+
+				if($cell[0].scrollWidth > $cell[0].clientWidth){
+					$cell.addClass('is-truncated');
+				}
+			});
+
 			$row.find('.items').each(function(){
 				let $items	= $(this);
 
@@ -104,10 +113,6 @@ jQuery(function($){
 					}
 				});
 			});
-
-			if(wpjam.ajax_list_action){
-				$row.find('a[href^="'+$('#adminmenu a.current').attr('href')+'"]').addClass('list-table-filter');
-			}
 
 			return $row;
 		},
@@ -269,13 +274,7 @@ jQuery(function($){
 				}
 
 				if(data.errcode != 0){
-					let errmsg	= (args.page_title ? args.page_title+'失败：' : '')+(data.errmsg || '');
-
-					if(args.action_type == 'direct'){
-						alert(errmsg);
-					}else{
-						wpjam.add_notice(errmsg, 'error');
-					}
+					wpjam.add_notice((args.page_title ? args.page_title+'失败：' : '')+(data.errmsg || ''), 'error');
 				}else{
 					if(data.params){
 						_.extend(wpjam.params, data.params);
@@ -493,6 +492,14 @@ jQuery(function($){
 				if(list_table){
 					list_table.load();
 				}
+
+				if(this.query_url){
+					_.each(this.query_url, pair => $('a[href="'+pair[0]+'"]').attr('href', pair[1]));
+				}
+
+				$('a[href*="admin/page="]').each(function(){
+					$(this).attr('href', $(this).attr('href').replace('admin/page=', 'admin/admin.php?page='));
+				});
 			}
 
 			let args	= {...this.params, action_type: 'form'}
@@ -513,7 +520,9 @@ jQuery(function($){
 				}
 			}
 
-			this.state('replace');
+			if(this.plugin_page){
+				this.state('replace');
+			}
 		},
 
 		state: function(action='push'){
@@ -743,7 +752,7 @@ jQuery(function($){
 			return $.ajax({
 				url:		ajaxurl,
 				method:		'POST',
-				data:		this.append_page_setting(args),
+				data:		args,
 				dataType:	'json',
 				headers:	{'Accept': 'application/json'},
 				success:	callback,
@@ -754,10 +763,11 @@ jQuery(function($){
 
 		append_page_setting: function(args){
 			if(this.query_data || (this.left_key && args.action_type != 'query_items')){
-				let data	= args.data ? this.parse_params(args.data) : {};
+				let type	= args.data ? typeof args.data : 'string';
+				let data	= type == 'object' ? args.data : (args.data ? this.parse_params(args.data) : {});
 
 				if(this.query_data){
-					_.each(this.query_data, function(v, k){
+					_.each(this.query_data, (v, k)=>{
 						if(_.has(data, k)){
 							this.query_data[k]	= data[k];
 						}else{
@@ -770,7 +780,9 @@ jQuery(function($){
 					data[this.left_key]	= wpjam.params[this.left_key];
 				}
 
-				args.data	= $.param(data);
+				if(type == 'string'){
+					args.data	= $.param(data);
+				}
 			}
 
 			return _.extend(args, _.pick(this, ['screen_id', 'plugin_page', 'current_tab', 'builtin_page', 'post_type', 'taxonomy']));
@@ -845,17 +857,34 @@ jQuery(function($){
 			}
 		},
 
-		add_extra_logic: function(obj, func, extra_logic){
+		add_extra_logic: function(obj, func, extra_logic, position){
 			const back	= obj[func];
 			obj[func]	= function(){
-				if(typeof back === 'function'){
-					back.call(this, ...arguments);
+				if(position == 'before'){
+					extra_logic.apply(this, arguments);
 				}
 
-				extra_logic.apply(this, arguments);
+				let result	= back.call(this, ...arguments);
+
+				if(position != 'before'){
+					extra_logic.apply(this, arguments);
+				}
+
+				return result;
 			};
 		}
 	}
+
+	wpjam.add_extra_logic($, 'ajax', function(options){
+		let data	= options.data;
+		let type	= typeof data;
+
+		data	= type == 'string' ? wpjam.parse_params(data) : (type == 'object' ? data : {});
+		data	= wpjam.append_page_setting(data);
+		data	= type == 'string' ? $.param(data) : data;
+
+		options.data	= data;
+	}, 'before');
 
 	window.onpopstate = event => {
 		if(event.state && event.state.params){
@@ -930,7 +959,7 @@ jQuery(function($){
 
 								return false;
 							}
-						}else if(wpjam.ajax_list_action !== false){
+						}else if(wpjam.list_table.ajax !== false){
 							if($el.is('[name=filter_action]') || id == 'search-submit'){
 								if($form.wpjam_validity()){
 									$form.wpjam_query();
@@ -940,7 +969,7 @@ jQuery(function($){
 							}
 						}
 					}).on('keydown', '.tablenav :input', function(e){
-						if(e.key === 'Enter' && wpjam.ajax_list_action !== false){
+						if(e.key === 'Enter' && wpjam.list_table.ajax !== false){
 							let $input	= $(this);
 
 							if($input.is('#current-page-selector')){
@@ -979,27 +1008,33 @@ jQuery(function($){
 						$(this).wpjam_action('list');
 
 						return false;
-					}).on('click', '.list-table-filter, ul.subsubsub a, .wp-list-table th a, .tablenav .pagination-links a', function(){
+					}).on('click', '.list-table-filter, ul.subsubsub a, .wp-list-table td a, .wp-list-table th a, .tablenav .pagination-links a', function(){
 						let $a	= $(this);
 
-						if(!$a.hasClass('list-table-filter') && wpjam.ajax_list_action === false){
+						if($a.hasClass('list-table-filter')){
+							$form.wpjam_query($a.data('filter'));
+
+							return false;
+						}
+
+						if(wpjam.list_table.ajax === false){
 							return;
 						}
 
-						let params	= $a.data('filter');
+						if($a.closest('td').length && (wpjam.plugin_page || !$a.attr('href').startsWith($('#adminmenu a.current').attr('href')))){
+							return;
+						}
 
-						if(!params){
-							params	= wpjam.parse_params(new URL($a.prop('href')).search);
+						let params	= wpjam.parse_params(new URL($a.prop('href')).search);
 
-							if(wpjam.builtin_page && params.page){
-								return;
-							}
+						if(wpjam.builtin_page && params.page){
+							return;
+						}
 
-							if($a.parent().is('th, .pagination-links')){
-								delete params.page;
+						if($a.parent().is('th, .pagination-links')){
+							delete params.page;
 
-								params	= {...wpjam.params, ...params, paged: params.paged || 1};
-							}
+							params	= {...wpjam.params, ...params, paged: params.paged || 1};
 						}
 
 						$form.wpjam_query(params);

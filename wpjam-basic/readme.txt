@@ -53,6 +53,13 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
+= 6.7.5 =
+* 全面优化 wpjam_try / wpjam_catch 等高阶函数
+* 全面优化 wpjam_cache 以及其他缓存相关的高阶函数
+* 新增 WPJAM_Method Class 用于处理回调
+* 新增 wpjam_if_error 函数
+* 新增 maybe_callback 函数
+
 = 6.7 =
 * 新增 PHP 8.4 引入的 array_find、array_find_key、array_all、array_any 函数
 * 新增 wpjam_exists 函数
@@ -79,7 +86,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 = 6.5 =
 * 使用注解的方式实现注册类支持能力
-* List Table 操作 views 自动更新 
+* 后台 List Table 新增操作时 views 自动更新 
 * 复选框字段支持开关模式
 * 301跳转升级为链接跳转，并支持正则匹配。
 * 使用 PHP 7.4 箭头函数优化代码
@@ -90,7 +97,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 新增 wpjam_load_pending 函数
 * 新增 wpjam_diff 函数
 * WPJAM_Register 的 get 方法新增第二个参数 $by
-* list_table 增加 sticky_columns 功能
+* 后台 List Table 新增固定列功能
 * WPJAM_Field 新增 render 回调函数
 * 优化 wpjam_lazyload 函数
 * 优化 wpjam_generate_random_string 函数
@@ -105,9 +112,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 后台插件页面可以在初始化之前设置页面的 data_type。
 * 通过 current_theme_supports 来控制样式和脚本是否主题已经集成。
 * WPJAM_Register 新增 re_register / register_sub 方法 / 优化 match 方法
-* 将 WPJAM_Register 的 data_type 配置移到 WPJAM_List_Table
-* 将 WPJAM_Register 的 registered 配置改成 registered 方法
-* 将 WPJAM_Register 的 custom_fields 和 custom_args 的配置合并到 defaults 配置
 * 后台 List Table 新增导出操作支持，列表 AJAX 返回更加细化
 * 优化自定义文章类型和分类模式获取名称的方式
 * 新增 WPJAM_Platforms Class，用于多平台处理
@@ -220,7 +224,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 全面优化 CDN 加速功能，提供更多选项设置
 * 新增函数 wpjam_lazyload，用于后端懒加载
 * 新增函数 wpjam_get_by_meta 直接在 meta 表中查询数据
-* 新增函数 wpjam_compare，用于两个数据比较
 * 新增函数 wpjam_unserialize，用于反序列化失败之后修复数据，再次反序列化
 * 新增函数 wpjam_is_external_url，用于判断外部链接和图片
 * 新增函数 wpjam_map_meta_cap，用于将新增的权限映射到元权限
@@ -237,16 +240,12 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 实现后台的文章列表和分类列表页 AJAX 操作
 * 取消「屏蔽 REST API」功能
 * 取消「禁止admin用户名」功能
-* 修正 WPJAM_Model 同时存在 __call / __callStatic 上下文问题
-* 通过 query_data 实现带参数的 list_table 菜单显示自动处理
 * 新增自定义表 meta 查询 
 * 新增 WPJAM_Field 分组打横显示功能
 * 新增 class WPJAM_Bind 用于用户相关业务连接
 * 新增 class WPJAM_Phone_Bind 用于手机号码相关业务连接
 * 新增 class WPJAM_CDN_Type，优化 CDN 处理
 * 新增 class WPJAM_AJAX 用于前台统一 AJAX 处理
-* 新增 class WPJAM_Calendar_List_Table 用于日历后台
-* 新增函数 wpjam_render_list_table_column_items
 * 新增函数 wpjam_register_meta_type
 * 新增函数 wpjam_register_bind 
 * 新增函数 wpjam_get_bind_object

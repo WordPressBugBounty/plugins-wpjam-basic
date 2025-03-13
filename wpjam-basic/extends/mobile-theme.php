@@ -22,8 +22,8 @@ class WPJAM_Mobile_Stylesheet{
 			'response'		=> 'redirect',
 			'callback'		=> fn()=> WPJAM_Basic::update_setting('mobile_stylesheet', wpjam_get_data_parameter('stylesheet'))
 		]);
-		
-		$scripts = wpjam_remove_pre_tab("
+
+		wpjam_add_admin_inline_script(<<<'EOD'
 		if(wp && wp.Backbone && wp.themes && wp.themes.view.Theme){
 			let original_render	= wp.themes.view.Theme.prototype.render;
 			let mobile	= ".wpjam_json_encode(wpjam_basic_get_setting('mobile_stylesheet')).";
@@ -31,19 +31,18 @@ class WPJAM_Mobile_Stylesheet{
 			wp.themes.view.Theme.prototype.render = function(){
 				original_render.apply(this, arguments);
 
-				let stylesheet	= this.\$el.data('slug');
+				let stylesheet	= this.$el.data('slug');
 
 				if(stylesheet == mobile){
-					this.\$el.find('.theme-actions').append('<span class=\"mobile-theme button button-primary\">移动主题</span>');
+					this.$el.find('.theme-actions').append('<span class="mobile-theme button button-primary">移动主题</span>');
 				}else{
-					this.\$el.find('.theme-actions').append(action.replace('\data-nonce=', 'data-data=\"stylesheet='+stylesheet+'\" data-nonce='));
+					this.$el.find('.theme-actions').append(action.replace('data-nonce=', 'data-data="stylesheet='+stylesheet+'" data-nonce='));
 				}
 			};
 		}
-		", 3);
-		wp_add_inline_script('jquery', "jQuery(function($){".$scripts."\n});");
+		EOD);
 
-		// wp_add_inline_style('list-tables', '.mobile-theme{position: absolute; top: 45px; right: 18px;}');
+		// wpjam_add_admin_inline_style('.mobile-theme{position: absolute; top: 45px; right: 18px;}');
 	}
 
 	public static function add_hooks(){

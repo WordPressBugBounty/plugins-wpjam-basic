@@ -5,8 +5,8 @@
 .wrap .wp-heading-inline{display:inline-block; margin-right:5px;}
 
 [data-tooltip],[data-description]{color:#555; cursor:pointer; vertical-align:text-bottom;}
-#tooltip{position:absolute; color:#555; max-width:300px; min-width:200px; background-color:#ddd; padding:5px 10px; border-radius:6px; position:absolute; z-index:10000;}
-#tooltip:before{content:" "; position:absolute; bottom:100%; border-width:5px; border-style:solid; border-color:transparent transparent #ddd transparent;}
+#tooltip{position:absolute; z-index:10000; color:#555; max-width:min(80vw, 300px); background-color:#ddd; padding:5px 10px; border-radius:6px; --arrow-left:10px;}
+#tooltip:before{content:" "; position:absolute; left:var(--arrow-left); bottom:100%; border-width:5px; border-style:solid; border-color:transparent transparent #ddd transparent;}
 
 .notice p a{text-decoration:none;}
 .notice p a .dashicons{height:16px; font-size:16px; line-height:18px;}
@@ -94,6 +94,7 @@ summary + .sub-field{margin-top:20px;}
 
 .direction-column{display:inline-flex !important; flex-direction:column; gap:6px;}
 .direction-row{display:inline-flex !important; flex-wrap:wrap; align-items:center; gap:6px 10px; line-height:30px;}
+.direction-column.hidden, .direction-row.hidden{display:none !important;}
 
 div.mu-text.direction-row{gap:8px 4px; min-width:400px; max-width:700px;}
 div.mu-text.direction-row > .mu-item:last-child input{display:none;}
@@ -137,7 +138,10 @@ a.del-icon{position:absolute; line-height:1; top:-10px; right:-10px; border-radi
 
 span.query-title{display:inline-block; vertical-align:middle; box-sizing:border-box; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 8px 0 4px; background:#e5e5e5; border-radius:4px; line-height:30px;}
 span.query-title span:before{line-height:30px; margin-right:4px; font-weight:100; cursor:pointer; color:#0073aa;}
-span.query-title + input{display:none;}
+span.query-title + input,
+span.query-title ~ a.del-item,
+span.query-title ~ span.dashicons-menu
+{display:none;}
 
 input.button ~ span.query-title{margin-left:6px;}
 
@@ -224,7 +228,7 @@ div.card.response, .widefat td{overflow-wrap:break-word; word-wrap:break-word; w
 table.wp-list-table th, table.wp-list-table.nowrap td{white-space:nowrap;}
 
 table.wp-list-table.nowrap td{overflow:hidden; text-overflow:ellipsis;}
-table.wp-list-table.nowrap td:hover{overflow:visible; white-space:normal;}
+table.wp-list-table.nowrap td.is-truncated:hover{overflow:visible; white-space:normal;}
 
 table.wp-list-table th a{display:flex;}
 table.wp-list-table th.check-column .dashicons{margin-left:6px; color:#999; font-size:16px; width:16px; height:16px;}

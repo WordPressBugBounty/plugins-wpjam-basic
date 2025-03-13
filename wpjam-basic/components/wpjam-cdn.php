@@ -232,7 +232,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 
 		if($meta && is_array($meta) && !array_filter($size)){
 			$name	= $proc->get_attribute('data-size');
-			$size	= self::resize($proc, wpjam_slice((($name && $name != 'full') ? ($meta['sizes'][$name] ?? $meta) : $meta), $attr), $max);
+			$size	= self::resize($proc, wpjam_pick((($name && $name != 'full') ? ($meta['sizes'][$name] ?? $meta) : $meta), $attr), $max);
 		}else{
 			if($max){
 				if($valid($size) && $size['width'] > $max){
@@ -263,7 +263,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 	public static function filter_image_block($content, $parsed){
 		$slug	= $parsed['attrs']['sizeSlug'] ?? '';
 		$slug	= $slug == 'full' ? '' : $slug;
-		$size	= wpjam_slice($parsed['attrs'], ['width', 'height']);
+		$size	= wpjam_pick($parsed['attrs'], ['width', 'height']);
 
 		if($slug || $size){
 			$proc	= wpjam_html_tag_processor($content, 'img');

@@ -57,7 +57,7 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 					]
 				]],
 			]],
-			'unique'	=> ['title'=>'确保唯一设置',	'label'=>'如果当前主题或其他插件也会生成摘要和关键字，可以通过勾选该选项确保唯一。',	'description'=>'如果当前主题没有<code>wp_head</code>Hook，也可以通过勾选该选项确保生成摘要和关键字。'],
+			'unique'	=> ['title'=>'确保生成并唯一',	'label'=>'如果当前主题或其他插件也会生成摘要和关键字，或当前主题不标准，可以通过勾选该选项「确保生成并唯一」。'],
 			'robots'	=> ['title'=>'robots.txt']+$robots_field,
 			'sitemap'	=> ['title'=>'Sitemap',		'options'=>[0=>['label'=>'使用 WPJAM 生成的','description'=>$wpjam_sitemap], 'wp'=>['label'=>'使用 WordPress 内置的','description'=>$wp_sitemap]]]
 		];
@@ -164,8 +164,6 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		$title	= self::get_value('title');
 		$meta	= array_filter(wpjam_fill(['description', 'keywords'], fn($k)=> self::get_value($k)));
 
-		echo implode($meta);
-
 		if(self::get_setting('unique')){
 			if($meta){
 				add_filter('wpjam_html', fn($html)=> wpjam_replace('#<meta\s+name=([\'"])('.implode('|', array_keys($meta)).')\1(.*?)\/>#is', '', $html));
@@ -176,6 +174,8 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 			if($title){
 				add_filter('wpjam_html', fn($html)=> wpjam_replace('#(<title>[^<]*<\/title>)#is', $title, $html));
 			}
+		}else{
+			echo implode($meta);
 		}
 	}
 

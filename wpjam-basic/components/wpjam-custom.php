@@ -119,11 +119,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 				$type	= $type ?: ($_SERVER['REQUEST_METHOD'] == 'POST' ? 'login' : array_key_first($objects));
 
 				if(isset($objects[$type])){
-					$login_action	= $objects[$type]->login_action;
-
-					if($login_action && is_callable($login_action)){
-						$login_action();
-					}
+					wpjam_call($objects[$type]->login_action);
 				}
 
 				if(empty($_COOKIE[TEST_COOKIE])){
@@ -149,9 +145,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 					$data	= ['type'=>$name, 'action'=>'get-'.$name.'-'.$action];
 					$title	= $action == 'bind' ? '绑定'.$object->title : $object->login_title;
 
-					if(method_exists($object, $action.'_script')){
-						add_action('login_footer',	[$object, $action.'_script'], 1000);
-					}
+					add_action('login_footer',	fn()=> wpjam_call([$object, $action.'_script']), 1000);
 				}
 
 				$append[]	= ['a', ['class'=>($type == $name ? 'current' : ''), 'data'=>$data], $title];

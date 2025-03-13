@@ -1,10 +1,4 @@
 <?php
-if(!function_exists('is_closure')){
-	function is_closure($object){
-		return $object instanceof Closure;
-	}
-}
-
 if(!function_exists('base64_urlencode')){
 	function base64_urlencode($str){
 		return rtrim(strtr(base64_encode($str), '+/', '-_'), '=');
@@ -15,10 +9,6 @@ if(!function_exists('base64_urldecode')){
 	function base64_urldecode($str){
 		return base64_decode(str_pad(strtr($str, '-_', '+/'), strlen($str) % 4, '='));
 	}
-}
-
-function wpjam_parse_args($args){
-	return $args ? ((count($args) == 1 || is_array($args[0])) ? $args[0] : [$args[0]=>$args[1]]) : [];
 }
 
 // JWT
@@ -311,7 +301,7 @@ function wpjam_import($file, $columns=[]){
 				}else{
 					$row		= array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $row);
 					$columns	= array_flip(array_map('trim', $columns));
-					$map		= wpjam_array($row, fn($k, $v)=> isset($columns[$v]) ? [$columns[$v], $k] : null);
+					$map		= wpjam_array($row, fn($k, $v)=> isset($columns[$v]) ? [$columns[$v], $k] : (in_array($v, $columns) ? [$v, $k] : null));
 				}
 			}
 
@@ -362,7 +352,7 @@ function wpjam_export($file, $data, $columns=[]){
 // $value, $compare, $value2, $strict=false
 function wpjam_compare($value, $compare, ...$args){
 	if(wpjam_is_assoc_array($compare)){
-		return wpjam_if($value, $compare);
+		return wpjam_match($value, $compare);
 	}
 
 	if(is_array($compare) || !$args){
@@ -372,15 +362,15 @@ function wpjam_compare($value, $compare, ...$args){
 		$strict	= $args[1] ?? false;
 	}
 
-	if($compare){
-		$compare	= strtoupper($compare);
-		$antonym	= ['!='=>'=', '<='=>'>', '>='=>'<', 'NOT IN'=>'IN', 'NOT BETWEEN'=>'BETWEEN'][$compare] ?? '';
+	$antonyms	= ['!='=>'=', '<='=>'>', '>='=>'<', 'NOT IN'=>'IN', 'NOT BETWEEN'=>'BETWEEN'];
+	$compare	= $compare ? strtoupper($compare) : (is_array($value2) ? 'IN' : '=');
 
-		if($antonym){
-			return !wpjam_compare($value, $antonym, $value2, $strict);
-		}
-	}else{
-		$compare	= is_array($value2) ? 'IN' : '=';
+	if(isset($antonyms[$compare])){
+		return !wpjam_compare($value, $antonyms[$compare], $value2, $strict);
+	}
+
+	if(!in_array($compare, $antonyms)){
+		return false;
 	}
 
 	if(in_array($compare, ['IN', 'BETWEEN'])){
@@ -391,53 +381,53 @@ function wpjam_compare($value, $compare, ...$args){
 			$compare	= '=';
 		}
 	}else{
-		if(is_string($value2)){
-			$value2	= trim($value2);
-		}
+		$value2	= is_string($value2) ? trim($value2) : $value2;
 	}
 
-	if($compare == '='){
-		return $strict ? ($value === $value2) : ($value == $value2);
-	}elseif($compare == '>'){
-		return $value > $value2;
-	}elseif($compare == '<'){
-		return $value < $value2;
-	}elseif($compare == 'IN'){
-		if(is_array($value)){
-			return array_all($value, fn($v)=> in_array($v, $value2, $strict));
-		}else{
-			return in_array($value, $value2, $strict);
-		}
-	}elseif($compare == 'BETWEEN'){
-		return wpjam_between($value, ...$value2);
-	}
-
-	return false;
+	return [
+		'='			=> fn($a, $b)=> $strict ? $a === $b : $a == $b, 
+		'>'			=> fn($a, $b)=> $a > $b, 
+		'<'			=> fn($a, $b)=> $a < $b, 
+		'IN'		=> fn($a, $b)=> is_array($a) ? array_all($a , fn($v)=> in_array($v, $b, $strict)) : in_array($a, $b, $strict),
+		'BETWEEN'	=> fn($a, $b)=> wpjam_between($a, ... $b)
+	][$compare]($value, $value2);
 }
 
 function wpjam_between($value, $min, $max){
 	return $value >= $min && $value <= $max;
 }
 
-function wpjam_if($item, $args){
-	$compare	= wpjam_get($args, 'compare');
-	$value2		= wpjam_get($args, 'value');
-	$key		= wpjam_get($args, 'key');
-	$value		= wpjam_get($item, $key);
+function wpjam_match($item, $args=[], $operator=''){
+	if(!$operator){
+		$value	= wpjam_get($item, wpjam_get($args, 'key'));
+		$value2	= wpjam_get($args, 'value');
 
-	if(!empty($args['callable']) && is_callable($value)){
-		return $value($value2, $item);
+		if(!isset($args['compare'])){
+			if(!empty($args['callable']) && is_callable($value)){
+				return $value($value2, $item);
+			}
+
+			if(isset($args['if_null']) && is_null($value)){
+				return $args['if_null'];
+			}
+		}
+
+		if(is_array($value) || wpjam_get($args, 'swap')){
+			[$value, $value2]	= [$value2, $value];
+		}
+
+		return wpjam_compare($value, wpjam_get($args, 'compare'), $value2, (bool)wpjam_get($args, 'strict'));
+	}else{
+		$op	= strtoupper($operator);
+
+		if($op == 'NOT'){
+			return !wpjam_match($item, $args, 'AND');
+		}
+
+		$cb	= ['OR'=>'array_any', 'AND'=>'array_all'][$op] ?? '';
+
+		return $cb ? $cb($args, fn($v, $k)=> wpjam_match($item, wpjam_is_assoc_array($v) ? $v+['key'=>$k] : ['key'=>$k, 'value'=>$v])) : false;
 	}
-
-	if(isset($args['if_null']) && is_null($compare) && is_null($value)){
-		return $args['if_null'];
-	}
-
-	if(is_array($value) || wpjam_get($args, 'swap')){
-		[$value, $value2]	= [$value2, $value];
-	}
-
-	return wpjam_compare($value, $compare, $value2, (bool)wpjam_get($args, 'strict'));
 }
 
 function wpjam_parse_show_if($if){
@@ -453,18 +443,6 @@ function wpjam_parse_show_if($if){
 	}elseif(is_array($if) && !empty($if['key'])){
 		return $if;
 	}
-}
-
-function wpjam_match($item, $args=[], $operator='AND'){
-	$op	= strtoupper($operator);
-
-	if($op == 'NOT'){
-		return !wpjam_match($item, $args, 'AND');
-	}
-
-	$cb	= ['OR'=>'array_any', 'AND'=>'array_all'][$op] ?? '';
-
-	return $cb ? $cb($args, fn($v, $k)=> wpjam_if($item, wpjam_is_assoc_array($v) ? $v+['key'=>$k] : ['key'=>$k, 'value'=>$v])) : false;
 }
 
 // Array
@@ -486,7 +464,7 @@ function wpjam_array($arr=null, $callback=null){
 			}
 		}
 	}else{
-		$data	= is_null($arr) ? [] : (array)$arr;
+		$data	= (array)$arr;
 	}
 
 	if($callback && is_callable($callback)){
@@ -584,13 +562,9 @@ function wpjam_add_at($arr, $index, $key, ...$args){
 }
 
 function wpjam_find($arr, $callback, $output='value'){
-	$fn	= ['value'=>'array_find', 'key'=>'array_find_key', 'index'=>'array_find_index', 'result'=>'wpjam_found'][$output];
+	$cb	= wpjam_is_assoc_array($callback) ? fn($v)=> wpjam_match($v, $callback, 'AND') : $callback;
 
-	if(wpjam_is_assoc_array($callback)){
-		$callback	= fn($v)=> wpjam_match($v, $callback);
-	}
-
-	return $fn($arr, $callback);
+	return ['value'=>'array_find', 'key'=>'array_find_key', 'index'=>'array_find_index', 'result'=>'wpjam_found'][$output]($arr, $cb);
 }
 
 function wpjam_found($arr, $callback){
@@ -701,15 +675,13 @@ function wpjam_toggle($arr, $data){
 }
 
 function wpjam_slice($arr, $keys){
-	$keys	= is_array($keys) ? $keys : wp_parse_list($keys);
-
-	return array_intersect_key($arr, array_flip($keys));
+	return array_intersect_key($arr, array_flip(wp_parse_list($keys)));
 }
 
 function wpjam_filter($arr, $callback, $deep=null){
 	if(wpjam_is_assoc_array($callback)){
 		$args	= $callback;
-		$op		= $deep ?? 'AND';
+		$op		= $deep ?: 'AND';
 
 		return array_filter($arr, fn($v)=> wpjam_match($v, $args, $op));
 	}elseif(wp_is_numeric_array($callback)){
@@ -756,7 +728,7 @@ function wpjam_sort($arr, ...$args){
 }
 
 function wpjam_exists($arr, $key){
-	return isset($arr->$key) ?: (is_array($arr) ? array_key_exists($key, $arr) : false);
+	return is_array($arr) ? array_key_exists($key, $arr) : (is_object($arr) ? isset($arr->$key) : false);
 }
 
 function wpjam_get($arr, $key, $default=null){
@@ -851,24 +823,6 @@ if(!function_exists('array_except')){
 		$keys	= ($keys && is_array($keys[0])) ? $keys[0] : $keys;
 
 		return wpjam_except($array, $keys);
-	}
-}
-
-if(!function_exists('array_is_list')){
-	function array_is_list($arr){
-		if(([] === $arr ) || (array_values($arr) === $arr)){
-			return true;
-		}
-
-		$next_key	= -1;
-
-		foreach($arr as $k => $v){
-			if(++$next_key !== $k){
-				return false;
-			}
-		}
-
-		return true;
 	}
 }
 
@@ -1090,9 +1044,9 @@ function wpjam_zh_urlencode($url){
 function wpjam_format($value, $format, $precision=null){
 	if(is_numeric($value)){
 		if($format == '%'){
-			return round($value * 100, $precision ?? 2).'%';
+			return round($value * 100, $precision ?: 2).'%';
 		}elseif($format == ','){
-			return number_format(trim($value), $precision ?? 2);
+			return number_format(trim($value), (int)($precision ?? 2));
 		}elseif(is_numeric($precision)){
 			return round($value, $precision);
 		}

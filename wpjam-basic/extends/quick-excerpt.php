@@ -17,19 +17,16 @@ wpjam_add_admin_load([
 		}
 
 		if(!wp_doing_ajax()){
-			$scripts = <<<'EOT'
-jQuery(function($){
-	$('body').on('quick_edit', '#the-list', function(event, id){
-		let edit_row	= $('#edit-'+id);
+			wpjam_add_admin_inline_script(<<<'EOD'
+			$('body').on('quick_edit', '#the-list', function(event, id){
+				let edit_row	= $('#edit-'+id);
 
-		if($('textarea[name="the_excerpt"]', edit_row).length == 0){
-			$('.inline-edit-date', edit_row).before('<label><span class="title">摘要</span><span class="input-text-wrap"><textarea cols="22" rows="2" name="the_excerpt"></textarea></span></label>');
-			$('textarea[name="the_excerpt"]', edit_row).val($('#inline_'+id+' div.post_excerpt').text());
-		}
-	});
-});
-EOT;
-			wp_add_inline_script('jquery', $scripts);
+				if($('textarea[name="the_excerpt"]', edit_row).length == 0){
+					$('.inline-edit-date', edit_row).before('<label><span class="title">摘要</span><span class="input-text-wrap"><textarea cols="22" rows="2" name="the_excerpt"></textarea></span></label>');
+					$('textarea[name="the_excerpt"]', edit_row).val($('#inline_'+id+' div.post_excerpt').text());
+				}
+			});
+			EOD);
 		}
 		
 		add_filter('wp_insert_post_data', fn($data)=> array_merge($data, isset($_POST['the_excerpt']) ? ['post_excerpt'=>$_POST['the_excerpt']] : []));

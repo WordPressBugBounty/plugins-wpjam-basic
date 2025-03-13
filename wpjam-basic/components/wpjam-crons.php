@@ -28,8 +28,7 @@ class WPJAM_Cron extends WPJAM_Args{
 
 	public function queue($jobs=null){
 		$jobs	??= $this->jobs;
-		$jobs	= is_callable($jobs) ? $jobs() : $jobs;
-		$jobs	= array_values($jobs);
+		$jobs	= array_values(maybe_callback($jobs));
 		$queue	= [];
 
 		if($this->weight){
@@ -109,7 +108,7 @@ class WPJAM_Cron extends WPJAM_Args{
 	public static function do($id){
 		$data	= self::get($id);
 
-		return $data ? (wpjam_throw_if_error(do_action_ref_array($data['hook'], $data['args'])) || true) : true;
+		return $data ? (do_action_ref_array($data['hook'], $data['args']) || true) : true;
 	}
 
 	public static function delete($id){
@@ -142,7 +141,7 @@ class WPJAM_Cron extends WPJAM_Args{
 			}
 		}else{
 			if(empty($args['callback']) || !is_callable($args['callback'])){
-				return null;
+				return;
 			}
 		}
 

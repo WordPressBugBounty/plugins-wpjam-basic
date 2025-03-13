@@ -24,15 +24,11 @@ if(is_admin()){
 				}
 
 				$result	= set_post_type($post_id, $ptype);
-			}else{
-				$result	= null;
+
+				return is_wp_error($result) ? $result : ['type'=>'redirect', 'url'=>admin_url('edit.php?post_type='.$ptype.'&id='.$post_id)];
 			}
 
-			if(is_wp_error($result)){
-				return $result;
-			}
-
-			return $result ? ['type'=>'redirect', 'url'=>admin_url('edit.php?post_type='.$ptype.'&id='.$post_id)] : ['errmsg'=>'未修改文章类型'];
+			return ['errmsg'=>'未修改文章类型'];
 		}
 
 		public static function on_after_insert_post($post_id, $post){

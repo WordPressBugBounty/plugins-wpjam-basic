@@ -461,10 +461,6 @@ function wpjam_preprocess_plugin_page($page, $name){
 	}
 }
 
-function wpjam_parse_query_vars($query_vars){
-	return WPJAM_Posts::parse_query_vars($query_vars);
-}
-
 function wpjam_get_post_option_fields($post_type, $post_id=null){
 	return [];
 }

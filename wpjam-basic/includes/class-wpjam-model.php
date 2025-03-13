@@ -16,13 +16,14 @@ trait WPJAM_Instance_Trait{
 
 	public static function instance(...$args){
 		if(count($args) == 2 && is_callable($args[1])){
-			return wpjam_get_instance(self::get_called(), ...$args);
+			$name	= $args[0];
+			$cb		= $args[1];
+		}else{
+			$name	= $args ? implode(':', $args) : 'singleton';
+			$cb		= fn()=> static::create_instance(...$args);
 		}
 
-		$args	= wpjam_filter($args, fn($v)=> !is_null($v));
-		$name	= $args ? implode(':', $args) : 'singleton';
-
-		return self::instance_exists($name) ?: self::add_instance($name, static::create_instance(...$args));
+		return wpjam_get_instance(self::get_called(), $name, $cb);
 	}
 
 	protected static function validate_data($data, $id=0){
@@ -34,19 +35,16 @@ trait WPJAM_Instance_Trait{
 	}
 
 	public static function prepare_data($data, $id=0){
-		$result	= static::validate_data($data, $id);
-		$result	= wpjam_throw_if_error($result);
+		wpjam_try(fn()=> static::validate_data($data, $id));
 
 		return static::sanitize_data($data, $id);
 	}
 
 	public static function before_delete($id){
-		if(method_exists(get_called_class(), 'is_deletable')){
+		if(array_all(['is_deletable', 'get_instance'], fn($m)=> method_exists(get_called_class(), $m))){
 			$object	= static::get_instance($id);
-			$result	= $object ? $object->is_deletable() : true;
-			$result	= wpjam_throw_if_error($result);
 
-			if(!$result){
+			if($object && !wpjam_try(fn()=> $object->is_deletable())){
 				wpjam_throw('indelible', '不可删除');
 			}
 		}
@@ -219,35 +217,37 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 	}
 
 	public static function insert($data){
-		return wpjam_catch([get_called_class(), 'insert_by_handler'], static::prepare_data($data));
+		return wpjam_catch(fn()=> static::insert_by_handler(static::prepare_data($data)));
 	}
 
 	public static function update($id, $data){
-		return wpjam_catch([get_called_class(), 'update_by_handler'], $id, static::prepare_data($data, $id));
+		return wpjam_catch(fn()=> static::update_by_handler($id, static::prepare_data($data, $id)));
 	}
 
 	public static function delete($id){
-		return wpjam_catch([get_called_class(), 'before_delete'], $id) ?: static::delete_by_handler($id);
+		return wpjam_catch(function($id){
+			static::before_delete($id);
+
+			return static::delete_by_handler($id);
+		}, $id);
 	}
 
 	public static function delete_multi($ids){
-		try{
+		return wpjam_catch(function($ids){
 			array_walk($ids, fn($id)=> static::before_delete($id));
 
 			return static::delete_multi_by_handler($ids);
-		}catch(Exception $e){
-			return wpjam_catch($e);
-		}
+		}, $ids);
 	}
 
 	public static function insert_multi($data){
-		return wpjam_catch([get_called_class(), 'insert_multi_by_handler'], array_map(fn($v)=> static::prepare_data($v), $data));
+		return wpjam_catch(fn()=> static::insert_multi_by_handler(array_map(fn($v)=> static::prepare_data($v), $data)));
 	}
 
 	public static function validate_by_field($value, $field){
 		$result	= static::get($value);
 
-		if(!$result || is_wp_error($result)){
+		if(!wpjam_if_error($result, null)){
 			return $result ?: new WP_Error('invalid_id', [$field->_title]);
 		}
 
@@ -267,9 +267,7 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 			return $args[0];
 		}
 
-		try_remove_suffix($method, '_by_handler');
-
-		return wpjam_call_handler(static::get_handler(), $method, ...$args);
+		return wpjam_call_handler(static::get_handler(), wpjam_remove_suffix($method, '_by_handler'), ...$args);
 	}
 }
 
@@ -311,22 +309,14 @@ class WPJAM_Handler{
 			return $object->{substr($method, 4)}	= $args[0];
 		}
 
-		try{
-			if(str_ends_with($method, '_multi') && !method_exists($object, $method)){
-				$method	= substr($method, 0, -6);
-
-				array_walk($args[0], fn($item)=> wpjam_try([$object, $method], $item));
-
-				return true;
-			}
-
-			$method	= ['get_ids'=>'get_by_ids', 'get_all'=>'get_results'][$method] ?? $method;
-			$cb		= [$object, $method];
-
-			return is_callable($cb) ? $cb(...$args) : new WP_Error('undefined_method', [$method]);
-		}catch(Exception $e){
-			return wpjam_catch($e);
+		if(!method_exists($object, $method) && try_remove_suffix($method, '_multi')){
+			return wpjam_catch(fn()=> array_walk($args[0], fn($item)=> wpjam_try([$object, $method], $item)) || true);
 		}
+
+		$cb		= [$object, $method];
+		$cb[1]	= ['get_ids'=>'get_by_ids', 'get_all'=>'get_results'][$cb[1]] ?? $cb[1];
+
+		return is_callable($cb) ? wpjam_catch($cb, ...$args) : new WP_Error('undefined_method', [$method]);
 	}
 
 	public static function get($name, $args=null){
@@ -500,7 +490,7 @@ class WPJAM_DB extends WPJAM_Args{
 				$vars	= array_shift($args);
 
 				if($vars && is_array($vars)){
-					$vars	= wpjam_slice($vars, $this->group_cache_key);
+					$vars	= wpjam_pick($vars, $this->group_cache_key);
 
 					if($vars && count($vars) == 1 && !is_array(reset($vars))){
 						$key	.= ':'.array_key_first($vars).':'.reset($vars);
@@ -1414,18 +1404,7 @@ class WPJAM_Items extends WPJAM_Args{
 			'increment',
 			'decrement'
 		])){
-			$retry	= $this->retry_times ?: 1;
-
-			try{
-				do{
-					$retry	-= 1;
-					$result	= $this->retry($method, ...$args);
-				}while($result === false && $retry > 0);
-
-				return $result;
-			}catch(Exception $e){
-				return wpjam_catch($e);
-			}
+			return wpjam_retry($this->retry_times ?: 1, fn()=> $this->retry($method, ...$args));
 		}
 	}
 
@@ -1438,10 +1417,7 @@ class WPJAM_Items extends WPJAM_Args{
 		}
 
 		if($method == 'move'){
-			$ids	= wpjam_try('wpjam_move', array_keys($items), ...$args);
-			$items	= wp_array_slice_assoc($items, $ids);
-
-			return $this->update_items($items);
+			return $this->update_items(wp_array_slice_assoc($items, wpjam_try('wpjam_move', array_keys($items), ...$args)));
 		}
 
 		$id		= ($method == 'insert' || ($method == 'add' && count($args) <= 1)) ? null : array_shift($args);

@@ -50,7 +50,7 @@ class WPJAM_Toc_Setting extends WPJAM_Option_Model{
 			}
 		}
 
-		$object	= wpjam_add_instance('toc', $post_id, new WPJAM_Toc($content, $depth));
+		$object	= wpjam_get_instance('toc', $post_id, fn()=> new WPJAM_Toc($content, $depth));
 		$toc	= $object->get_toc();
 
 		if($toc){

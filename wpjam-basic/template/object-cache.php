@@ -394,7 +394,15 @@ if(class_exists('Memcached')){
 			// $this->mc->setOption(Memcached::OPT_LIBKETAMA_COMPATIBLE, true);	// 用于启用与 libketama 一致性哈希算法兼容的服务器分布策略
 
 			if(!$this->mc->getServerList()){
-				$this->mc->addServer('127.0.0.1', 11211, 100);
+				global $memcached_servers;
+
+				if(isset($memcached_servers)){
+					foreach($memcached_servers as $memcached){
+						$this->mc->addServer(...$memcached);
+					}
+				}else{
+					$this->mc->addServer('127.0.0.1', 11211);
+				}
 			}
 
 			if(is_multisite()){

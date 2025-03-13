@@ -7,9 +7,7 @@ class WPJAM_Basic_Admin{
 			'wpjam-links'	=> ['menu_title'=>'链接设置',		'order'=>14],
 			'wpjam-seo'		=> ['menu_title'=>'SEO 设置',	'order'=>12],
 			'wpjam-about'	=> ['menu_title'=>'关于WPJAM',	'order'=>1,	'function'=>[self::class, 'about_page']],
-			'wpjam-icons'	=> ['menu_title'=>'图标列表',		'order'=>9,	'function'=>'tab',	'tabs'=>[
-				'dashicons'	=> ['title'=>'Dashicons', 'plugin_page'=>'wpjam-icons', 'function'=>[self::class, 'dashicons_page']]
-			]],
+			'wpjam-icons'	=> ['menu_title'=>'图标列表',		'order'=>9,	'tabs'=>['dashicons'=>['title'=>'Dashicons', 'function'=>[self::class, 'dashicons_page']]]],
 		], fn($args, $slug)=> (empty($args['function']) && !WPJAM_Menu_Page::get_tabs($slug)) ? null : wpjam_add_menu_page($slug, $args+[
 			'parent'	=> 'wpjam-basic',
 			'function'	=> 'tab',
@@ -123,30 +121,30 @@ class WPJAM_Basic_Admin{
 				'callback'	=> [self::class, 'update_dashboard_widget']
 			]]]))->page_load();
 
-			wp_add_inline_style('list-tables', "\n".join("\n",[
+			wpjam_add_admin_inline_style([
 				'#dashboard_wpjam .inside{margin:0; padding:0;}',
 				'a.jam-post {border-bottom:1px solid #eee; margin: 0 !important; padding:6px 0; display: block; text-decoration: none; }',
 				'a.jam-post:last-child{border-bottom: 0;}',
 				'a.jam-post p{display: table-row; }',
 				'a.jam-post img{display: table-cell; width:40px; height: 40px; margin:4px 12px; }',
 				'a.jam-post span{display: table-cell; height: 40px; vertical-align: middle;}'
-			]));
+			]);
 		}else{
 			$base	= array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base));
 
 			if($base){
-				wp_add_inline_script('jquery', "jQuery(function($){
-					$('tr.plugin-update-tr').each(function(){
-						let detail_link	= $(this).find('a.open-plugin-details-modal');
-						let detail_href	= detail_link.attr('href');
+				wpjam_add_admin_inline_script("
+				$('tr.plugin-update-tr').each(function(){
+					let detail_link	= $(this).find('a.open-plugin-details-modal');
+					let detail_href	= detail_link.attr('href');
 
-						if(detail_href.indexOf('https://blog.wpjam.com/') === 0 || detail_href.indexOf('https://97866.com/') === 0){
-							detail_href		= detail_href.substring(0,  detail_href.indexOf('?TB_iframe'));
+					if(detail_href.indexOf('https://blog.wpjam.com/') === 0 || detail_href.indexOf('https://97866.com/') === 0){
+						detail_href		= detail_href.substring(0,  detail_href.indexOf('?TB_iframe'));
 
-							detail_link.attr('href', detail_href).removeClass('thickbox open-plugin-details-modal').attr('target','_blank');
-						}
-					});
-				});");
+						detail_link.attr('href', detail_href).removeClass('thickbox open-plugin-details-modal').attr('target','_blank');
+					}
+				});
+				");
 
 				if($base != 'themes'){
 					wpjam_register_plugin_updater('blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-plugin-versions');
@@ -168,7 +166,7 @@ class WPJAM_Basic_Admin{
 	public static function update_dashboard_widget(){
 		$jam_posts	= wpjam_transient('dashboard_jam_posts', fn()=> wpjam_remote_request('https://jam.wpweixin.com/api/post/list.json', ['timeout'=>1, 'field'=>'body.posts']));
 
-		if($jam_posts && !is_wp_error($jam_posts)){
+		if(wpjam_if_error($jam_posts, null)){
 			$i = 0;
 
 			echo '<div class="rss-widget">';
@@ -234,13 +232,11 @@ class WPJAM_Verify{
 	}
 
 	public static function request($data, $throw=false){
-		$url	= 'https://wpjam.wpweixin.com/api/weixin/verify.json';
-
 		return wpjam_remote_request('https://wpjam.wpweixin.com/api/weixin/verify.json', ['method'=>'POST', 'body'=>$data, 'throw'=>$throw]);
 	}
 
 	public static function get_form(){
-		wp_add_inline_style('list-tables', "\n".'.form-table th{width: 100px;}');
+		wpjam_add_admin_inline_style('.form-table th{width: 100px;}');
 
 		$qrcode	= wpjam_tag('img', ['src'=>'https://open.weixin.qq.com/qr/code?username=wpjamcom', 'style'=>'max-width:250px;'])->wrap('p')->before('p', [], '使用微信扫描下面的二维码：');
 
@@ -278,8 +274,7 @@ class WPJAM_Verify{
 			}
 		}else{
 			if($menu_page && isset($menu_page['subs'])){
-				$menu_page['subs']	= wpjam_slice($menu_page['subs'], 'wpjam-basic');
-				$menu_page['subs']	+= ['wpjam-verify'=> [
+				$menu_page['subs']	= wpjam_pick($menu_page['subs'], ['wpjam-basic'])+['wpjam-verify'=> [
 					'parent'		=> 'wpjam-basic',
 					'order'			=> 3,
 					'menu_title'	=> '扩展管理',

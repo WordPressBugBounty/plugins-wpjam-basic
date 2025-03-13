@@ -74,7 +74,7 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 
 		if(!isset($args['size'])){
 			if(isset($args['width']) || isset($args['height'])){
-				$args['size']	= wpjam_slice($args, ['width', 'height']);
+				$args['size']	= wpjam_pick($args, ['width', 'height']);
 			}else{
 				$args['size']	= [];
 			}
@@ -103,7 +103,7 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 
 			if(count($ptypes) > 1){
 				$setting	= self::get_setting('post_types');
-				$ptypes		= $setting ? wpjam_slice($ptypes, $setting) : $ptypes;
+				$ptypes		= $setting ? wpjam_pick($ptypes, $setting) : $ptypes;
 
 				if(!isset($ptypes[$post->post_type])){
 					return;

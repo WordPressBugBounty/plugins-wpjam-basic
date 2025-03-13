@@ -28,9 +28,9 @@ class WPJAM_Setting extends WPJAM_Args{
 					return wpjam_fill(array_filter($name), [$this, 'get']);
 				}
 
-				$value	= is_array($values) ? wpjam_get($values, $name) : null;
+				$value	= is_array($values) ? wpjam_if_error(wpjam_get($values, $name), null) : null;
 
-				return is_wp_error($value) ? null : (is_string($value) ? str_replace("\r\n", "\n", trim($value)) : $value);
+				return is_string($value) ? str_replace("\r\n", "\n", trim($value)) : $value;
 			}
 
 			if($method == 'update'){
@@ -59,7 +59,7 @@ class WPJAM_Setting extends WPJAM_Args{
 	}
 
 	public static function sanitize_option($value){
-		return (is_wp_error($value) || !$value) ? [] : $value;
+		return wpjam_if_error($value, null) ? $value : [];
 	}
 
 	public static function parse_json_module($args){
@@ -126,14 +126,11 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		return $this->get_sub(self::generate_sub_name($GLOBALS)) ?: $this;
 	}
 
+	protected function parse_section($section, $id){
+		return array_merge($section, ['fields'=> maybe_callback($section['fields'] ?? [], $id, $this->name)]);
+	}
+
 	protected function get_sections($get_subs=false, $filter=true){
-		$parser	= function($section, $id){
-			$fields	= $section['fields'] ?? [];
-			$fields	= is_callable($fields) ? $fields($id, $this->name) : $fields;
-
-			return array_merge($section, compact('fields'));
-		};
-
 		$sections	= $this->get_arg('sections');
 
 		if($sections && is_array($sections)){
@@ -143,7 +140,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			$sections	= is_null($fields) ? [] : [($this->sub_name ?: $this->name)=> ['title'=>$this->title, 'fields'=>$fields]];
 		}
 
-		$sections	= wpjam_map($sections, $parser);
+		$sections	= wpjam_map($sections, fn($v, $k)=> $this->parse_section($v, $k));
 		$sections	= $get_subs ? array_reduce($this->get_subs(), fn($carry, $sub)=> array_merge($carry, $sub->get_sections(false, false)), $sections) : $sections;
 
 		if($filter){
@@ -151,7 +148,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 
 			foreach($parent->get_items('section_objects') as $object){
 				foreach(($object->get_arg('sections') ?: []) as $id => $section){
-					$section	= $parser($section, $id);
+					$section	= $this->parse_section($section, $id);
 
 					if(isset($sections[$id])){
 						$sections[$id]	= wpjam_merge($sections[$id], $section);
@@ -180,8 +177,16 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		return self::register($this->name.'-'.$name, $object);
 	}
 
-	public function get_fields($get_subs=false){
-		return array_merge(...array_column($this->get_sections($get_subs), 'fields'));
+	public function get_fields(...$args){
+		if($args && is_array($args[0])){
+			$fields	= $args[0];
+			$output	= 'object';
+		}else{
+			$fields	= array_merge(...array_column($this->get_sections($args[0] ?? false), 'fields'));
+			$output	= $args[1] ?? '';
+		}
+
+		return $output == 'object' ? WPJAM_Fields::create($fields, ['value_callback'=>[$this, 'value_callback']]) : $fields;
 	}
 
 	public function get_option($site=false){
@@ -216,7 +221,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		}
 
 		if($this->field_default){
-			$this->_defaults ??= $this->call_fields('get_defaults');
+			$this->_defaults ??= $this->get_fields(true, 'object')->get_defaults();
 
 			return $name ? wpjam_get($this->_defaults, $name) : $this->_defaults;
 		}
@@ -232,19 +237,12 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		return wpjam_delete_setting($this->name, $name);
 	}
 
-	protected function call_fields($method, ...$args){
-		$get_subs	= $method != 'validate';
-		$fields		= $this->get_fields($get_subs);
-
-		return wpjam_fields($fields)->$method(...$args);
-	}
-
 	public function prepare(){
-		return $this->call_fields('prepare', ['value_callback'=>[$this, 'value_callback']]);
+		return $this->get_fields(true, 'object')->prepare();
 	}
 
 	public function validate($value){
-		return $this->call_fields('validate', $value);
+		return $this->get_fields(false, 'object')->validate($value);
 	}
 
 	public function value_callback($name=''){
@@ -265,7 +263,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			if(count($sections) > 1){
 				if(!$page->tab_page){
 					$tab	= wpjam_tag('div', ['id'=>'tab_'.$id]);
-					$nav[]	= wpjam_tag('a', ['class'=>'nav-tab', 'href'=>'#tab_'.$id], $section['title'])->wrap('li')->data(wpjam_slice($section, ['show_if']));
+					$nav[]	= wpjam_tag('a', ['class'=>'nav-tab', 'href'=>'#tab_'.$id], $section['title'])->wrap('li')->data(wpjam_pick($section, ['show_if']));
 				}
 
 				$title	= empty($section['title']) ? '' : [($page->tab_page ? 'h3' : 'h2'), [], $section['title']];
@@ -275,7 +273,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 				$title ?? '',
 				empty($section['callback']) ? '' : wpjam_ob_get_contents($section['callback'], $section),
 				empty($section['summary']) ? '' : wpautop($section['summary']),
-				wpjam_fields($section['fields'])->render(['value_callback'=>[$this, 'value_callback']])
+				$this->get_fields($section['fields'])->render()
 			]));
 		}
 
@@ -302,14 +300,14 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			wp_die('access_denied');
 		}
 
+		if($this->flush_rewrite_rules){
+			flush_rewrite_rules();
+		}
+
 		$name	= wpjam_get_post_parameter('submit_name');
 		$values	= wpjam_get_data_parameter();
 		$values	= $this->validate($values) ?: [];
 		$fix	= is_network_admin() ? 'site_option' : 'option';
-
-		if($this->flush_rewrite_rules){
-			flush_rewrite_rules();
-		}
 
 		if($this->option_type == 'array'){
 			$callback	= $this->update_callback ?: 'wpjam_update_'.$fix;
@@ -320,7 +318,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 				$values	= wpjam_diff($current, $values, 'key');
 			}else{
 				$values	= wpjam_filter(array_merge($current, $values), fn($v)=> !is_null($v), true);
-				$result	= $this->try_method('sanitize_callback', $values, $this->name);
+				$result	= wpjam_try(fn()=> $this->call_method('sanitize_callback', $values, $this->name));
 				$values	= $result ?? $values;
 			}
 
@@ -346,11 +344,11 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	}
 
 	public static function generate_sub_name($args){
-		return wpjam_join(':', wpjam_slice($args, ['plugin_page', 'current_tab']));
+		return wpjam_join(':', wpjam_pick($args, ['plugin_page', 'current_tab']));
 	}
 
 	public static function create($name, $args){
-		$args	= is_callable($args) ? $args($name) : $args;
+		$args	= maybe_callback($args, $name);
 		$args	+= [
 			'option_group'	=> $name, 
 			'option_page'	=> $name, 
@@ -739,16 +737,6 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 **/
 #[config('orderby')]
 class WPJAM_Meta_Option extends WPJAM_Register{
-	public function __call($method, $args){
-		if(try_remove_suffix($method, '_by_fields')){
-			$id		= array_shift($args);
-			$fields	= $this->get_fields($id);
-			$object	= wpjam_fields($fields);
-
-			return $object->$method(...$args);
-		}
-	}
-
 	public function __get($key){
 		$value	= parent::__get($key);
 
@@ -765,18 +753,17 @@ class WPJAM_Meta_Option extends WPJAM_Register{
 		return $value;
 	}
 
-	public function get_fields($id=null){
-		$fields	= $this->fields;
+	public function get_fields($id=null, $output='object'){
+		$fields	= maybe_callback($this->fields, $id, $this->name);
 
-		return is_callable($fields) ? $fields($id, $this->name) : $fields;
+		return $output == 'object' ? WPJAM_Fields::create($fields, array_merge($this->get_args(), ['id'=>$id])) : $fields;
 	}
 
 	public function register_list_table_action(){
 		return wpjam_register_list_table_action($this->action_name ?: 'set_'.$this->name, $this->get_args()+[
-			'page_title'	=> '设置'.$this->title,
-			'submit_text'	=> '设置',
 			'meta_type'		=> $this->name,
-			'fields'		=> [$this, 'get_fields']
+			'page_title'	=> '设置'.$this->title,
+			'submit_text'	=> '设置'
 		]);
 	}
 
@@ -785,11 +772,11 @@ class WPJAM_Meta_Option extends WPJAM_Register{
 			return [];
 		}
 
-		return $this->prepare_by_fields($id, array_merge($this->get_args(), ['id'=>$id]));
+		return $this->get_fields($id)->prepare();
 	}
 
 	public function validate($id=null, $data=null){
-		return $this->validate_by_fields($id, $data);
+		return $this->get_fields($id)->validate($data);
 	}
 
 	public function render($id, $args=[]){
@@ -804,13 +791,12 @@ class WPJAM_Meta_Option extends WPJAM_Register{
 			echo $this->summary ? wpautop($this->summary) : '';
 		}
 
-		echo $this->render_by_fields($id, array_merge($this->get_args(), ['id'=>$id], $args));
+		echo $this->get_fields($id)->render($args);
 	}
 
 	public function callback($id, $data=null){
 		$fields	= $this->get_fields($id);
-		$object	= wpjam_fields($fields);
-		$data	= $object->validate($data);
+		$data	= $fields->catch('validate', $data);
 
 		if(is_wp_error($data)){
 			return $data;
@@ -819,21 +805,17 @@ class WPJAM_Meta_Option extends WPJAM_Register{
 		}
 
 		if($this->callback){
-			$result	= is_callable($this->callback) ? call_user_func($this->callback, $id, $data, $fields) : false;
+			$result	= is_callable($this->callback) ? call_user_func($this->callback, $id, $data, $this->get_fields($id, '')) : false;
 
 			return $result === false ? new WP_Error('invalid_callback') : $result;
-		}else{
-			return wpjam_update_metadata($this->meta_type, $id, $data, $object->get_defaults());
 		}
+
+		return wpjam_update_metadata($this->meta_type, $id, $data, $fields->get_defaults());
 	}
 
 	public static function create($name, $args){
-		$meta_type	= wpjam_get($args, 'meta_type');
-
-		if($meta_type){
-			$object	= new self($name, $args);
-
-			return self::register($meta_type.':'.$name, $object);
+		if($meta_type = wpjam_get($args, 'meta_type')){
+			return self::register($meta_type.':'.$name, new self($name, $args));
 		}
 	}
 

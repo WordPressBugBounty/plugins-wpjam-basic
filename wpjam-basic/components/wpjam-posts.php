@@ -10,10 +10,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		return ['posts'	=>['title'=>'文章设置',	'fields'=>[
 			'excerpt'	=> ['title'=>'文章摘要',	'fields'=>['excerpt_optimization'=>['before'=>'未设文章摘要：',	'options'=>[
 				0	=> 'WordPress 默认方式截取',
-				1	=> [
-					'label'		=> '按照中文最优方式截取',
-					'fields'	=> ['excerpt_length'=>['before'=>'文章摘要长度：', 'type'=>'number', 'class'=>'small-text', 'value'=>200, 'after'=>'<strong>中文算2个字节，英文算1个字节</strong>']]
-				],
+				1	=> ['label'=>'按照中文最优方式截取', 'fields'=> ['excerpt_length'=>['before'=>'文章摘要长度：', 'type'=>'number', 'class'=>'small-text', 'value'=>200, 'after'=>'<strong>中文算2个字节，英文算1个字节</strong>']]],
 				2	=> '直接不显示摘要'
 			]]]],
 			'list'		=> ['title'=>'文章列表',	'sep'=>'&emsp;',	'fields'=>[
@@ -96,7 +93,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		$object	= get_screen_option('object');
 
 		if(get_current_screen()->base == 'edit'){
-			$row	= wpjam_replace('/(<strong>.*?<a class=\"row-title\".*?<\/a>.*?)(<\/strong>)/is', '$1 [row_action name="set" class="row-action" dashicon="edit"]$2', $row);
+			$row	= wpjam_replace('/(<strong><a class="row-title"[^>]*>.*?<\/a>.*?)(<\/strong>$)/is', '$1 [row_action name="set" class="row-action" dashicon="edit"]$2', $row);
 
 			if(self::get_setting('post_list_ajax', 1)){
 				$columns	= array_map(fn($tax)=> 'column-'.preg_quote($tax->column_name, '/'), $object->get_taxonomies(['show_in_quick_edit'=>true]));
@@ -113,13 +110,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			}
 		}
 
-		if(isset($thumb)){
-			$thumb	= $thumb ?: '<span class="no-thumbnail">暂无图片</span>';
-			$thumb	= '[row_action name="set" class="wpjam-thumbnail-wrap" fallback="1"]'.$thumb.'[/row_action]';
-			$row	= str_replace('<a class="row-title" ', $thumb.'<a class="row-title" ', $row);
-		}
-
-		return $row;
+		return isset($thumb) ? str_replace('<a class="row-title" ', '[row_action name="set" class="wpjam-thumbnail-wrap" fallback="1"]'.($thumb ?: '<span class="no-thumbnail">暂无图片</span>').'[/row_action]<a class="row-title" ', $row) : $row;
 	}
 
 	public static function filter_content_save_pre($content){
@@ -154,8 +145,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				remove_filter('the_excerpt', 'wp_filter_content_tags');
 				remove_filter('the_excerpt', 'shortcode_unautop');
 
-				$length	= self::get_setting('excerpt_length') ?: 200;
-				$text	= wpjam_get_post_excerpt($post, $length);
+				return wpjam_get_post_excerpt($post, (self::get_setting('excerpt_length') ?: 200));
 			}
 		}
 
@@ -166,19 +156,17 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		// 解决文章类型改变之后跳转错误的问题
 		// WP 原始解决函数 'wp_old_slug_redirect' 和 'redirect_canonical'
 		if(!$post_id && self::get_setting('404_optimization')){
-			$post	= self::find_by_name(get_query_var('name'), get_query_var('post_type'));
-
-			return $post ? $post->ID : $post_id;
+			if($post = self::find_by_name(get_query_var('name'), get_query_var('post_type'))){
+				return $post->ID;
+			}
 		}
 
 		return $post_id;
 	}
 
 	public static function load($screen){
-		$base		= $screen->base;
-		$object		= $screen->get_option('object');
-		$style		= [];
-		$scripts	= '';
+		$base	= $screen->base;
+		$object	= $screen->get_option('object');
 
 		if($base == 'post'){
 			if(self::get_setting('disable_trackbacks')){
@@ -186,11 +174,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			}
 
 			if(self::get_setting('disable_autoembed') && $screen->is_block_editor){
-				$scripts	= wpjam_remove_pre_tab("
-				wp.domReady(function(){
-					wp.blocks.unregisterBlockType('core/embed');
-				});
-				", 4);
+				$scripts[]	= "wp.domReady(()=> wp.blocks.unregisterBlockType('core/embed'));\n";
 			}
 		}elseif(in_array($base, ['edit', 'upload'])){
 			$style	= ['.fixed .column-date{width:8%;}'];
@@ -255,11 +239,8 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			$width_columns	= wpjam_map($object->get_taxonomies(['show_admin_column'=>true]), fn($v)=> '.fixed .column-'.$v->column_name);
 			$width_columns	= array_merge($width_columns, $object->supports('author') ? ['.fixed .column-author'] : []);
 
-			$count = count($width_columns);
-
-			if($count){
-				$width		= ['14%', '12%', '10%', '8%', '7%'][$count-1] ?? '6%';
-				$style[]	= implode(',', $width_columns).'{width:'.$width.'}';
+			if($width_columns){
+				$style[]	= implode(',', $width_columns).'{width:'.(['14%', '12%', '10%', '8%', '7%'][count($width_columns)-1] ?? '6%').'}';
 			}
 		}elseif(in_array($base, ['edit-tags', 'term'])){
 			if($base == 'edit-tags'){
@@ -273,44 +254,38 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				];
 			}
 
-			$style	= array_merge($style, wpjam_map(['slug', 'description', 'parent'], fn($v)=> $object->supports($v) ? '' : '.form-field.term-'.$v.'-wrap{display: none;}'));	
+			$style	= array_merge($style ?? [], wpjam_map(['slug', 'description', 'parent'], fn($v)=> $object->supports($v) ? '' : '.form-field.term-'.$v.'-wrap{display: none;}'));	
 		}
 
 		if($base == 'edit-tags' || ($base == 'edit' && !self::is_wc_shop($ptype))){
 			if(self::get_setting('post_list_ajax', 1)){
-				wpjam_add_item('page_setting', 'ajax_list_action', true);
-
-				$scripts	.= wpjam_remove_pre_tab("
+				$scripts[]	= <<<'EOD'
 				$(window).load(function(){
 					wpjam.delegate('#the-list', '.editinline');
 					wpjam.delegate('#doaction');
 				});
-				", 3);
+				EOD;
+			}else{
+				$scripts[]	= "wpjam.list_table.ajax 	= false;\n";
 			}
 
-			$scripts	.= $base == 'edit' ? wpjam_remove_pre_tab("
-			wpjam.add_extra_logic(inlineEditPost, 'setBulk', function(){
-				$('#the-list').trigger('bulk_edit');
-			});
+			if($base == 'edit'){
+				$scripts[]	= <<<'EOD'
+				wpjam.add_extra_logic(inlineEditPost, 'setBulk', ()=> $('#the-list').trigger('bulk_edit'));
 
-			wpjam.add_extra_logic(inlineEditPost, 'edit', function(id){
-				if(typeof(id) === 'object'){
-					id = this.getId(id);
-				}
-
-				$('#the-list').trigger('quick_edit', id);
-
-				return false;
-			});
-			", 2) : '';
+				wpjam.add_extra_logic(inlineEditPost, 'edit', function(id){
+					return ($('#the-list').trigger('quick_edit', typeof(id) === 'object' ? this.getId(id) : id), false);
+				});
+				EOD;
+			}
 		}
 
-		if($scripts){
-			wp_add_inline_script('jquery', "jQuery(function($){".$scripts."\n});");
+		if(!empty($scripts)){
+			wpjam_add_admin_inline_script($scripts);
 		}
 
-		if($style){
-			wp_add_inline_style('list-tables', "\n".implode("\n", $style));
+		if(!empty($style)){
+			wpjam_add_admin_inline_style($style);
 		}
 	}
 
