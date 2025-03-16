@@ -1206,7 +1206,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 					$if_values[$field->key] = null;	// 第一次获取的值都是经过 json schema validate 的，可能存在 show_if 的字段在后面
 				}
 
-				$value	= $show ? $field->chain($value)->unpack()->validate($for)->pack()->value() : $field->pack(null);
+				$value	= $field->pack($show ? $field->validate($field->unpack($value), $for) : null);
 			}
 
 			$data	= wpjam_merge($data, $value);

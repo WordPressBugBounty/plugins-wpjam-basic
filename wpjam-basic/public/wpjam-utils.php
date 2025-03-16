@@ -18,7 +18,7 @@ function wpjam_generate_jwt($payload, $header=[]){
 	if(is_array($payload) && $header['alg'] == 'HS256'){
 		$jwt	= implode('.', wpjam_map([$header, $payload], fn($v)=> base64_urlencode(wpjam_json_encode($v))));
 
-		return $jwt.'.'.base64_urlencode(hash_hmac('sha256', $jwt, wp_salt(), true));
+		return $jwt.'.'.wpjam_generate_signature('hmac-sha256', $jwt);
 	}
 
 	return false;
@@ -27,7 +27,7 @@ function wpjam_generate_jwt($payload, $header=[]){
 function wpjam_verify_jwt($token){
 	$token	= explode('.', $token);
 
-	if(count($token) == 3 && hash_equals(base64_urlencode(hash_hmac('sha256', $token[0].'.'.$token[1], wp_salt(), true)), $token[2])){
+	if(count($token) == 3 && hash_equals(wpjam_generate_signature('hmac-sha256', $token[0].'.'.$token[1]), $token[2])){
 		[$header, $payload]	= wpjam_map(array_slice($token, 0, 2), fn($v)=> wpjam_json_decode(base64_urldecode($v)));
 
 		//iat 签发时间不能大于当前时间
@@ -46,46 +46,42 @@ function wpjam_verify_jwt($token){
 function wpjam_get_jwt($key='access_token', $required=false){
 	$header	= $_SERVER['HTTP_AUTHORIZATION'] ?? '';
 
-	return ($header && str_starts_with($header, 'Bearer')) ? trim(substr($header, 6)) : wpjam_get_parameter($key, ['required'=>$required]);
+	return str_starts_with($header, 'Bearer') ? trim(substr($header, 6)) : wpjam_get_parameter($key, ['required'=>$required]);
 }
 
 // Crypt
-function wpjam_encrypt($text, $args){
+function wpjam_encrypt($text, $args, $de=false){
 	$args	+= ['method'=>'', 'key'=>'', 'options'=>'', 'iv'=>''];
+	$text	= $de ? openssl_decrypt($text, $args['method'], $args['key'], $args['options'], $args['iv']) : $text;
+	$cb		= 'wpjam_'.($de ? 'un' : '').'pad';
+	$types	= ['weixin', 'pkcs7'];
+	$types	= $de ? array_reverse($types) : $types;
 
-	if(wpjam_get($args, 'pad') == 'weixin' && !empty($args['appid'])){
-		$text 	= wpjam_pad($text, 'weixin', $args['appid']);
+	foreach($types as $type){
+		if($type == 'pkcs7'){
+			if(wpjam_get($args, 'options') == OPENSSL_ZERO_PADDING && !empty($args['block_size'])){
+				$text	= $cb($text, $type, $args['block_size']);
+			}
+		}elseif($type == 'weixin'){
+			if(wpjam_get($args, 'pad') == 'weixin' && !empty($args['appid'])){
+				$text	= $cb($text, $type, trim($args['appid']));
+			}
+		}
 	}
 
-	if($args['options'] == OPENSSL_ZERO_PADDING && !empty($args['block_size'])){
-		$text	= wpjam_pad($text, 'pkcs7', $args['block_size']);
-	}
-
-	return openssl_encrypt($text, $args['method'], $args['key'], $args['options'], $args['iv']);
+	return $de ? $text : openssl_encrypt($text, $args['method'], $args['key'], $args['options'], $args['iv']);
 }
 
 function wpjam_decrypt($text, $args){
-	$args	+= ['method'=>'', 'key'=>'', 'options'=>'', 'iv'=>''];
-	$text	= openssl_decrypt($text, $args['method'], $args['key'], $args['options'], $args['iv']);
-
-	if($args['options'] == OPENSSL_ZERO_PADDING && !empty($args['block_size'])){
-		$text	= wpjam_unpad($text, 'pkcs7', $args['block_size']);
-	}
-
-	if(wpjam_get($args, 'pad') == 'weixin' && !empty($args['appid'])){
-		$text 	= wpjam_unpad($text, 'weixin', trim($args['appid']));
-	}
-
-	return $text;
+	return wpjam_encrypt($text, $args, true);
 }
 
 function wpjam_pad($text, $type, ...$args){
 	if($type == 'pkcs7'){
 		$pad	= $args[0] - (strlen($text) % $args[0]);
-
-		return $text.str_repeat(chr($pad), $pad);
+		$text	.= str_repeat(chr($pad), $pad);
 	}elseif($type == 'weixin'){
-		return wp_generate_password(16, false).pack("N", strlen($text)).$text.$args[0];
+		$text	= wp_generate_password(16, false).pack("N", strlen($text)).$text.$args[0];
 	}
 
 	return $text;
@@ -94,8 +90,7 @@ function wpjam_pad($text, $type, ...$args){
 function wpjam_unpad($text, $type, ...$args){
 	if($type == 'pkcs7'){
 		$pad	= ord(substr($text, -1));
-
-		return ($pad > 0 && $pad < $args[0]) ? substr($text, 0, -1 * $pad) : $text;
+		$text	= ($pad > 0 && $pad < $args[0]) ? substr($text, 0, -1 * $pad) : $text;
 	}elseif($type == 'weixin'){
 		$text	= substr($text, 16);
 		$length	= (unpack("N", substr($text, 0, 4)))[1];
@@ -104,7 +99,7 @@ function wpjam_unpad($text, $type, ...$args){
 			return new WP_Error('invalid_appid', 'Appid 校验「'.substr($text, $length + 4).'」「'.$args[0].'」错误');
 		}
 
-		return substr($text, 4, $length);
+		$text	= substr($text, 4, $length);
 	}
 
 	return $text;
@@ -113,6 +108,8 @@ function wpjam_unpad($text, $type, ...$args){
 function wpjam_generate_signature($algo='sha1', ...$args){
 	if($algo == 'sha1'){
 		return sha1(implode(wpjam_sort($args, SORT_STRING)));
+	}elseif($algo == 'hmac-sha256'){
+		return base64_urlencode(hash_hmac('sha256', $args[0], wp_salt(), true));
 	}
 }
 
@@ -550,12 +547,22 @@ function wpjam_add_at($arr, $index, $key, ...$args){
 	}
 
 	if(is_null($key)){
-		if($args){
+		if($index == 0){
+			array_unshift($arr, $args[0]);
+		}elseif($index == count($arr)){
+			array_push($arr, $args[0]);
+		}else{
 			array_splice($arr, $index, 0, [$args[0]]);
 		}
 	}else{
 		$value	= is_array($key) ? $key : [$key=>$args[0] ?? ''];
-		$arr	= array_replace(array_slice($arr, 0, $index, true), $value, array_slice($arr, $index, null, true));
+
+		if($index == 0){
+			$arr	= $value + $arr;
+		}else{
+			$args	= $index == count($arr) ? [$arr, $value] : [array_slice($arr, 0, $index, true), $value, array_slice($arr, $index, null, true)];
+			$arr	= array_replace(...$args);
+		}
 	}
 
 	return $arr;
@@ -564,17 +571,25 @@ function wpjam_add_at($arr, $index, $key, ...$args){
 function wpjam_find($arr, $callback, $output='value'){
 	$cb	= wpjam_is_assoc_array($callback) ? fn($v)=> wpjam_match($v, $callback, 'AND') : $callback;
 
-	return ['value'=>'array_find', 'key'=>'array_find_key', 'index'=>'array_find_index', 'result'=>'wpjam_found'][$output]($arr, $cb);
+	if($output == 'value'){
+		return array_find($arr, $cb);
+	}elseif(in_array($output, ['key', 'index'])){
+		$key	= array_find_key($arr, $cb);
+
+		return ($output == 'key' || is_null($key)) ? $key : array_search($key, array_keys($arr), true);
+	}elseif($output == 'result'){
+		foreach($arr as $k => $v){
+			$result	= $cb($v, $k);
+
+			if($result){
+				return $result;
+			}
+		}
+	}
 }
 
 function wpjam_found($arr, $callback){
-	foreach($arr as $k => $v){
-		$result	= $callback($v, $k);
-
-		if($result){
-			return $result;
-		}
-	}
+	return wpjam_find($arr, $callback, 'result');
 }
 
 function wpjam_group($arr, $field){
@@ -690,9 +705,6 @@ function wpjam_filter($arr, $callback, $deep=null){
 		}
 	}elseif($callback == 'isset'){
 		$callback	= fn($v)=> !is_null($v);
-		$deep		??= true;
-	}elseif($callback == 'filled'){
-		$callback	= fn($v)=> $v || is_numeric($v);
 		$deep		??= true;
 	}
 
@@ -843,14 +855,6 @@ if(!function_exists('array_find_key')){
 				return $k;
 			}
 		}
-	}
-}
-
-if(!function_exists('array_find_index')){
-	function array_find_index($arr, $callback){
-		$key	= array_find_key($arr, $callback);
-
-		return $key !== null ? array_search($key, array_keys($arr), true) : null;
 	}
 }
 

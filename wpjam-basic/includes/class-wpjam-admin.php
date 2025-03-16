@@ -9,15 +9,19 @@ class WPJAM_Admin{
 	}
 
 	public static function get_var($key=''){
-		if($value = wpjam_get_items('admin_'.($key ?: 'var'))){
-			if($key == 'script'){
-				return "jQuery(function($){".preg_replace('/^/m', "\t", "\n".implode("\n\n", $value))."\n});";
-			}elseif($key == 'style'){
-				return "\n".implode("\n\n", $value);
-			}
+		$value	= wpjam_get_items('admin_'.($key ?: 'var'));
 
-			return array_map('maybe_closure', $value);
+		if(!$value){
+			return $key ? '' : [];
 		}
+
+		if($key == 'script'){
+			return "jQuery(function($){".preg_replace('/^/m', "\t", "\n".implode("\n\n", $value))."\n});";
+		}elseif($key == 'style'){
+			return "\n".implode("\n\n", $value);
+		}
+
+		return array_map('maybe_closure', $value);
 	}
 
 	public static function add_var($key, $value){

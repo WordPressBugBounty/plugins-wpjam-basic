@@ -69,28 +69,19 @@ trait WPJAM_Items_Trait{
 	}
 
 	public function item_exists($key, $field=''){
-		return $this->handle_item('exists', $key, null, $field);
+		return $this->handle_item($field, 'exists', $key);
+	}
+
+	public function has_item($item, $field=''){
+		return $this->handle_item($field, 'has', $item);
 	}
 
 	public function get_item($key, $field=''){
-		$value	= $this->handle_item('get', $key, null, $field);
-
-		if(is_null($value) && str_contains($key, '.')){
-			$keys	= explode('.', $key);
-			$key	= array_shift($keys);
-			$value	= $this->get_item($key, $field);
-			$value	= $value ? wpjam_get($value, $keys) : null;
-		}
-
-		return $value;
+		return $this->handle_item($field, 'get', $key);
 	}
 
 	public function get_item_arg($key, $arg, $field=''){
 		return $this->get_item($key.'.'.$arg, $field);
-	}
-
-	public function has_item($item, $field=''){
-		return $this->handle_item('has', null, $item, $field);
 	}
 
 	public function add_item($key, ...$args){
@@ -104,7 +95,7 @@ trait WPJAM_Items_Trait{
 		$cb		= ($args && is_closure($args[0])) ? array_shift($args) : '';
 		$field	= array_shift($args) ?: '';
 
-		return $this->handle_item('add', $key, $item, $field, $cb);
+		return $this->handle_item($field, 'add', $key, $item, $cb);
 	}
 
 	public function is_keyable($key){
@@ -112,29 +103,25 @@ trait WPJAM_Items_Trait{
 	}
 
 	public function remove_item($item, $field=''){
-		return $this->handle_item('remove', null, $item, $field);
+		return $this->handle_item($field, 'remove', null, $item);
 	}
 
 	public function edit_item($key, $item, $field=''){
-		return $this->handle_item('edit', $key, $item, $field);
-	}
-
-	public function replace_item($key, $item, $field=''){
-		return $this->handle_item('replace', $key, $item, $field);
+		return $this->handle_item($field, 'edit', $key, $item);
 	}
 
 	public function set_item($key, $item, $field=''){
-		return $this->handle_item('set', $key, $item, $field);
+		return $this->handle_item($field, 'set', $key, $item);
 	}
 
 	public function delete_item($key, $field=''){
-		$result	= $this->handle_item('delete', $key, null, $field);
-
-		if(!is_wp_error($result)){
-			$this->after_delete_item($key, $field);
+		try{
+			return $result	= $this->handle_item($field, 'delete', $key);
+		}finally{
+			if(!is_wp_error($result)){
+				$this->after_delete_item($key, $field);
+			}
 		}
-
-		return $result;
 	}
 
 	public function del_item($key, $field=''){
@@ -146,21 +133,21 @@ trait WPJAM_Items_Trait{
 			[$orders, $field]	= array_values(wpjam_pull($orders, ['item', '_field']));
 		}
 
-		$items	= $this->get_items($field);
-		$items	= array_merge(wpjam_pull($items, $orders), $items);
-
-		return $this->update_items($items, $field);
+		return $this->handle_item($field, 'move', $orders);
 	}
 
-	protected function handle_item($action, $key, $item, $field='', $cb=false){
+	protected function handle_item($field, $action, $key, $item=null, $cb=false){
 		$items	= $this->get_items($field);
 
 		if($action == 'get'){
-			return $items[$key] ?? null;
+			return wpjam_get($items, $key);
 		}elseif($action == 'exists'){
 			return wpjam_exists($items, $key);
 		}elseif($action == 'has'){
-			return in_array($item, $items);
+			return in_array($key, $items);
+		}elseif($action == 'move'){
+			$orders	= $key;
+			$key 	= null;
 		}
 
 		$result	= $this->validate_item($item, $key, $action, $field);
@@ -169,47 +156,44 @@ trait WPJAM_Items_Trait{
 			return $result;
 		}
 
-		$invalid	= fn($msg)=> new WP_Error('invalid_item_key', $msg);
+		if(isset($key)){
+			if(wpjam_exists($items, $key)){
+				if($action == 'add'){
+					$invalid	= '「'.$key.'」已存在，无法添加';
+				}
+			}else{
+				if($action == 'edit'){
+					$invalid	= '「'.$key.'」不存在，无法编辑';
+				}elseif($action == 'delete'){
+					$invalid	= '「'.$key.'」不存在，无法删除';
+				}
+			}
+		}else{
+			if(!in_array($action, ['add', 'remove', 'move'])){
+				$invalid	= 'key不能为空';
+			}
+		}
+
+		if(isset($invalid)){
+			return new WP_Error('invalid_item_key', $invalid);
+		}
 
 		if(isset($item)){
 			$item	= $this->sanitize_item($item, $key, $action, $field);
-			$index	= $cb ? array_find_index($items, $cb) : null;
 		}
 
-		if(isset($key)){
-			if($this->item_exists($key, $field)){
-				if($action == 'add'){
-					return $invalid('「'.$key.'」已存在，无法添加');
-				}
-			}else{
-				if(in_array($action, ['edit', 'replace'])){
-					return $invalid('「'.$key.'」不存在，无法编辑');
-				}elseif($action == 'delete'){
-					return $invalid('「'.$key.'」不存在，无法删除');
-				}
-			}
-
-			if(isset($item)){
-				if(is_numeric($index)){
-					$items	= wpjam_add_at($items, $index, $key, $item);
-				}else{
-					$items[$key]	= $item;
-				}
-			}else{
-				unset($items[$key]);
-			}
-		}else{
-			if($action == 'add'){
-				if(is_numeric($index)){
-					array_splice($items, $index, 0, [$item]);
-				}else{
-					array_push($items, $item);
-				}
-			}elseif($action == 'remove'){
-				$items	= array_diff($items, [$item]);
-			}else{
-				return $invalid('key不能为空');
-			}
+		if($action == 'add'){
+			$found	= $cb ? array_find_key($items, $cb) : null;
+			$index	= $found === null ? count($items) : array_search($found, array_keys($items), true);
+			$items	= wpjam_add_at($items, $index, $key, $item);
+		}elseif(in_array($action, ['edit', 'set'])){
+			$items[$key]	= $item;
+		}elseif($action == 'delete'){
+			unset($items[$key]);
+		}elseif($action == 'remove'){
+			$items	= array_diff($items, [$item]);
+		}elseif($action == 'move'){
+			$items	= array_merge(wpjam_pull($items, $orders), $items);
 		}
 
 		return $this->update_items($items, $field);
@@ -738,10 +722,8 @@ class WPJAM_Register_Group extends WPJAM_Args{
 	}
 
 	public function handle_model($action, $model, $object=null){
-		$model	= ($model && is_string($model)) ? strtolower($model) : null;
-
-		if($model){
-			return $this->handle_item($action, $model, $object, 'models');
+		if($model && is_string($model)){
+			return $this->handle_item('models', $action, strtolower($model), $object);
 		}
 	}
 
@@ -976,24 +958,30 @@ class WPJAM_Verify_TXT extends WPJAM_Register{
 class WPJAM_Data_Processor extends WPJAM_Args{
 	private $data	= [];
 
-	protected function __construct($args=[]){
-		$this->args		= $args;
-		$this->formulas	= wpjam_map($this->formulas, [$this, 'parse_formula']);
+	public function get_fields($type=''){
+		return $type ? array_intersect_key($this->fields, $this->$type ?: []) : $this->fields;
+	}
+
+	public function get_field($key, $type){
+		return $this->fields[$key][$type] ?? null;
 	}
 
 	public function validate(){
 		$this->sorted	= [];
-		$status			= [];
+		$this->path		= [];
+		$this->formulas	= wpjam_map($this->formulas, [$this, 'parse_formula']);
 
 		foreach($this->formulas as $key => $formula){
-			wpjam_if_error($formula, 'throw');
-
-			if(!isset($status[$key])){
-				$this->sort_formular($formula, $key, $status);
-			}
+			$this->sort_formular(wpjam_if_error($formula, 'throw'), $key);
 		}
 
+		$this->formulas	= wpjam_pick($this->formulas, $this->sorted);
+
 		return true;
+	}
+
+	protected function invalid($key, $msg){
+		return new WP_Error('invalid_formula', '字段'.$this->render_formular($key).'错误，'.$msg);
 	}
 
 	public function parse_formula($formula, $key){
@@ -1011,60 +999,59 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 		foreach($formula as $t){
 			if(is_numeric($t)){
 				if(str_ends_with($t, '.')){
-					return $this->invalid_formula($key, '无效数字「'.$t.'」');
+					return $this->invalid($key, '无效数字「'.$t.'」');
 				}
 			}elseif(str_starts_with($t, '$')){
 				if(!in_array(substr($t, 1), array_keys($this->fields))){
-					return $this->invalid_formula($key, '「'.$t.'」未定义');
+					return $this->invalid($key, '「'.$t.'」未定义');
 				}
 			}elseif($t == '('){
 				array_push($stack, '(');
 			}elseif($t == ')'){
 				if(empty($stack)){
-					return $this->invalid_formula($key, '括号不匹配');
+					return $this->invalid($key, '括号不匹配');
 				}
 
 				array_pop($stack);
 			}else{
 				if(!in_array($t, $signs) && !in_array(strtolower($t), $methods)){
-					return $this->invalid_formula($key, '无效的「'.$t.'」');
+					return $this->invalid($key, '无效的「'.$t.'」');
 				}
 			}
 		}
 
-		return $stack ? $this->invalid_formula($key, '括号不匹配') : $formula;
+		return $stack ? $this->invalid($key, '括号不匹配') : $formula;
 	}
 
-	protected function invalid_formula($key, $msg){
-		return new WP_Error('invalid_formula', '字段'.wpjam_get($this->fields[$key], 'title').'「'.$key.'」'.'公式「'.$this->formulas[$key].'」错误，'.$msg);
+	protected function render_formular($key){
+		$formula	= $this->formulas[$key];
+		$formula	= is_array($formula) ? implode($formula) : $formula;
+
+		return wpjam_get($this->fields[$key], 'title').'「'.$key.'」'.'公式「'.$formula.'」';
 	}
 
-	protected function sort_formular($formula, $key, &$status){
-		if(isset($status[$key])) {
-			return $status[$key] === 1 ? [$key] : null;
+	protected function sort_formular($formula, $key){
+		if(in_array($key, $this->sorted)){
+			return;
 		}
 
-		$status[$key]	= 1;
-		$formulas		= is_array($formula[0]) ? array_column($formula, 'formula') : [$formula];
+		if(in_array($key, $this->path)){
+			wpjam_throw('invalid_formula', '公式嵌套：'.implode(' → ', wpjam_map(array_slice($this->path, array_search($key, $this->path)), fn($k)=> $this->render_formular($k))));
+		}
+
+		$this->path	= [...$this->path, $key];
+		$formulas	= is_array($formula[0]) ? array_column($formula, 'formula') : [$formula];
 
 		foreach($formulas as $formula){
 			foreach($formula as $t){
 				if(try_remove_prefix($t, '$') && isset($this->formulas[$t])){
-					$cycle	= $this->sort_formular(wpjam_if_error($this->formulas[$t], 'throw'), $t, $status);
-
-					if($cycle){
-						if(in_array($key, $cycle)){
-							wpjam_throw('cycle_detected', '公式嵌套：'.implode(' → ', [$key, ...$cycle]));
-						}
-
-						return [$key, ...$cycle];
-					}
+					$this->sort_formular(wpjam_if_error($this->formulas[$t], 'throw'), $t);
 				}
 			}
 		}
 
-		$status[$key]	= 2;
 		$this->sorted	= [...$this->sorted, $key];
+		$this->path		= array_diff($this->path, [$key]);
 	}
 
 	public function process($items, $args=[]){
@@ -1158,12 +1145,14 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 				}
 			}
 
-			set_error_handler(function($errno, $errstr){
+			$handler	= set_error_handler(function($errno, $errstr){
 				if(str_contains($errstr , 'Division by zero')){
 					throw new DivisionByZeroError($errstr); 
 				}
 
-				throw new ErrorException($errstr , $errno); 
+				throw new ErrorException($errstr , $errno);
+
+				return true;
 			});
 
 			try{
@@ -1173,15 +1162,17 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 			}catch(throwable $e){
 				return $if_error ?? '!计算错误：'.$e->getMessage();
 			}finally{
-				restore_error_handler();
+				if($handler){
+					set_error_handler($handler);
+				}else{
+					restore_error_handler();
+				}
 			}
 		}
 
 		if($args['sum'] && $formulas){
 			$formulas	= array_intersect_key($formulas, array_filter($this->sumable, fn($v)=> $v == 2));
 		}
-
-		$formulas	= $formulas && $this->sorted ? wpjam_pick($formulas, $this->sorted) : [];
 
 		if(!$formulas){
 			return $item;

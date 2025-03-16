@@ -346,7 +346,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		if($object){
 			$value	??= $this->value_callback !== false && $this->exists('value_callback') ? wpjam_value_callback([$this->model, 'value_callback'], $name, $id) : $object->default;
 
-			$value	= $object->render($value, in_array($name, $this->filterable), $id);
+			$value	= wpjam_is_assoc_array($value) ? $value : $object->render($value, in_array($name, $this->filterable), $id);
 		}
 
 		if(wp_is_numeric_array($value)){
@@ -1163,7 +1163,7 @@ class WPJAM_List_Table_Column extends WPJAM_Register{
 			return array_map(fn($v)=> $this->render($v, $filterable, false), $value);
 		}
 
-		if(str_contains($value, '[filter')){
+		if($value && str_contains($value, '[filter')){
 			return $value;
 		}
 

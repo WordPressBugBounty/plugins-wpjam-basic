@@ -1,15 +1,5 @@
 <?php
 class WPJAM_API{
-	public static function activation($action='', ...$args){
-		$handler	= wpjam_get_handler(['items_type'=>'transient', 'transient'=>'wpjam-actives']);
-
-		if($action == 'add'){
-			$handler->add($args);
-		}else{
-			array_map(fn($active)=> add_action(...$active), $handler->empty());
-		}
-	}
-
 	public static function get_parameter($name, $args=[]){
 		if(!is_array($args)){
 			$method	= $args;
@@ -85,16 +75,6 @@ class WPJAM_API{
 		return $value;
 	}
 
-	public static function method_allow($method){
-		$m	= $_SERVER['REQUEST_METHOD'];
-
-		if($m != strtoupper($method)){
-			wp_die('method_not_allow', '接口不支持 '.$m.' 方法，请使用 '.$method.' 方法！');
-		}
-
-		return true;
-	}
-
 	public static function request($url, $args=[], $err=[]){
 		$args	+= ['body'=>[], 'headers'=>[], 'sslverify'=>false, 'stream'=>false];
 		$method	= strtoupper(wpjam_pull($args, 'method', '')) ?: ($args['body'] ? 'POST' : 'GET');
@@ -127,28 +107,17 @@ class WPJAM_API{
 			$response	= wp_remote_request($url, $args+['method'=>$method]);
 		}
 
+		$trigger	= fn($code, $msg, $detail)=> trigger_error($url."\n".$code.' : '.$msg."\n".($detail ? var_export($detail, true)."\n" : '').var_export($args['body'], true));
+
 		if(is_wp_error($response)){
-			return self::log_error($response, $url, $args['body']);
-		}
+			$code	= $response->get_error_code();
+			$msg	= $response->get_error_message();
 
-		$body	= &$response['body'];
-
-		if($body && !$args['stream']){
-			if(str_contains(wp_remote_retrieve_header($response, 'content-disposition'), 'attachment;')){
-				$body	= wpjam_bits($body);
-			}else{
-				if(wpjam_pull($args, 'json_decode') !== false && str_starts_with($body, '{') && str_ends_with($body, '}')){
-					$decoded	= wpjam_json_decode($body);
-
-					if(!is_wp_error($decoded)){
-						$body	= self::if_error($decoded, $err);
-
-						if(is_wp_error($body)){
-							return self::log_error($body, $url, $args['body']);
-						}
-					}
-				}
+			if(apply_filters('wpjam_http_response_error_debug', true, $code, $msg)){
+				$trigger($code, $msg, $response->get_error_data());
 			}
+
+			return $response;
 		}
 
 		$code	= $response['response']['code'] ?? 0;
@@ -157,42 +126,40 @@ class WPJAM_API{
 			return new WP_Error($code, '远程服务器错误：'.$code.' - '.$response['response']['message']);
 		}
 
+		$body	= &$response['body'];
+
+		if($body && !$args['stream']){
+			if(str_contains(wp_remote_retrieve_header($response, 'content-disposition'), 'attachment;')){
+				$body	= wpjam_bits($body);
+			}elseif(wpjam_pull($args, 'json_decode') !== false && str_starts_with($body, '{') && str_ends_with($body, '}')){
+				$result	= wpjam_json_decode($body);
+
+				if(!is_wp_error($result)){
+					$err	+= [
+						'errcode'	=> 'errcode',
+						'errmsg'	=> 'errmsg',
+						'detail'	=> 'detail',
+						'success'	=> '0',
+					];
+
+					$code	= wpjam_pull($result, $err['errcode']);
+
+					if($code && $code != $err['success']){
+						$msg	= wpjam_pull($result, $err['errmsg']);
+						$detail	= wpjam_pull($result, $err['detail']);
+						$detail	= is_null($detail) ? array_filter($result) : $detail;
+
+						$trigger($code, $msg, $detail);
+
+						return new WP_Error($code, $msg, $detail);
+					}
+
+					$body	= $result;
+				}
+			}
+		}
+
 		return $response;
-	}
-
-	public static function if_error($data, $err=[]){
-		$err	+= [
-			'errcode'	=> 'errcode',
-			'errmsg'	=> 'errmsg',
-			'detail'	=> 'detail',
-			'success'	=> '0',
-		];
-
-		$code	= wpjam_pull($data, $err['errcode']);
-
-		if($code && $code != $err['success']){
-			$msg	= wpjam_pull($data, $err['errmsg']);
-			$detail	= wpjam_pull($data, $err['detail']);
-			$detail	= is_null($detail) ? array_filter($data) : $detail;
-
-			return new WP_Error($code, $msg, $detail);
-		}
-
-		return $data;
-	}
-
-	private static function log_error($error, $url, $body){
-		$code	= $error->get_error_code();
-		$msg	= $error->get_error_message();
-
-		if(apply_filters('wpjam_http_response_error_debug', true, $code, $msg)){
-			$detail	= $error->get_error_data();
-			$detail	= $detail ? var_export($detail, true)."\n" : '';
-
-			trigger_error($url."\n".$code.' : '.$msg."\n".$detail.var_export($body, true));
-		}
-
-		return $error;
 	}
 
 	public static function on_plugins_loaded(){
@@ -211,6 +178,13 @@ class WPJAM_API{
 	}
 
 	public static function __callStatic($method, $args){
+		if($method == 'activation'){
+			$handler	= wpjam_get_handler(['items_type'=>'transient', 'transient'=>'wpjam-actives']);
+			$action		= array_shift($args);
+
+			return $action == 'add' ? $handler->add($args) : array_map(fn($active)=> add_action(...$active), $handler->empty());
+		}
+
 		$function	= 'wpjam_'.$method;
 
 		if(function_exists($function)){
@@ -419,7 +393,14 @@ class WPJAM_JSON extends WPJAM_Register{
 	}
 
 	public static function send($data=[], $code=null){
-		$data	= wpjam_parse_error($data);
+		if($data === true || $data === []){
+			$data	= ['errcode'=>0];
+		}elseif($data === false || is_null($data)){
+			$data	= ['errcode'=>'-1', 'errmsg'=>'系统数据错误或者回调函数返回错误'];
+		}else{
+			$data	= WPJAM_Error::parse($data);
+		}
+
 		$result	= self::encode($data);
 
 		if(!headers_sent() && !wpjam_doing_debug()){
@@ -1152,6 +1133,10 @@ class WPJAM_Method{
 		return method_exists($this->class, $method);
 	}
 
+	public function undefined($method){
+		wpjam_throw('undefined_method', $this->class.'::'.$method);
+	}
+
 	public function parse($method, &$args=[]){
 		$cb	= [$this->class, $method];
 
@@ -1203,10 +1188,6 @@ class WPJAM_Method{
 		return $object ?: wpjam_throw('invalid_id', [$cb[0]]);
 	}
 
-	public function undefined($method){
-		wpjam_throw('undefined_method', $this->class.'::'.$method);
-	}
-
 	public static function create($class){
 		if(!class_exists($class)){
 			wpjam_throw('invalid_model', [$class]);
@@ -1241,20 +1222,32 @@ class WPJAM_Chainable{
 }
 
 class WPJAM_Error{
+	public static function parse($data){
+		if(is_wp_error($data)){
+			$err	= $data->get_error_data();
+			$data	= self::filter([
+				'errcode'	=> $data->get_error_code(),
+				'errmsg'	=> $data->get_error_message(),
+			]+($err ? (is_array($err) ? $err : ['errdata'=>$err]) : []));
+		}elseif(wpjam_is_assoc_array($data)){
+			$data	= self::filter($data+['errcode'=>0]);
+		}
+
+		return $data;
+	}
+
 	public static function filter($data){
 		$error	= wpjam_get_setting('wpjam_errors', $data['errcode']);
 
 		if($error){
 			$data['errmsg']	= $error['errmsg'];
 
-			if(!empty($error['show_modal']) && !empty($error['modal']['title']) && !empty($error['modal']['content'])){
+			if(array_all(['show_modal', 'modal.title', 'modal.content'], fn($key)=> wpjam_get($error, $key))){
 				$data['modal']	= $error['modal'];
 			}
 		}else{
-			if(empty($data['errmsg'])){
-				$item	= self::get_setting($data['errcode']);
-				$data	= array_merge($data, $item ? wpjam_array(['errmsg'=>'message', 'modal'=>'modal'], fn($k, $v)=>$item[$v] ? [$k, $item[$v]] : null) : []);
-			}
+			$item	= empty($data['errmsg']) ? self::get_setting($data['errcode']) : '';
+			$data	= array_merge($data, $item ? wpjam_array(['errmsg'=>'message', 'modal'=>'modal'], fn($k, $v)=>$item[$v] ? [$k, $item[$v]] : null) : []);
 		}
 
 		return $data;

@@ -827,7 +827,7 @@ jQuery(function($){
 
 		redirect: function(data){
 			if(data.url){
-				window.open(data.url, data.target);
+				window.open(data.url.replace('admin/page=', 'admin/admin.php?page='), data.target);
 			}else{
 				window.location.reload();	
 			}
@@ -876,14 +876,17 @@ jQuery(function($){
 	}
 
 	wpjam.add_extra_logic($, 'ajax', function(options){
-		let data	= options.data;
-		let type	= typeof data;
+		let type	= typeof options.data;
+		let data	= type == 'string' ? wpjam.parse_params(options.data) : (type == 'object' ? options.data : {});
 
-		data	= type == 'string' ? wpjam.parse_params(data) : (type == 'object' ? data : {});
-		data	= wpjam.append_page_setting(data);
-		data	= type == 'string' ? $.param(data) : data;
-
-		options.data	= data;
+		if(data.action){
+			if(data.action.startsWith('wpjam-')){
+				data	= wpjam.append_page_setting(data);
+			}else if(['fetch-list', 'inline-save-tax', 'get-comments', 'replyto-comment'].includes(data.action)){
+				data.screen_id	= wpjam.screen_id;
+				options.data	= type == 'string' ? $.param(data) : data;
+			}
+		}
 	}, 'before');
 
 	window.onpopstate = event => {

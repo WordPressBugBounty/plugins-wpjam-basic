@@ -58,15 +58,12 @@ function wpjam_add_item($name, $key, ...$args){
 
 	$result	= $object->add_item($key, ...$args);
 
-	if(is_wp_error($result)){
-		return $result;
-	}
-
-	return (!$args || !$object->is_keyable($key)) ? $key : ($args[0] ?? null);
+	return is_wp_error($result) ? $result : ((!$args || !$object->is_keyable($key)) ? $key : ($args[0] ?? null));
 }
 
 function wpjam_set_item($name, $key, $item, $field=''){
-	$result	= wpjam_get_item_object($name)->set_item($key, $item, $field);
+	$object	= is_object($name) ? $name : wpjam_get_item_object($name);
+	$result	= $object->set_item($key, $item, $field);
 
 	return is_wp_error($result) ? $result : $item;
 }

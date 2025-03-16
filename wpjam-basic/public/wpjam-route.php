@@ -158,7 +158,7 @@ if(!function_exists('is_closure')){
 function wpjam_if_error($value, ...$args){
 	if($args && is_wp_error($value)){
 		if(is_closure($args[0])){
-			return $args[0]($value);
+			return array_shift($args)($value, ...$args);
 		}elseif(in_array($args[0], [null, false, []], true)){
 			return $args[0];
 		}elseif($args[0] === 'die'){
@@ -295,14 +295,6 @@ function wpjam_db_transaction($callback, ...$args){
 
 		return false;
 	}
-}
-
-function wpjam_die_if_error($result){
-	return wpjam_if_error($result, 'die');
-}
-
-function wpjam_throw_if_error($result){
-	return wpjam_if_error($result, 'throw');
 }
 
 // Var
@@ -448,7 +440,13 @@ function wpjam_get_data_parameter($name='', $args=[]){
 }
 
 function wpjam_method_allow($method){
-	return WPJAM_API::method_allow($method);
+	$m	= $_SERVER['REQUEST_METHOD'];
+
+	if($m != strtoupper($method)){
+		wp_die('method_not_allow', '接口不支持 '.$m.' 方法，请使用 '.$method.' 方法！');
+	}
+
+	return true;
 }
 
 // Request
@@ -463,34 +461,7 @@ function wpjam_remote_request($url='', $args=[], $err=[]){
 
 // Error
 function wpjam_parse_error($data){
-	if($data === true){
-		return ['errcode'=>0];
-	}
-
-	if($data === false || is_null($data)){
-		return ['errcode'=>'-1', 'errmsg'=>'系统数据错误或者回调函数返回错误'];
-	}
-
-	if(is_array($data)){
-		if(!$data || !wp_is_numeric_array($data)){
-			$data	+= ['errcode'=>0];
-		}
-	}elseif(is_wp_error($data)){
-		$errdata	= $data->get_error_data();
-		$data		= [
-			'errcode'	=> $data->get_error_code(),
-			'errmsg'	=> $data->get_error_message(),
-		];
-
-		if($errdata){
-			$errdata	= is_array($errdata) ? $errdata : ['errdata'=>$errdata];
-			$data 		= $data + $errdata;
-		}
-	}else{
-		return $data;
-	}
-
-	return empty($data['errcode']) ? $data : WPJAM_Error::filter($data);
+	return WPJAM_Error::parse($data);
 }
 
 function wpjam_register_error_setting($code, $message='', $modal=[]){

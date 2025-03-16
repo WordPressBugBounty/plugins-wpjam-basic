@@ -90,6 +90,12 @@ if(!function_exists('array_first')){
 	}
 }
 
+if(!function_exists('array_find_index')){
+	function array_find_index($arr, $callback){
+		return wpjam_find($arr, $callback, 'index');
+	}
+}
+
 if(!function_exists('filter_null')){
 	function filter_null($array, $deep=false){
 		return wpjam_filter($array, fn($v)=> !is_null($v), $deep);
@@ -163,6 +169,14 @@ function _mb_strimwidth($str, $start, $width, $trimmarker=''){
 	}
 
 	return $result.$trimmarker;
+}
+
+function wpjam_die_if_error($result){
+	return wpjam_if_error($result, 'die');
+}
+
+function wpjam_throw_if_error($result){
+	return wpjam_if_error($result, 'throw');
 }
 
 function wpjam_remove_postfix($str, $postfix, &$removed=false){
