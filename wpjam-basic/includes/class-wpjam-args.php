@@ -1251,8 +1251,8 @@ class WPJAM_Updater extends WPJAM_Args{
 		$plural		= $type.'s';
 		$response	= wpjam_transient('update_'.$plural.':'.$this->hostname, fn()=> wpjam_remote_request($this->url), MINUTE_IN_SECONDS);
 
-		if(is_wp_error($response)){
-			return false;
+		if(!is_array($response)){
+			return [];
 		}
 
 		$response	= $response['template']['table'] ?? $response[$plural];

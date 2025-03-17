@@ -166,12 +166,12 @@ class WPJAM_Basic_Admin{
 	public static function update_dashboard_widget(){
 		$jam_posts	= wpjam_transient('dashboard_jam_posts', fn()=> wpjam_remote_request('https://jam.wpweixin.com/api/post/list.json', ['timeout'=>1, 'field'=>'body.posts']));
 
-		if(wpjam_if_error($jam_posts, null)){
+		if(is_array($jam_posts)){
 			$i = 0;
 
 			echo '<div class="rss-widget">';
 
-			foreach($jam_posts as $jam_post){
+			foreach($jam_posts ?: [] as $jam_post){
 				if($i == 5) break;
 				echo '<a class="jam-post" target="_blank" href="http://blog.wpjam.com'.$jam_post['post_url'].'"><p>'.'<img src="'.str_replace('imageView2/1/w/200/h/200/', 'imageView2/1/w/100/h/100/', $jam_post['thumbnail']).'" /><span>'.$jam_post['title'].'</span></p></a>';
 				$i++;
