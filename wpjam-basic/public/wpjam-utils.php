@@ -432,8 +432,13 @@ function wpjam_parse_show_if($if){
 		$keys	= count($if) == 2 ? ['key', 'value'] : ['key', 'compare', 'value'];
 
 		if(count($if) > 3){
-			$args	= is_array($if[3]) ? $if[3] : [];
-			$if		= array_slice($if, 0, 3);
+			if(is_array($if[3])){
+				$args	= $if[3];
+
+				trigger_error(var_export($args, true));
+			}
+
+			$if	= array_slice($if, 0, 3);
 		}
 
 		return array_combine($keys, $if)+($args ?? []);
@@ -978,7 +983,7 @@ function wpjam_remove_pre_tab($str, $times=1){
 	return preg_replace('/^\t{'.$times.'}/m', '', $str);
 }
 
-function wpjam_replace($pattern, $replace, $subject, $limit=-1, &$count=null, $flags=0){
+function wpjam_preg_replace($pattern, $replace, $subject, $limit=-1, &$count=null, $flags=0){
 	if(is_closure($replace)){
 		$result	= preg_replace_callback($pattern, $replace, $subject, $limit, $count, $flags);
 	}else{
@@ -1038,11 +1043,11 @@ function wpjam_get_first_p($text){
 }
 
 function wpjam_unicode_decode($text){
-	return preg_replace_callback('/(\\\\u[0-9a-fA-F]{4})+/i', fn($m)=> json_decode('"'.$m[0].'"') ?: $m[0], $text);
+	return wpjam_preg_replace('/(\\\\u[0-9a-fA-F]{4})+/i', fn($m)=> json_decode('"'.$m[0].'"') ?: $m[0], $text);
 }
 
 function wpjam_zh_urlencode($url){
-	return $url ? preg_replace_callback('/[\x{4e00}-\x{9fa5}]+/u', fn($m)=> urlencode($m[0]), $url) : '';
+	return $url ? wpjam_preg_replace('/[\x{4e00}-\x{9fa5}]+/u', fn($m)=> urlencode($m[0]), $url) : '';
 }
 
 function wpjam_format($value, $format, $precision=null){

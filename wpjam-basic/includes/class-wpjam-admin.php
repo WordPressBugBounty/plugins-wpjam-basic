@@ -803,7 +803,7 @@ class WPJAM_Plugin_Page extends WPJAM_Menu_Page{
 			$screen->add_option('meta_type', $args['meta_type']);
 		}
 
-		$args	= wpjam_parse_data_type($args);
+		$args	= WPJAM_Data_Type::prepare($args);
 
 		if($args){
 			$this->update_args($args);
@@ -1466,7 +1466,7 @@ class WPJAM_Chart extends WPJAM_Args{
 		$tag	= wpjam_tag();
 
 		if($args['show_chart']){
-			$tag->append('div', ['id'=>$args['chart_id'], 'data'=>['chart'=>true, 'type'=>'Donut', 'options'=>['data'=>$data]]]);
+			$tag->append('div', ['id'=>$args['chart_id'], 'data'=>['chart'=>true, 'type'=>'Donut', 'options'=>['data'=>$data ?? []]]]);
 		}
 
 		if($args['show_table']){

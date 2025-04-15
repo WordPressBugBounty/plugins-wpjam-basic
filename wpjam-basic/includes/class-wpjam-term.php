@@ -144,9 +144,8 @@ class WPJAM_Term{
 
 	public static function get($term){
 		$data	= $term ? self::get_term($term, '', ARRAY_A) : [];
-		$data	+= ($data && !is_wp_error($data)) ? ['id'=>$data['term_id']] : [];
 
-		return $data;
+		return $data && !is_wp_error($data) ? $data+['id'=>$data['term_id']] : $data;
 	}
 
 	protected static function pick(&$data, $pull=false){
@@ -333,7 +332,7 @@ class WPJAM_Term{
 							$fields['level_'.$level]	= array_merge(
 								$fields['level_'.$level],
 								['type'=>'select', 'data_type'=>'taxonomy', 'taxonomy'=>$tax, 'value'=>$value, 'options'=>$options],
-								($level > 0 ? ['show_if'=>['level_'.($level-1), '!=', 0, ['query_arg'=>'parent']]] : [])
+								($level > 0 ? ['show_if'=>['level_'.($level-1), '!=', 0], 'data-filter_key'=>'parent'] : [])
 							);
 						}
 
@@ -362,7 +361,7 @@ class WPJAM_Term{
 	}
 
 	public static function parse_option_args($args){
-		$parsed	= ['show_option_all'=>'请选择', 'option_all_value'=>''];
+		$parsed	= ['show_option_all'=>'请选择'];
 
 		if(isset($args['option_all'])){	// 兼容
 			$v	= $args['option_all'];
@@ -750,6 +749,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 				'type'			=> 'text',
 				'data_type'		=> 'taxonomy',
 				'taxonomy'		=> $this->name,
+				'filterable'	=> true,
 				'placeholder'	=> '请输入'.$this->title,
 				'title'			=> '',
 				'class'			=> ''

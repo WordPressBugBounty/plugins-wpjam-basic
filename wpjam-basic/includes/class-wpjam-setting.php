@@ -47,9 +47,26 @@ class WPJAM_Setting extends WPJAM_Args{
 		}
 	}
 
-	public static function get_instance($type='', $name='', $blog_id=0){
-		if(!in_array($type, ['option', 'site_option']) || !$name){
-			return null;
+	public static function get_instance($type='', $name='', ...$args){
+		if(!in_array($type, ['option', 'site_option', '', 'site'])){
+			if(!$type || $args){
+				return;
+			}
+
+			$blog_id	= $name;
+			$name		= $type;
+			$type		= 'option';
+		}else{
+			if(!$name){
+				return;
+			}
+
+			$blog_id	= (int)array_shift($args);
+			$type		= ['site'=>'site_option', ''=>'option'][$type] ?? $type;
+		}
+
+		if($blog_id && !is_numeric($blog_id)){
+			trigger_error($type.':'.$name.':'.$blog_id);
 		}
 
 		$args	= ['name'=>$name];

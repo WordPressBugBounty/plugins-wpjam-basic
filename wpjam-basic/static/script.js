@@ -1,7 +1,27 @@
 jQuery(function($){
 	$.fn.extend({
+		wpjam_each: function(selector, callback, action='find'){
+			_.each([].concat(selector), sel => {
+				let s	= sel;
+				let c	= callback;
+				let a	= action;
+
+				if(_.isObject(sel)){
+					s	= sel.selector;
+					c	= sel.callback || c;
+					a	= sel.action || a;
+				}
+
+				if(s && c && a && _.isFunction(this[a])){
+					this[a](s).each((i, el)=> c($(el), sel));
+				}
+			});
+
+			return this;
+		},
+
 		wpjam_scroll: function(){
-			let top	= $(this).offset().top;
+			let top	= this.offset().top;
 			let dis	= $(window).height() * 0.4;
 
 			if(Math.abs(top - $(window).scrollTop()) > dis){
@@ -12,118 +32,101 @@ jQuery(function($){
 		},
 
 		wpjam_row: function(color){
-			let $row	= $(this);
-
-			if(!$row.is('table') && color !== false){
-				$row.hide().css('backgroundColor', color || ($row.prevAll().length % 2 ? '#ffffeecc' : '#ffffddcc')).fadeIn(1000);
+			if(color !== false){
+				this.hide().css('backgroundColor', color || (this.prevAll().length % 2 ? '#ffffeecc' : '#ffffddcc')).fadeIn(1000);
 			}
 
-			if($row.is('td')){
-				return $row;
+			if(!this.is('td')){
+				this.wpjam_each(list_table.columns, ($el, data)=> $el.wpjam_cell(data));
+				this.wpjam_each('td', $el => $el[0].scrollWidth > $el[0].clientWidth ? $el.addClass('is-truncated') : '');
+				this.wpjam_each('.items', $el => $el.wpjam_items());
 			}
 
-			_.each(list_table.columns, data => $row.find(data.column).each(function(){
-				let $cell	= $(this);
+			return this;
+		},
 
-				if(data.sticky){
-					$cell.addClass('sticky-column').css('left', data.left);
-				}
+		wpjam_cell: function(data){
+			if(data.sticky){
+				this.addClass('sticky-column').css('left', data.left);
+			}
 
-				if(data.nowrap){
-					$cell.addClass('nowrap-text');
-				}
+			if(data.nowrap){
+				this.addClass('nowrap-text');
+			}
 
-				if(data.check){
-					if($cell.find('input').length){
-						// if(list_table.sortable && $cell.is('th')){
-						// 	$cell.append('<br /><span class="dashicons dashicons-menu"></span>');
-						// }
-					}else{
-						if(!$cell.find('span').length){
-							$cell.append('<span class="dashicons dashicons-minus"></span>');
-						}
-					}
+			if(data.check){
+				if(this.find('input').length){
+					// if(list_table.sortable && this.is('th')){
+					// 	this.append('<br /><span class="dashicons dashicons-menu"></span>');
+					// }
 				}else{
-					let value	= $cell.text();
-					let number	= Number(value);
+					if(!this.find('span').length){
+						this.append('<span class="dashicons dashicons-minus"></span>');
+					}
+				}
+			}else{
+				let value	= this.text();
+				let number	= Number(value);
 
-					if(!isNaN(number)){
-						let rule	= data.conditional_styles ? data.conditional_styles.find(rule=> wpjam.compare(number, rule)) : '';
-
-						if(rule){
-							[
+				if(!isNaN(number)){
+					_.some(data.conditional_styles, rule => {
+						if(wpjam.compare(number, rule)){
+							return this.css(_.reduce([
 								{key: 'bold', prop: 'font-weight', value: 'bold'},
 								{key: 'strikethrough', prop: 'text-decoration', value: 'line-through'},
 								{key: 'color'},
 								{key: 'background-color'}
-							].forEach(args=> {
-								if(rule[args.key]){
-									$cell.css(args.prop || args.key, args.value || rule[args.key]);
-								}
-							});
+							], (result, args)=> rule[args.key] ? _.extend({}, result, {[args.prop || args.key]: args.value || rule[args.key]}) : result, {}));
 						}
+					});
 
-						if(data.format || data.precision){
-							if(data.format == '%'){
-								number	= parseFloat((number*100).toFixed(data.precision || 2))+'%';
-							}else{
-								number	= data.precision ? parseFloat(number.toFixed(data.precision)) : number;
-								number	= data.format == ',' ? number.toLocaleString() : number;
-							}
-
-							$cell.text(number).attr('value', value)
-						}
-					}
-				}
-			}));
-
-
-			$row.find('td').each(function(){
-				let $cell	= $(this);
-
-				if($cell[0].scrollWidth > $cell[0].clientWidth){
-					$cell.addClass('is-truncated');
-				}
-			});
-
-			$row.find('.items').each(function(){
-				let $items	= $(this);
-
-				if($items.hasClass('sortable')){
-					$items.wpjam_sortable({items: '> div.item'});
-				}
-
-				let is_image	= $items.hasClass('image-list');
-				let width		= $items.data('width');
-				let height		= $items.data('height');
-				let per_row		= $items.data('per_row');
-
-				$items.children().each(function(i, el){
-					if(is_image && width && height){
-						if($(el).hasClass('add-item')){
-							$(el).css({width, height});
+					if(data.format || data.precision){
+						if(data.format == '%'){
+							number	= parseFloat((number*100).toFixed(data.precision || 2))+'%';
 						}else{
-							$(el).css('width', width);
-							$(el).find('img').css({width, height});
+							number	= data.precision ? parseFloat(number.toFixed(data.precision)) : number;
+							number	= data.format == ',' ? number.toLocaleString() : number;
 						}
-					}
 
-					if(per_row && (i+1) % per_row === 0){
-						$(el).after('<div style="width: 100%;"></div>');
+						this.text(number).attr('value', value);
 					}
-				});
+				}
+			}
+		},
+
+		wpjam_items: function(){
+			if(this.hasClass('sortable')){
+				this.wpjam_sortable({items: '> div.item'});
+			}
+
+			let width	= this.data('width');
+			let height	= this.data('height');
+			let size	= this.hasClass('image-list') && width && height ? {width, height} : null;
+			let per_row	= this.data('per_row');
+
+			this.children().each((i, el) => {
+				let $el	= $(el);
+
+				if(size){
+					if($el.hasClass('add-item')){
+						$el.css(size);
+					}else{
+						$el.css('width', width);
+						$el.find('img').css(size);
+					}
+				}
+
+				if(per_row && (i+1) % per_row === 0){
+					$el.after('<div style="width: 100%;"></div>');
+				}
 			});
-
-			return $row;
 		},
 
 		wpjam_sortable: function(args){
-			let $this	= $(this);
-
 			Object.assign(args, {
 				handle:	'.list-table-move-action',
 				cursor:	'move',
-				start:	function(e, ui){
+				start:	(e, ui)=> {
 					ui.placeholder.css({
 						'background-color':	'#eeffffcc',
 						visibility:			'visible',
@@ -131,11 +134,11 @@ jQuery(function($){
 					});
 				},
 
-				update:	function(e, ui){
+				update:	(e, ui)=> {
 					let $handle	= ui.item.find(args.handle);
-					let data	= ($handle.data('data') || '')+'&pos='+ui.item.prevAll().length+'&'+$this.sortable('serialize');
+					let data	= ($handle.data('data') || '')+'&pos='+ui.item.prevAll().length+'&'+this.sortable('serialize');
 
-					$this.wpjam_action({
+					this.wpjam_action({
 						action_type:	'direct',
 						list_action:	$handle.data('action'),
 						_ajax_nonce:	$handle.data('nonce'),
@@ -145,11 +148,10 @@ jQuery(function($){
 				}
 			});
 
-			return $this.sortable(args);
+			return this.sortable(args);
 		},
 
 		wpjam_action: function(type, args){
-			let $this	= $(this);
 			let spinner	= '<span class="spinner is-active"></span>';
 			let $el		= $(document.activeElement);
 
@@ -162,15 +164,15 @@ jQuery(function($){
 
 			if(!args){
 				args	= {
-					action_type:	$this.is('form') ? 'submit' : ($this.data('direct') ? 'direct' : 'form'),
-					_ajax_nonce:	$this.data('nonce'),
+					action_type:	this.is('form') ? 'submit' : (this.data('direct') ? 'direct' : 'form'),
+					_ajax_nonce:	this.data('nonce'),
 				};
 
-				let data	= $this.data('data');
-				let action	= $this.data('action');
+				let data	= this.data('data');
+				let action	= this.data('action');
 
 				if(args.action_type == 'submit'){
-					if(!$this.wpjam_validity()){
+					if(!this.wpjam_validate()){
 						return false;
 					}
 
@@ -178,9 +180,9 @@ jQuery(function($){
 						args.defaults	= data;
 					}
 
-					$el	= $el.is(':submit') ? $el : $this.find(':submit').first().focus();
+					$el	= $el.is(':submit') ? $el : this.find(':submit').first().focus();
 
-					args.data			= $this.serialize();
+					args.data			= this.serialize();
 					args.submit_name	= $el.attr('name');
 					args.page_title		= $el.val();
 				}else{
@@ -189,18 +191,18 @@ jQuery(function($){
 					}
 
 					if(type == 'page'){
-						args.page_title	= $this.data('title');
+						args.page_title	= this.data('title');
 					}
 
 					if(args.action_type == 'direct'){
-						args.form_data	= $.param(wpjam.parse_params($this.parents('form').serialize(), true));
+						args.form_data	= $.param(wpjam.parse_params(this.parents('form').serialize(), true));
 
-						if($this.data('confirm')){
-							if($this.data('action') == 'delete'){
+						if(this.data('confirm')){
+							if(this.data('action') == 'delete'){
 								if(!showNotice.warn()){
 									return false;
 								}
-							}else if(!confirm('确定要'+($this.attr('title') || $this.data('title'))+'吗?')){
+							}else if(!confirm('确定要'+(this.attr('title') || this.data('title'))+'吗?')){
 								return false;
 							}
 						}
@@ -210,9 +212,9 @@ jQuery(function($){
 				if(type	== 'list-table'){
 					args.list_action	= action;
 
-					args.bulk	= $this.data('bulk');
-					args.id		= $this.data('id');
-					args.ids	= $this.data('ids');
+					args.bulk	= this.data('bulk');
+					args.id		= this.data('id');
+					args.ids	= this.data('ids');
 				}else if(type == 'page'){
 					args.page_action	= action;
 				}
@@ -231,11 +233,11 @@ jQuery(function($){
 
 						args.id	= args.ids.shift();
 
-						return $this.wpjam_action(args).then(()=> {
+						return this.wpjam_action(args).then(()=> {
 							delete args.id;
 
 							if(args.ids.length){
-								setTimeout(()=> $this.wpjam_action(args), args.list_action == 'delete' ? 400 : 100);
+								setTimeout(()=> this.wpjam_action(args), args.list_action == 'delete' ? 400 : 100);
 							}
 						});
 					}
@@ -301,7 +303,7 @@ jQuery(function($){
 							$wrap.find('.response').remove().end().append($('<div class="response card">'+data.data+'</div>').hide().fadeIn(400));
 
 							if($modal.length){
-								$wrap.animate({scrollTop: $wrap.find('form').height()-50}, 300)
+								$wrap.animate({scrollTop: $wrap.find('form').height()-50}, 300);
 							}else{
 								$wrap.find('.response').wpjam_scroll();
 							}
@@ -325,11 +327,11 @@ jQuery(function($){
 							wpjam.add_notice(data.errmsg, 'success');
 						}
 
-						$('body').trigger('option_action_success', data);
+						$('body').wpjam_form().trigger('option_action_success', data);
 					}else if(type == 'page'){
 						if(!['form', 'append', 'redirect'].includes(data.type)){
 							if(data.done == 0){
-								setTimeout(()=> $this.wpjam_action(type, {...args, data: data.args}), 400);
+								setTimeout(()=> this.wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
 							}
 
 							if(args.action_type == 'submit' && $('#wpjam_form').length && data.form){
@@ -346,7 +348,7 @@ jQuery(function($){
 						data.page_action	= args.page_action;
 						data.action_type	= data.page_action_type	= args.action_type;
 
-						$('body').trigger('page_action_success', data);
+						$('body').wpjam_form().trigger('page_action_success', data);
 					}else if(type == 'list-table'){
 						if(args.bulk){
 							list_table.$form.find('td.check-column input').prop('checked', false);
@@ -389,88 +391,22 @@ jQuery(function($){
 						data.list_action	= args.list_action;
 						data.action_type	= data.list_action_type	= args.action_type;
 
-						$('body').trigger('list_table_action_success', data);
+						$('body').wpjam_form().trigger('list_table_action_success', data);
 					}
 				}
 			});
 		},
 
-		wpjam_query: function(){
-			let $this	= $(this);
-			let arg		= arguments[0];
+		wpjam_query: function(params){
+			$('.notice-dismiss').trigger('click.wp-dismiss-notice');
 
-			if(_.isFunction(arg)){
-				const [callback, term] = arguments;
+			wpjam.params	= params ? _.omit(params, v => _.isNull(v)) : wpjam.parse_params(this.serialize(), true);
 
-				let args	= {
-					action:		'wpjam-query',
-					data_type:	$this.data('data_type'),
-					query_args:	$this.data('query_args')
-				}
-
-				if(term){
-					args.query_args[(args.data_type == 'post_type' ? 's' : 'search')]	= term;
-				}
-
-				return wpjam.post(args, data => {
-					if(data.errcode != 0){
-						if(data.errmsg){
-							alert(data.errmsg);
-						}
-					}else{
-						callback(data.items);
-					}
-				});
-			}else{
-				wpjam.params	= arg ? _.omit(arg, v => _.isNull(v)) : wpjam.parse_params($this.serialize(), true);
-
-				return $this.wpjam_action('list', {action_type: 'query_items', data: $.param(wpjam.params)});
-			}
-		},
-
-		wpjam_validity: function(type, el){
-			let $this	= $(this);
-
-			if(!type){
-				if(!$this[0].checkValidity() || $this.find('.checkable[data-min_items]').toArray().some(el => !$(el).wpjam_validity('min_items', $(el).find(':checkbox')[0]))){
-					let $field	= $this.find(':invalid').first();
-					let custom	= $field.data('custom_validity');
-					let $tabs	= $field.closest('.ui-tabs');
-
-					if(custom){
-						$field.one('input', ()=> $field[0].setCustomValidity(''))[0].setCustomValidity(custom);
-					}
-
-					if($tabs.length){
-						$tabs.tabs('option', 'active', $tabs.find('.ui-tabs-panel').index($('#'+$field.closest('.ui-tabs-panel').attr('id'))));
-					}
-
-					$this[0].reportValidity()
-
-					return false;
-				}
-			}else if(['max_items', 'min_items'].includes(type)){
-				let value	= parseInt($this.data(type));
-
-				if(value){
-					let count	= $this.find(':checkbox:checked').length;
-					let custom	= type == 'max_items' ? (count-1 >= value ? '最多选择'+value+'个' : '') : (count < value ? '至少选择'+value+'个' : '');
-
-					if(custom){
-						el.setCustomValidity(custom);
-
-						return false;
-					}
-				}
-			}
-
-			return true;
+			return this.wpjam_action('list', {action_type: 'query_items', data: $.param(wpjam.params)});
 		}
 	});
 
-	window.wpjam	= {
-		...wpjam_page_setting,
-
+	window.wpjam	= _.extend({}, wpjam_page_setting, {
 		load: function(params){
 			if(params){
 				tb_remove();
@@ -496,13 +432,9 @@ jQuery(function($){
 				if(this.query_url){
 					_.each(this.query_url, pair => $('a[href="'+pair[0]+'"]').attr('href', pair[1]));
 				}
-
-				$('a[href*="admin/page="]').each(function(){
-					$(this).attr('href', $(this).attr('href').replace('admin/page=', 'admin/admin.php?page='));
-				});
 			}
 
-			let args	= {...this.params, action_type: 'form'}
+			let args	= _.extend({}, this.params, {action_type: 'form'});
 
 			if(args.page_action){
 				return $('body').wpjam_action(args);
@@ -529,9 +461,8 @@ jQuery(function($){
 			let url	= new URL(this.admin_url);
 
 			if(Object.keys(this.params).length || this.query_data){
-				params	= this.parse_params(url.search);
-				params	= _.extend(params, this.query_data, _.omit(this.params, (v, k)=> v == null || (k == 'paged' && v <= 1)));
-
+				let params	= this.parse_params(url.search);
+				params		= _.extend(params, this.query_data, _.omit(this.params, (v, k)=> v == null || (k == 'paged' && v <= 1)));
 				url.search	= '?'+$.param(params);
 			}
 
@@ -546,7 +477,7 @@ jQuery(function($){
 
 		add_notice: function(notice, type){
 			if(notice){
-				$notice	= $('<div class="notice notice-'+type+' is-replaceable is-dismissible"><p><strong>'+notice+'</strong></p></div>');
+				let $notice	= $('<div class="notice notice-'+type+' is-replaceable is-dismissible"><p><strong>'+notice+'</strong></p></div>');
 
 				if($('#TB_ajaxContent').length){
 					$('#TB_ajaxContent').find('.notice.is-replaceable').remove().end().animate({scrollTop: 0}, 300).prepend($notice);
@@ -561,6 +492,7 @@ jQuery(function($){
 		add_modal: function(modal, title){
 			let width	= 0;
 			let id		= 'tb_modal';
+			let content	= '';
 
 			if(typeof modal === 'object'){
 				title	= modal.page_title;
@@ -569,7 +501,9 @@ jQuery(function($){
 				content	= modal.form || modal.data;
 			}else{
 				modal	= modal || 'notice_modal';
-				$model	= $('#'+modal);
+
+				let $model	= $('#'+modal);
+
 				width	= $model.data('width');
 				title	= $model.data('title') || ' ';
 				content	= $model.html();
@@ -612,7 +546,7 @@ jQuery(function($){
 
 					[this.tb_position, window.tb_position]	= [window.tb_position, this.tb_position];
 
-					$(window).on('resize.wpjam', ()=> tb_position());
+					$(window).on('resize.wpjam', _.throttle(()=> tb_position(), 500));
 
 					$('body').one('thickbox:removed', ()=> {
 						[wpjam.tb_position, window.tb_position]	= [window.tb_position, wpjam.tb_position];
@@ -637,33 +571,11 @@ jQuery(function($){
 						return false;
 					}).prependTo('div.modal');
 
-					$(window).on('resize', this.tb_position);
+					$(window).on('resize', _.throttle(()=> this.tb_position(), 500));
 				}
 
 				this.tb_position();
 			}
-		},
-
-		preview: function(url){
-			$('body').find('.quick-modal').remove().end().append('<div class="quick-modal"><a class="dashicons dashicons-no-alt del-icon"></a></div>');
-
-			let img	= new Image();
-
-			img.onload	= function(){
-				let width	= this.width/2;
-				let height	= this.height/2;
-
-				if(width>400 || height>500){
-					let radio	= Math.min(400/width, 500/height);
-
-					width	= width * radio;
-					height	= height * radio;
-				}
-
-				$(this).width(width).height(height).appendTo($('.quick-modal'));
-			}
-
-			img.src	= url;
 		},
 
 		tb_position: function(){
@@ -700,33 +612,37 @@ jQuery(function($){
 			}
 		},
 
-		compare: function(a, data){
-			let compare	= data.compare ? data.compare.toUpperCase() : '';
+		compare: function(a, compare, b){
+			let cmp	= compare;
 
-			if(compare){
-				const antonyms	= {
+			if(_.isObject(compare)){
+				b	= compare.value;
+				cmp	= compare.compare;
+			}
+
+			if(_.isArray(a) || (_.isObject(compare) && compare.swap)){
+				[a, b]	= [b, a];
+			}
+
+			if(cmp){
+				cmp	= cmp.toUpperCase();
+
+				let antonym	= {
 					'!=': '=',
 					'<=': '>',
 					'>=': '<',
 					'NOT IN': 'IN',
 					'NOT BETWEEN': 'BETWEEN'
-				};
+				}[cmp];
 
-				if(antonyms[compare]){
-					return !wpjam.compare(a, {...data, compare: antonyms[data.compare]});
+				if(antonym){
+					return !wpjam.compare(a, antonym, b);
 				}
+			}else{
+				cmp	= _.isArray(b) ? 'IN' : '=';
 			}
 
-			let b		= data.value;
-			let swap	= _.isArray(a) || data.swap;
-
-			if(swap){
-				[a, b]	= [b, a];
-			}
-
-			compare	= compare || (_.isArray(b) ? 'IN' : '=');
-
-			if(compare === 'IN' || compare === 'BETWEEN'){
+			if(cmp === 'IN' || cmp === 'BETWEEN'){
 				b	= _.isArray(b) ? b : b.split(/[\s,]+/);
 
 				if(!_.isArray(a) && b.length === 1) {
@@ -735,10 +651,10 @@ jQuery(function($){
 
 				b	= b.map(String);
 			}else{
-				b	= typeof b === 'string' ? b.trim() : b;
+				b	= _.isString(b) ? b.trim() : b;
 			}
 
-			switch (compare) {
+			switch (cmp) {
 				case '=': return a == b;
 				case '>': return a > b;
 				case '<': return a < b;
@@ -767,7 +683,7 @@ jQuery(function($){
 				let data	= type == 'object' ? args.data : (args.data ? this.parse_params(args.data) : {});
 
 				if(this.query_data){
-					_.each(this.query_data, (v, k)=>{
+					_.each(this.query_data, (v, k)=> {
 						if(_.has(data, k)){
 							this.query_data[k]	= data[k];
 						}else{
@@ -800,14 +716,15 @@ jQuery(function($){
 						let val		= param.length === 2 ? decodeURIComponent(param[1]) : '';
 						let keys	= key.split('][');
 
-						if(keys[0].includes('[') && keys.at(-1).endsWith(']')){
+						if(keys[0].includes('[') && _.last(keys).endsWith(']')){
 							keys	= keys.shift().split('[').concat(keys);
 							keys	= [...keys.slice(0, -1), keys.pop().slice(0, -1)];
 
 							keys.reduce((cur, k, i)=> {
-								k	= (k === '') ? cur.length : k;
+								k		= (k === '') ? cur.length : k;
+								cur[k] = keys.length - 1 > i ? (cur[k] || (isNaN(Number(keys[i + 1])) ? {} : [])) : val;
 
-								return cur[k] = keys.length - 1 > i ? (cur[k] || (isNaN(Number(keys[i + 1])) ? {} : [])) : val;
+								return cur[k];
 							}, obj);
 						}else{
 							obj[key]	= val;
@@ -839,8 +756,8 @@ jQuery(function($){
 			let events		= $selector.length ? $._data($selector.get(0), 'events') : '';
 
 			if(events){
-				_.each(events, function(list, type){
-					 _.each(list, function(event){
+				_.each(events, (list, type)=> {
+					 _.each(list, (event)=> {
 						if(event && event.handler){
 							if(event.selector){
 								if(!sub_selector || event.selector == sub_selector){
@@ -873,7 +790,7 @@ jQuery(function($){
 				return result;
 			};
 		}
-	}
+	});
 
 	wpjam.add_extra_logic($, 'ajax', function(options){
 		let type	= typeof options.data;
@@ -943,11 +860,10 @@ jQuery(function($){
 						$('p.search-box').empty().append($(data.search_box).html());
 					}
 				}else{
-					$form.attr('novalidate', 'novalidate').on('submit', function(){
+					$form.attr('novalidate', 'novalidate').on('submit', _.debounce(function(){
 						let $el	= $(document.activeElement);
-						let id	= $el.attr('id');
 
-						if(['doaction', 'doaction2'].includes(id)){
+						if($el.is('#doaction, #doaction2')){
 							let $select	= $el.prev('select');
 							let name	= $select.val();
 							let ids		= $form.find('th.check-column input[type="checkbox"]:checked').toArray().map(cb => cb.value);
@@ -962,21 +878,21 @@ jQuery(function($){
 
 								return false;
 							}
-						}else if(wpjam.list_table.ajax !== false){
-							if($el.is('[name=filter_action]') || id == 'search-submit'){
-								if($form.wpjam_validity()){
+						}else if($el.is('[name=filter_action], #search-submit')){
+							if(wpjam.list_table.ajax !== false){
+								if($form.wpjam_validate()){
 									$form.wpjam_query();
 								}
 
 								return false;
 							}
 						}
-					}).on('keydown', '.tablenav :input', function(e){
+					}, 300, true)).on('keydown', '.tablenav :input, .search-box :input', function(e){
 						if(e.key === 'Enter' && wpjam.list_table.ajax !== false){
 							let $input	= $(this);
 
 							if($input.is('#current-page-selector')){
-								if($form.wpjam_validity()){
+								if($form.wpjam_validate()){
 									$form.wpjam_query(_.extend(wpjam.params, {paged: parseInt($input.val())}));
 								}
 
@@ -999,19 +915,27 @@ jQuery(function($){
 						date.setDate(date.getDate()+($day.hasClass('prev-day') ? -1 : 1));
 						$date.val(date.toISOString().split('T')[0]);
 						$form.find('#filter_action').focus().click();
-					}).on('change', '.tablenav [name="date"]', function(){
-						$form.find('#filter_action').focus().click();
+					}).on('change', '.tablenav [type="date"]', function(){
+						if($(this).is('[name="date"]')){
+							$form.find('#filter_action').focus().click();
+						}else if($(this).is('[name="end_date"]')){
+							let dates	= _.map(['start_date', 'end_date'], k => $('.tablenav [name="'+k+'"]').val());
+
+							if(dates[0] && dates[1] && dates[0] > dates[1]){
+								wpjam.add_notice('开始日期不能大于结束日期', 'error');
+							}
+						}
 					});
 
-					$('body').on('submit', '#list_table_action_form', function(e){
+					$('body').on('submit', '#list_table_action_form', _.debounce(function(e){
 						$(this).wpjam_action('list');
 
 						return false;
-					}).on('click', '.list-table-action', function(e){
+					}, 300, true)).on('click', '.list-table-action', _.debounce(function(e){
 						$(this).wpjam_action('list');
 
 						return false;
-					}).on('click', '.list-table-filter, ul.subsubsub a, .wp-list-table td a, .wp-list-table th a, .tablenav .pagination-links a', function(){
+					}, 300, true)).on('click', '.list-table-filter, ul.subsubsub a, .wp-list-table td a, .wp-list-table th a, .tablenav .pagination-links a', _.debounce(function(){
 						let $a	= $(this);
 
 						if($a.hasClass('list-table-filter')){
@@ -1037,13 +961,13 @@ jQuery(function($){
 						if($a.parent().is('th, .pagination-links')){
 							delete params.page;
 
-							params	= {...wpjam.params, ...params, paged: params.paged || 1};
+							params	= _.extend({}, wpjam.params, params, {paged: params.paged || 1});
 						}
 
 						$form.wpjam_query(params);
 
 						return false;
-					});
+					}, 300, true));
 
 					if($left.length){
 						let $left_paged;
@@ -1055,14 +979,13 @@ jQuery(function($){
 							let paged	= parseInt($left_paged.val());
 							let total	= parseInt($left_paged.attr('max'));
 
-							$left.find('a.prev-page, a.next-page').each(function(){
-								let $a		= $(this).addClass('button');
-								let is_prev	= $a.hasClass('prev-page');
+							$left.wpjam_each(['a.prev-page', 'a.next-page'], $el => {
+								let [cmp, val, addon]	= $el.addClass('button').hasClass('prev-page') ? ['<=', 1, -1] : ['>=', total, +1];
 
-								if((is_prev && paged <= 1) || (!is_prev && paged >= total)){
-									$a.addClass('disabled');
+								if(wpjam.compare(paged, cmp, val)){
+									$el.addClass('disabled');
 								}else{
-									$a.attr('data-left_paged', paged+(is_prev ? -1 : 1));
+									$el.attr('data-left_paged', paged+addon);
 								}
 							});
 
@@ -1071,28 +994,28 @@ jQuery(function($){
 
 								$left.find('[data-id='+wpjam.params[left_key]+']').addClass('left-current');
 							}
-						}).on('submit', function(){
-							if($left.wpjam_validity()){
+						}).on('submit', _.debounce(function(){
+							if($left.wpjam_validate()){
 								$left.wpjam_query();
 							}
 
 							return false;
-						}).on('click', '[data-left_paged]', function(){
-							$left_paged.val($(this).data('left_paged')).trigger('input.expandable');
+						}, 300, true)).on('click', '[data-left_paged]', _.debounce(function(){
+							$left_paged.val($(this).data('left_paged')).addClass('expandable');
 
 							$left.trigger('submit');
-						}).on('click', '[data-id]', function(){
+						}, 300, true)).on('click', '[data-id]', _.debounce(function(){
 							$left.find('.left-current').removeClass('left-current');
-							$form.wpjam_query({...wpjam.params, [left_key]: $(this).addClass('left-current').data('id')});
+							$form.wpjam_query(_.extend({}, wpjam.params, {[left_key]: $(this).addClass('left-current').data('id')}));
 
 							return false;
-						}).on('change', 'select', function(){
+						}, 300, true)).on('change', 'select', _.debounce(function(){
 							if($(this).hasClass('left-filter')){
 								$left_paged.val(1);
 							}
 
 							$left.trigger('submit');
-						});
+						}, 300, true));
 					}
 				}
 
@@ -1101,10 +1024,8 @@ jQuery(function($){
 				}
 
 				if(update.table){
-					let columns	= [];
 					let $table	= $form.find('table');
 					let $tbody	= $table.find(' > tbody');
-					let sticky	= false;
 
 					$('.wp-header-end').last().siblings('span.subtitle, div.summary').remove().end()
 					.before(this.subtitle ? '<span class="subtitle">'+this.subtitle+'</span>' : '')
@@ -1114,35 +1035,32 @@ jQuery(function($){
 						$tbody.wpjam_sortable({items: this.sortable.items, axis: 'y'});
 					}
 
-					$table.find('th[id]:not(.hidden) i').each(function(){
-						let $i		= $(this);
+					let sticky	= false;
+					let columns	= $table.find('th[id]:not(.hidden) i').map((i, el) => {
+						let $i		= $(el);	
 						let $th		= $i.closest('th');
 						let data	= $i.data();
 						
+						if(data.sticky){
+							sticky		= true;
+							data.left	= $th.prevAll(':not(.hidden)').get().reduce((left, el) => left+$(el).outerWidth(), 0);
+						}
+
 						if(data.description){
 							$i.appendTo($i.closest('a'));
 						}
 
 						delete data.description;
 
-						if(data.sticky){
-							sticky		= true;
-							data.left	= $th.prevAll(':not(.hidden)').get().reduce((left, el) => left+$(el).outerWidth(), 0);
-						}
-
-						if(Object.keys(data).length){
-							columns.push({...data, column: '.column-'+$th.attr('id')});
-						}
-					});
-
-					columns.push({column:'.check-column', check: true, sticky: sticky, left: 0});
+						return _.isEmpty(data) ? null : _.extend({}, data, {selector: '.column-'+$th.attr('id')});
+					}).toArray().filter(column => column !== null);
 
 					Object.assign(this, {
 						$form:		$form,
 						$tbody:		$tbody,
 						name:		($tbody.data('wp-lists') || ':post').split(':')[1],
 						layout:		$form.data('layout'),
-						columns:	columns,
+						columns:	[...columns, {selector:'.check-column', check: true, sticky: sticky, left: 0}],
 						sticky:		sticky,
 						nowrap:		$table.hasClass('nowrap')
 					});
@@ -1155,7 +1073,7 @@ jQuery(function($){
 						}
 					}
 
-					$table.wpjam_row();
+					$table.wpjam_row(false);
 
 					if(wpjam.params.id && !wpjam.params.list_action && !wpjam.params.action){
 						let id	= wpjam.params.id;
@@ -1171,17 +1089,19 @@ jQuery(function($){
 				}
 
 				if(update.table || update.tablenav){
+					$form.removeData('initialized');
+
 					if($left.length && $('a.page-title-action').length){
 						this.overall_actions.unshift($('a.page-title-action').hide().clone().show().toggleClass('page-title-action button').prop('outerHTML'));
 					}
 
 					let $nav	= $form.find('.tablenav.top').find('.overall-action').remove().end();
 
-					if($nav.find('div.actions').length){
-						$nav.find('div.actions').last().append(this.overall_actions || '');
-					}else{
-						$nav.prepend(this.overall_actions || '');
+					if(!$nav.find('div.actions').length){
+						$nav.append('<div class="actions"></div>');
 					}
+
+					$nav.find('div.actions').last().append(this.overall_actions || '');
 
 					let total	= parseInt($form.find('span.total-pages').first().text());
 
@@ -1266,15 +1186,17 @@ jQuery(function($){
 				if(this.layout == 'calendar'){
 					_.each(data.data, (item, date)=> $('td#date_'+date).html(item).wpjam_row());
 				}else{
-					let is_object	= typeof data == 'object';
-
-					if(is_object && data.bulk){
+					if(_.isObject(data) && data.bulk){
 						_.each(data.data || data.ids, item => this.update_row(item));
 					}else{
-						let id	= is_object ? data.id : data;
+						let id	= data;
 
-						if(is_object && data.data){
-							this.get_row(id).first().before(data.data).end().remove();
+						if(_.isObject(data)){
+							id	= data.id;
+
+							if(data.data){
+								this.get_row(id).first().before(data.data).end().remove();
+							}
 						}
 
 						this.get_row(id).wpjam_row(color);
@@ -1288,7 +1210,7 @@ jQuery(function($){
 				if(data.bulk){
 					_.each(data.ids, id => this.delete_row(id));
 				}else{
-					let id		= typeof data == 'object' ? data.id : data;
+					let id		= _.isObject(data) ? data.id : data;
 					let $item	= this.get_row(id);
 
 					$item.css('backgroundColor', '#ff0000cc').fadeOut(400, ()=> $item.remove());
@@ -1305,31 +1227,27 @@ jQuery(function($){
 		});
 	}
 
-	$('body').on('click', '.show-modal', function(){
+	$('body').on('click', '.show-modal', _.debounce(function(){
 		wpjam.add_modal($(this).data('modal_id'));
-	}).on('click', '.is-dismissible .notice-dismiss', function(){
+	}, 300, true)).on('click', '.is-dismissible .notice-dismiss', function(){
 		$(this).prev('.delete-notice').trigger('click');
-	}).on('click', '.wpjam-button', function(){
+	}).on('click', '.wpjam-button', _.debounce(function(){
 		$(this).wpjam_action('page');
 
 		return false;
-	}).on('submit', '#wpjam_form', function(){
+	}, 300, true)).on('submit', '#wpjam_form', _.debounce(function(){
 		$(this).wpjam_action('page');
 
 		return false;
-	}).on('submit', '#wpjam_option', function(){
+	}, 300, true)).on('submit', '#wpjam_option', _.debounce(function(){
 		$(this).wpjam_action('option');
 
 		return false;
-	}).on('click', 'input[type=submit]', function(){	// On Mac, elements that aren't text input elements tend not to get focus assigned to them
+	}, 300, true)).on('click', 'input[type=submit]', function(){	// On Mac, elements that aren't text input elements tend not to get focus assigned to them
 		if(!$(document.activeElement).attr('id')){
 			$(this).focus();
 		}
 	});
 
 	wpjam.load();
-
-	$.wpjam_list_table_action	= function(args){	// compact
-		return $('body').wpjam_action('list', args);
-	};
 });

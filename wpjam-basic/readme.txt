@@ -53,36 +53,36 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.7.5 =
+= 6.7.6 =
 * 全面优化 wpjam_try / wpjam_catch 等高阶函数
 * 全面优化 wpjam_cache 以及其他缓存相关的高阶函数
-* 新增 WPJAM_Method Class 用于处理回调
-* 新增 wpjam_if_error 函数
-* 新增 maybe_callback 函数
+* 新增 Class WPJAM_Method - 处理回调
+* 新增函数 wpjam_if_error - 错误处理
+* 新增函数 maybe_callback - 如果是回调，则执行，否则返回原数据
 
 = 6.7 =
-* 新增 PHP 8.4 引入的 array_find、array_find_key、array_all、array_any 函数
-* 新增 wpjam_exists 函数
-* 新增 wpjam_slice 函数
-* 新增 wpjam_toggle 函数
-* 新增 wpjam_flatten 函数
-* 新增 wpjam_bettwen 函数
+* 新增函数 PHP 8.4 引入的 array_find、array_find_key、array_all、array_any 
+* 新增函数 wpjam_exists 
+* 新增函数 wpjam_slice 
+* 新增函数 wpjam_toggle 
+* 新增函数 wpjam_flatten 
+* 新增函数 wpjam_bettwen 
 * 其他优化和bug修复
 
 = 6.6 =
-* 新增 wpjam_include 函数用于加载文件
-* 新增 wpjam_style 和 wpjam_script 函数
-* 新增 get_user_field 函数
-* 新增 wpjam_get_static_cdn 函数
-* 新增 wpjam_throw 函数
-* 新增 wpjam_get_instance 函数
-* 新增 wpjam_lock 函数
-* 新增 wpjam_sort 函数
-* 新增 wpjam_add_pattern 函数
-* 新增 wpjam_import 函数
-* 新增 wpjam_export 函数
-* 新增 wpjam_at 函数
-* 新增 wpjam_add_at 函数
+* 新增函数 wpjam_include - 加载文件
+* 新增函数 wpjam_style 和 wpjam_script 
+* 新增函数 get_user_field 
+* 新增函数 wpjam_get_static_cdn 
+* 新增函数 wpjam_throw 
+* 新增函数 wpjam_get_instance 
+* 新增函数 wpjam_lock 
+* 新增函数 wpjam_sort 
+* 新增函数 wpjam_add_pattern 
+* 新增函数 wpjam_import 
+* 新增函数 wpjam_export 
+* 新增函数 wpjam_at 
+* 新增函数 wpjam_add_at 
 
 = 6.5 =
 * 使用注解的方式实现注册类支持能力
@@ -92,10 +92,10 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 使用 PHP 7.4 箭头函数优化代码
 * 兼容 PHP 8 及以上版，优化使用 is_callable 和不接受 null 参数的函数
 * 兼容 PHP 8 废弃在可选参数后声明强制参数
-* 新增 wpjam_db_transaction 函数用于数据库事务
-* 新增 wpjam_call_for_blog 函数用于多站点调用
-* 新增 wpjam_load_pending 函数
-* 新增 wpjam_diff 函数
+* 新增函数 wpjam_db_transaction - 数据库事务
+* 新增函数 wpjam_call_for_blog - 多站点调用
+* 新增函数 wpjam_load_pending 
+* 新增函数 wpjam_diff 
 * WPJAM_Register 的 get 方法新增第二个参数 $by
 * 后台 List Table 新增固定列功能
 * WPJAM_Field 新增 render 回调函数
@@ -114,15 +114,14 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * WPJAM_Register 新增 re_register / register_sub 方法 / 优化 match 方法
 * 后台 List Table 新增导出操作支持，列表 AJAX 返回更加细化
 * 优化自定义文章类型和分类模式获取名称的方式
-* 新增 WPJAM_Platforms Class，用于多平台处理
+* 新增 Class WPJAM_Platforms - 多平台处理
 * 新增函数 wpjam_url，根据目录获取 url
-* 新增 wpjam_has_bit / wpjam_add_bit / wpjam_remove_bit 函数用于位运算
+* 新增函数 wpjam_has_bit / wpjam_add_bit / wpjam_remove_bit - 位运算
 * 新增函数：wpjam_move / wpjam_get_all_terms / wpjam_html_tag_processor / wpjam_dashboard_widget
 
 = 6.3 =
 * 「文章浏览」扩展支持设置文章初始浏览数
 * 新增函数 wpjam_add_admin_load，实现后台功能按需加载
-* 新增函数 wpjam_value_callback，支持实例化的 value_callback 函数
 * 新增函数 base64_urldecode / base64_urlencode，实现 URL 安全的 Base64 编码和解码
 * 新增函数 wpjam_generate_jwt / wpjam_verify_jwt， 实现 JWT 生成和验证
 * WPJAM_Field 增加 before / after 属性，统一使用 button_field 作为各种按钮的自定义文本
@@ -132,22 +131,19 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 优化相关文章功能，支持最新 WP_Query 缓存机制
 
 = 6.2 =
-* 新增函数 wpjam_match 用于各种数据匹配
+* 新增函数 wpjam_match - 各种数据匹配
 * 新增函数 wpjam_try / wpjam_call 处理异常
-* 新增函数 wpjam_register_config / wpjam_get_config 用于生成和获取全局配置接口
-* 新增函数 wpjam_register_meta_option / wpjam_get_meta_options，用于注册和获取 meta option。
-* 新增函数 get_screen_option 用于获取界面选项
+* 新增函数 wpjam_register_config / wpjam_get_config - 生成和获取全局配置接口
+* 新增函数 wpjam_register_meta_option / wpjam_get_meta_options - 注册和获取 meta option。
+* 新增函数 get_screen_option - 获取界面选项
 * 新增函数 wpjam_add_option_section 向已有的设置页面添加标签页
 * 新增函数 wpjam_tag，支持将文本加上某个标签和属性
-* 新增函数 wpjam_date / wpjam_strtotime 用于日期处理。s
+* 新增函数 wpjam_date / wpjam_strtotime - 日期处理。s
 * 新增函数 wpjam_upload，用于统一处理文件上传
 * 新增函数 wpjam_scandir 支持通过 callback 处理扫描的文件夹
-* 新增函数 wpjam_register_error_setting 用于统一注册错误信息
-* 新增 Class WPJAM_List_Table_View，用于定义后台 List Table 的快速筛选链接
-* 新增 class WPJAM_File，以及对应的函数，用于文件，链接以及路径之间的转换
-* 新增 class WPJAM_Image，以及对应的函数用于图片各种处理
-* 新增 class WPJAM_Array，以及对应的函数，用于数组各种操作，支持链式调用
-* 新增 class WPJAM_Attr / WPJAM_Tag，以及对应的函数，用于标签和属性处理
+* 新增函数 wpjam_register_error_setting - 统一注册错误信息
+* 新增 Class WPJAM_List_Table_View - 定义后台 List Table 的快速筛选链接
+* 新增 Class WPJAM_Attr / WPJAM_Tag，以及对应的函数，用于标签和属性处理
 * 新增 Class WPJAM_Exception 支持将 wp_error 将异常抛出
 * 新增 Class WPJAM_Args，作为所有有 args 参数类的基类，并实现 ArrayAccess, IteratorAggregate, JsonSerializable 等接口
 * 新增 Trait WPJAM_Call_Trait，WPJAM_Items_Trat / WPJAM_Instance
@@ -170,22 +166,22 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 接口请求的时候不显示 PHP 警告信息
 * 菜单 summary 参数支持传递文件路径，程序会自动根据文件头信息
 * WPJAM_Register 增加开关属性处理，支持注册时候自动开启和生成后台配置字段等能力
-* 新增函数 wpjam_load_extends
-* 新增函数 wpjam_register_handler / wpjam_get_handler
-* 新增函数 wpjam_load，用于处理基于 action 判断加载
-* 新增函数 wpjam_get_current_var / wpjam_set_current_var
-* 新增函数 wpjam_get_platform_options 用于获取平台信息
+* 新增函数 wpjam_load_extends - 加载扩展
+* 新增函数 wpjam_get_handler - Handler 获取和创建
+* 新增函数 wpjam_load - Action 判断加载
+* 新增函数 wpjam_var - 变量获取和存储
+* 增强函数 wpjam_compare - 数据比较
+* 新增函数 wpjam_get_platform_options - 获取平台信息
 * 新增函数 wpjam_register_data_type / wpjam_get_data_type_object
 * 新增函数 wpjam_get_post_type_setting / wpjam_update_post_type_setting
 * 新增函数 wpjam_get_taxonomy_setting / wpjam_update_taxonomy_setting
 * 新增函数 wpjam_add_post_type_field / wpjam_add_taxonomy_field 
-* 增强函数 wpjam_if / wpjam_compare
-* 新增 Class WPJAM_Error 用于自定义错误信息显示
-* 新增 Class WPJAM_Option_Model 用于所有设置页面 Class 的基类
-* 新增 Class WPJAM_Screen_Option 用于后台页面参数和选项处理
-* 新增 Class WPJAM_Register，支持 group 和独立子类两种方式注册
-* 新增 Class WPJAM_Meta_Option，用于支撑所有 Meta 选项注册
-* 新增 Class WPJAM_Extend_Type，用于所有插件的扩展管理
+* 新增 Class WPJAM_Error - 自定义错误信息显示
+* 新增 Class WPJAM_Option_Model - 所有设置页面  的基类
+* 新增 Class WPJAM_Screen_Option - 后台页面参数和选项处理
+* 新增 Class WPJAM_Register - 支持 group 和独立子类两种方式注册
+* 新增 Class WPJAM_Meta_Option - 支撑所有 Meta 选项注册
+* 新增 Class WPJAM_Extend_Type - 所有插件的扩展管理
 * 函数 wpjam_register 新增 priority 参数
 * 函数 wpjam_register_option 新增 field_default / menu_page 参数
 * Class WPJAM_Register 新增 init 参数，支持在 WordPress init 时回调
@@ -205,7 +201,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 基于 WP 5.9 优化 lazy loading 处理
 * 新增函数 wpjam_generate_verification_code
 * 新增函数 wpjam_verify_code
-* 新增 Class WPJAM_Fields，用于表单渲染
+* 新增 Class WPJAM_Fields - 表单渲染
 * 增强 Class WPJAM_JSON，整合接口验证
 * wpjam_fields 函数支持 wrap_tag 参数
 * WPJAM_Field 新增 json schema 解析和验证功能
@@ -222,11 +218,11 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 在文章列表页新增「上传外部图片」操作
 * 全面实现后台文章和分类列表页 AJAX 操作
 * 全面优化 CDN 加速功能，提供更多选项设置
-* 新增函数 wpjam_lazyload，用于后端懒加载
-* 新增函数 wpjam_get_by_meta 直接在 meta 表中查询数据
-* 新增函数 wpjam_unserialize，用于反序列化失败之后修复数据，再次反序列化
-* 新增函数 wpjam_is_external_url，用于判断外部链接和图片
-* 新增函数 wpjam_map_meta_cap，用于将新增的权限映射到元权限
+* 新增函数 wpjam_lazyload - 后端懒加载
+* 新增函数 wpjam_get_by_meta - 直接在 meta 表中查询数据
+* 新增函数 wpjam_unserialize - 反序列化失败之后修复数据，再次反序列化
+* 新增函数 wpjam_is_external_url - 判断外部链接和图片
+* 新增函数 wpjam_map_meta_cap - 将新增的权限映射到元权限
 * 新增函数 wpjam_get_ajax_data_attr
 * 新增和优化 Gravatar 加速和 Google 字体加速服务
 * 新增 field 支持 minlength / maxlength 服务端验证
@@ -238,14 +234,12 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 = 5.8 =
 * 实现后台的文章列表和分类列表页 AJAX 操作
-* 取消「屏蔽 REST API」功能
-* 取消「禁止admin用户名」功能
-* 新增自定义表 meta 查询 
+* 新增自定义表 Meta 查询 
 * 新增 WPJAM_Field 分组打横显示功能
-* 新增 class WPJAM_Bind 用于用户相关业务连接
-* 新增 class WPJAM_Phone_Bind 用于手机号码相关业务连接
-* 新增 class WPJAM_CDN_Type，优化 CDN 处理
-* 新增 class WPJAM_AJAX 用于前台统一 AJAX 处理
+* 新增 Class WPJAM_Bind - 用户社交账号绑定
+* 新增 Class WPJAM_Phone_Bind - 手机号码绑定
+* 新增 Class WPJAM_CDN_Type - 优化 CDN 处理
+* 新增 Class WPJAM_AJAX - 前台统一 AJAX 处理
 * 新增函数 wpjam_register_meta_type
 * 新增函数 wpjam_register_bind 
 * 新增函数 wpjam_get_bind_object
@@ -293,29 +287,27 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 增强 class WPJAM_Cron
 
 = 4.5 =
-* 新增函数 wpjam_download_url，用于下载远程图片
-* 新增函数 wpjam_is_image，用于判断当前链接是否为图片
+* 新增函数 wpjam_download_url - 下载远程图片
+* 新增函数 wpjam_is_image - 判断当前链接是否为图片
 * 新增函数 wpjam_get_plugin_page_setting
 * 新增函数 wpjam_register_list_table_action
 * 新增函数 wpjam_register_list_table_column
 * 新增函数 wpjam_register_page_action
-* 新增函数 wpjam_is_webp_supported，用于判断是否支持 webp
-* 新增用户处理的 class WPJAM_User
+* 新增 Class WPJAM_User - 用户处理
 
 = 4.4 =
 * 阿里云 OSS 支持水印和 WebP 图片格式转换
 * WPJAM_Field 增加 show_if 
-* 兼容 PHP 7.4
 * Google 字体加速服务 和 Gravatar 加速服务支持自定义
 
 = 4.3 =
 * 新增 wpjam_unicode_decode
-* 新增函数 wpjam_admin_tooltip，用于后台提示
+* 新增函数 wpjam_admin_tooltip - 后台提示
 * 百度站长扩展支持快速收录
 
 = 4.2 =
-* 新增函数 wpjam_get_current_platform()，用于获取当前平台
-* 新增验证文本文件管理 class WPJAM_Verify_TXT
+* 新增函数 wpjam_get_current_platform() - 获取当前平台
+* 新增 Class WPJAM_Verify_TXT - 验证文本文件管理
 * 全面提升插件的安全性
 
 = 4.1 =
@@ -324,7 +316,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 经典编辑器标签切换优化
 
 = 4.0 =
-* 新增 wpjam_is_json_request 函数
+* 新增函数 wpjam_is_json_request 
 * 新增路径管理 Class WPJAM_Path 和对应函数
 
 = 3.7 =
@@ -357,7 +349,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 「Rewrite」扩展支持查看所有规则
 
 = 3.5 =
-* 插件 readme 增加 PHP 7.2 最低要求
 * Class WPJAM_List_Table 增强 overall 操作
 * 「用户角色」扩展添加重置功能
 * 修正自定义文章类型和自定义分类模式更新提示
@@ -379,25 +370,15 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 新增「相关文章」扩展
 
 = 3.2 =
-* 提供选项让用户去掉 URL 中category
+* 提供选项让用户去掉 URL 中 Category
 * 提供选项让用户上传图片加上时间戳
-* 增强 WPJAM SEO 扩展，支持 sitemap 拆分
-* 更新 WPJAM 后台 Javascript 库
 
 = 3.1 =
-* 修正 WPJAM Basic 3.0 以后大部分 bug
 * 新增 object-cache.php 到 template 目录
 
 = 3.0 =
 * 基于 PHP 7.2 进行代码重构，效率更高，更加快速
 * 全AJAX操作后台
-
-= 2.2 =
-* 上架 WordPress 官方插件站
-* 分拆功能组件
-* WPJAM Basic 作为基础库使用
-
-= 2.1 = 
 * 新增「简单SEO」扩展
 * 新增「短代码」扩展
 * 新增 SMTP 扩展
@@ -405,3 +386,5 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 = 2.0 =
 * 初始版本直接来个 2.0 显得牛逼点
+* 上架 WordPress 官方插件站
+* WPJAM Basic 作为基础库使用

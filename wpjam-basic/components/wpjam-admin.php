@@ -171,7 +171,7 @@ class WPJAM_Basic_Admin{
 
 			echo '<div class="rss-widget">';
 
-			foreach($jam_posts ?: [] as $jam_post){
+			foreach($jam_posts as $jam_post){
 				if($i == 5) break;
 				echo '<a class="jam-post" target="_blank" href="http://blog.wpjam.com'.$jam_post['post_url'].'"><p>'.'<img src="'.str_replace('imageView2/1/w/200/h/200/', 'imageView2/1/w/100/h/100/', $jam_post['thumbnail']).'" /><span>'.$jam_post['title'].'</span></p></a>';
 				$i++;

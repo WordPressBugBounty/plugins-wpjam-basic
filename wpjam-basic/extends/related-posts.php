@@ -17,10 +17,9 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 			'item'	=> ['title'=>'列表内容',	'fields'=>[
 				'excerpt'	=> ['label'=>'显示文章摘要。',		'id'=>'_excerpt'],
 				'thumb'		=> ['label'=>'显示文章缩略图。',	'group'=>'size',	'value'=>1,	'fields'=>[
-					'size'		=> ['type'=>'size',	'before'=>'缩略图尺寸：'],
-					'_view'		=> ['type'=>'view',	'value'=>'如勾选之后缩略图不显示，请到「<a href="'.admin_url('page=wpjam-thumbnail').'">缩略图设置</a>」勾选「无需修改主题，自动应用 WPJAM 的缩略图设置」。']
+					'size'	=> ['type'=>'size',	'group'=>'size',	'before'=>'缩略图尺寸：'],
 				]]
-			]],
+			],	'description'=>['如勾选之后缩略图不显示，请到「<a href="'.admin_url('page=wpjam-thumbnail').'">缩略图设置</a>」勾选「无需修改主题，自动应用 WPJAM 的缩略图设置」。', ['show_if'=>['thumb', 1]]]],
 		];
 
 		if(!get_theme_support('related-posts')){

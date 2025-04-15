@@ -7,7 +7,7 @@ Version: 1.0
 */
 class WPJAM_Postviews{
 	public static function get_sections(){
-		return ['posts'=>['fields'=>['postviews'=> ['title'=>'初始浏览量', 'sep'=>'&nbsp;',	'prefix'=>'views', 'fields'=>[
+		return ['posts'=>['fields'=>['postviews'=> ['title'=>'初始浏览量', 'sep'=>' ',	'prefix'=>'views', 'fields'=>[
 			'begin'	=> ['type'=>'number',	'class'=>'small-text'],
 			'v1'	=> '和',
 			'end'	=> ['type'=>'number',	'class'=>'small-text'],
@@ -125,7 +125,7 @@ class WPJAM_Postviews{
 				'post_type'	=> [self::class, 'match_callback'],
 				'sortable'	=> 'views',
 				'style'		=> 'width:7%;',
-				'callback'	=> fn($id) => ['row_action'=>'update_views', 'args'=>['title'=>wpjam_get_post_views($id) ?: 0, 'fallback'=>true]],
+				'callback'	=> fn($id) => ['row_action'=>'update_views', 'title'=>wpjam_get_post_views($id) ?: 0, 'fallback'=>true],
 			]);
 		}
 

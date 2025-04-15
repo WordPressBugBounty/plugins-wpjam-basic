@@ -297,6 +297,14 @@ function wpjam_parse_options($options){
 	return $parsed;
 }
 
+function wpjam_get_current_var($name){
+	return wpjam_var($name);
+}
+
+function wpjam_set_current_var($name, $value){
+	return wpjam_var($name, $value);
+}
+
 function wpjam_set_current_user($user){
 	wpjam_var('user', $user);
 }
@@ -327,8 +335,16 @@ function wpjam_sanitize_option_value($value){
 	return WPJAM_Setting::sanitize_option($value);
 }
 
+function wpjam_strip_data_type($args){
+	return WPJAM_Data_Type::excerpt($args);
+}
+
+function wpjam_parse_data_type($args, $output='args'){
+	return WPJAM_Data_Type::prepare($args, $output);
+}
+
 function wpjam_slice_data_type(&$args, $strip=false){
-	$result	= wpjam_parse_data_type($args);
+	$result	= WPJAM_Data_Type::prepare($args);
 
 	if($strip && $result){
 		$args	= wpjam_except($args, wpjam_pull($args, 'data_type'));
@@ -598,6 +614,22 @@ function wpjam_get_path_object($page_key){
 
 function wpjam_get_paths($platform){
 	return WPJAM_Path::get_by(['platform'=>$platform]);
+}
+
+function wpjam_get_path_item_link_tag($parsed, $text){
+	if($parsed['type'] == 'none'){
+		return $text;
+	}elseif($parsed['type'] == 'external'){
+		return '<a href_type="web_view" href="'.$parsed['url'].'">'.$text.'</a>';
+	}elseif($parsed['type'] == 'web_view'){
+		return '<a href_type="web_view" href="'.$parsed['src'].'">'.$text.'</a>';
+	}elseif($parsed['type'] == 'mini_program'){
+		return '<a href_type="mini_program" href="'.$parsed['path'].'" appid="'.$parsed['appid'].'">'.$text.'</a>';
+	}elseif($parsed['type'] == 'contact'){
+		return '<a href_type="contact" href="" tips="'.$parsed['tips'].'">'.$text.'</a>';
+	}elseif($parsed['type'] == ''){
+		return '<a href_type="path" page_key="'.$parsed['page_key'].'" href="'.$parsed['path'].'">'.$text.'</a>';
+	}
 }
 
 function wpjam_get_paths_by_post_type(){}

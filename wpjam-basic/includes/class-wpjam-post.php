@@ -434,6 +434,66 @@ class WPJAM_Post{
 		}
 	}
 
+	public static function add_media($upload, $post_id=0){
+		if(is_array($upload)){
+			$file	= $upload['file'];
+			$url	= $upload['url'];
+			$type	= $upload['type'];
+		}else{
+			$file	= $upload;
+			$url	= wpjam_file($file, 'url');
+			$type	= mime_content_type($file);
+		}
+
+		if(!$file || !$url){
+			return;
+		}
+
+		$id	= wpjam_file($file, 'id');
+
+		if($id){
+			return $id;
+		}
+
+		require_once ABSPATH.'wp-admin/includes/image.php';
+
+		$title	= preg_replace('/\.[^.]+$/', '', wp_basename($file));
+		$meta	= wp_read_image_metadata($file);
+
+		if($meta){
+			$title		= (trim($meta['title']) && !is_numeric(sanitize_title($meta['title']))) ? $meta['title'] : $title;
+			$content	= trim($meta['caption']) ?: '';
+		}
+
+		$id	= wp_insert_attachment([
+			'post_title'		=> $title,
+			'post_content'		=> $content ?? '',
+			'post_parent'		=> $post_id,
+			'post_mime_type'	=> $type,
+			'guid'				=> $url,
+		], $file, $post_id, true);
+
+		if(!is_wp_error($id)){
+			wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $file));
+		}
+
+		return $id;
+	}
+
+	public static function get_attachment_value($id, $field='file'){
+		if($id && get_post_type($id) == 'attachment'){
+			if($field == 'id'){
+				return $id;
+			}elseif($field == 'file'){
+				return get_attached_file($id);
+			}elseif($field == 'url'){
+				return wp_get_attachment_url($id);
+			}elseif($field == 'size'){
+				return wpjam_pick((wp_get_attachment_metadata($id) ?: []), ['width', 'height']);
+			}
+		}
+	}
+
 	protected static function sanitize_data($data, $post_id=0){
 		$data	+= wpjam_array(get_class_vars('WP_Post'), fn($k, $v)=> try_remove_prefix($k, 'post_') && isset($data[$k]) ? ['post_'.$k, $data[$k]] : null);
 
@@ -1076,9 +1136,7 @@ class WPJAM_Posts{
 		$vars 		= wpjam_except($vars, array_values($query_keys));
 
 		if(!empty($vars['taxonomy']) && empty($vars['term'])){
-			$term_id	= wpjam_pull($vars, 'term_id');
-
-			if($term_id){
+			if($term_id	= wpjam_pull($vars, 'term_id')){
 				if(is_numeric($term_id)){
 					$term_ids[wpjam_pull($vars, 'taxonomy')]	= $term_id;
 				}else{
@@ -1095,10 +1153,21 @@ class WPJAM_Posts{
 			}
 		}
 
-		foreach(['cursor'=>'before', 'since'=>'after'] as $key => $var){
-			$value	= wpjam_pull($vars, $key);
+		foreach(wpjam_pull($vars, ['include', 'exclude']) as $k => $v){
+			if($ids = wp_parse_id_list($v)){
+				if($k == 'include'){
+					$vars['post__in']		= $ids;
+					$vars['posts_per_page']	= count($ids);
+				}else{
+					$vars['post__not_in']	= $ids;
+				}
 
-			if($value){
+				break;
+			}
+		}
+
+		foreach(['cursor'=>'before', 'since'=>'after'] as $key => $var){
+			if($value = wpjam_pull($vars, $key)){
 				$vars['date_query'][]	= [$var=> wpjam_date('Y-m-d H:i:s', $value)];
 			}
 		}
@@ -1107,9 +1176,8 @@ class WPJAM_Posts{
 			$vars	= array_merge($vars, wpjam_pull($args, ['post_type', 'orderby', 'posts_per_page']));
 			$number	= wpjam_pull($args, 'number');
 			$vars	= array_merge($vars, ($number ? ['posts_per_page'=>$number] : []));
-			$days	= wpjam_pull($args, 'days');
 
-			if($days){
+			if($days = wpjam_pull($args, 'days')){
 				$after	= wpjam_date('Y-m-d', time() - DAY_IN_SECONDS * $days).' 00:00:00';
 				$column	= wpjam_pull($args, 'column') ?: 'post_date_gmt';
 

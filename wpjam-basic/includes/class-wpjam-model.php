@@ -168,7 +168,7 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 				$this->_id	= $result;
 			}
 
-			if($this->_id && $meta_input){
+			if($meta_input){
 				$this->meta_input($meta_input);
 			}
 
@@ -203,13 +203,7 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 	}
 
 	public static function get_handler(){
-		$handler	= wpjam_get_handler(self::get_called());
-
-		if(!$handler && property_exists(get_called_class(), 'handler')){
-			return static::$handler;
-		}
-
-		return $handler;
+		return wpjam_get_handler(self::get_called()) ?: (property_exists(get_called_class(), 'handler') ? static::$handler : null);
 	}
 
 	public static function set_handler($handler){
@@ -247,11 +241,7 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 	public static function validate_by_field($value, $field){
 		$result	= static::get($value);
 
-		if(!wpjam_if_error($result, null)){
-			return $result ?: new WP_Error('invalid_id', [$field->_title]);
-		}
-
-		return $value;
+		return wpjam_if_error($result, null) ? $value : ($result ?: new WP_Error('invalid_id', [$field->_title]));
 	}
 
 	public static function get_actions(){
@@ -319,14 +309,14 @@ class WPJAM_Handler{
 		return is_callable($cb) ? wpjam_catch($cb, ...$args) : new WP_Error('undefined_method', [$method]);
 	}
 
-	public static function get($name, $args=null){
+	public static function get($name, $args=[]){
 		if($name){
 			if(is_array($name)){
 				$args	= $name;
 				$name	= wpjam_pull($args, 'name') ?: md5(serialize($args));
 			}
 
-			return wpjam_get_item('handler', $name) ?: ($args ? self::create($name, $args) : null);
+			return wpjam_get_item('handler', $name) ?: ($args ? self::create($name, maybe_closure($args, $name)) : null);
 		}
 	}
 
@@ -358,7 +348,7 @@ class WPJAM_Handler{
 			}
 		}
 
-		if(!empty($args['items_type']) || array_all(['get_items', 'update_items'], fn($method)=> !empty($args[$method]))){	// 推荐
+		if(!empty($args['items_type']) || array_all(['get_items', 'update_items'], fn($m)=> !empty($args[$m]))){	// 推荐
 			if(!empty($args['items_type'])){
 				$args['type']	= wpjam_pull($args, 'items_type');
 			}
@@ -1276,6 +1266,13 @@ class WPJAM_DB extends WPJAM_Args{
 				}
 			}elseif($key == 'search' || $key == 's'){
 				$this->search($value);
+			}elseif($key == 'exclude' || $key == 'include'){
+				if($value && is_array($value)){
+					$this->where($this->primary_key, [
+						'value'		=> $value, 
+						'compare'	=> $key == 'include' ? 'IN' : 'NOT IN'
+					]);
+				}
 			}else{
 				if(str_contains($key, '__')){
 					foreach($this->get_operator() as $k => $v){
@@ -1377,7 +1374,7 @@ class WPJAM_Items extends WPJAM_Args{
 	public function __call($method, $args){
 		if(str_ends_with($method, '_items')){
 			if($this->$method){
-				return $this->call_property($method, ...$args);
+				return $this->bind_if_closure($this->$method)(...$args);
 			}
 
 			if($method == 'delete_items'){
@@ -1387,9 +1384,10 @@ class WPJAM_Items extends WPJAM_Args{
 			return $method == 'get_items' ? [] : true;
 		}elseif(str_contains($method, '_setting')){
 			if($this->option_name){
-				$cb	= 'wpjam_'.$method;
+				$i		= str_starts_with($method, 'update_') ? 2 : 1;
+				$args	= (isset($args[$i]) && !is_numeric($args[$i])) ? array_slice($args, 0, $i) : $args;
 
-				return $cb($this->option_name, ...$args);
+				return ('wpjam_'.$method)($this->option_name, ...$args);
 			}
 		}elseif(in_array($method, [
 			'insert',
@@ -1550,10 +1548,7 @@ class WPJAM_Items extends WPJAM_Args{
 		if($type == 'array' && $items && is_array($items) && in_array($this->primary_key, ['option_key','id'])){
 			foreach($items as &$item){
 				$item	= wpjam_except($item, $this->primary_key);
-
-				if($this->parent_key){
-					$item	= wpjam_except($item, $this->parent_key);
-				}
+				$item	= wpjam_except($item, $this->parent_key ?: []);
 			}
 		}
 

@@ -499,6 +499,10 @@ class WPJAM_Extend extends WPJAM_Args{
 			$extends	= array_keys(array_merge($this->get_option(), $this->get_option(true)));
 		}else{
 			$extends	= array_diff(scandir($this->dir), ['.', '..']);
+
+			if($plugins	= get_option('active_plugins')){
+				$extends	= array_filter($extends, fn($v)=> !in_array($v.(is_dir($this->dir.'/'.$v) ? '/'.$v : '').'.php', $plugins));
+			}
 		}
 
 		array_walk($extends, fn($extend)=> $this->handle($extend, 'include'));
@@ -622,18 +626,22 @@ class WPJAM_Platform extends WPJAM_Register{
 		return call_user_func($this->verify);
 	}
 
-	public function get_tabbar($page_key){
-		$tabbar	= $this->get_item($page_key.'.tabbar');
-
-		if($tabbar){
-			return ($tabbar === true ? [] : $tabbar)+['text'=>(string)$this->get_item($page_key.'.title')];
+	public function get_tabbar($page_key=''){
+		if(!$page_key){
+			return wpjam_array($this->get_items(), fn($k)=> ($v = $this->get_tabbar($k)) ? [$k, $v] : null);
 		}
+
+		if($tabbar	= $this->get_item($page_key.'.tabbar')){
+			return ($tabbar === true ? [] : $tabbar)+['text'=>(string)$this->get_item($page_key.'.title')];
+		}		
 	}
 
-	public function get_page($page_key){
-		$path	= $this->get_item($page_key.'.path');
+	public function get_page($page_key=''){
+		if(!$page_key){
+			return wpjam_array($this->get_items(), fn($k)=> ($v = $this->get_page($k)) ? [$k, $v] : null);
+		}
 
-		return $path ? explode('?', $path)[0] : '';
+		return ($path = $this->get_item($page_key.'.path')) ? explode('?', $path)[0] : '';
 	}
 
 	public function get_fields($page_key){
@@ -660,6 +668,10 @@ class WPJAM_Platform extends WPJAM_Register{
 	}
 
 	public function get_path($page_key, $args=[]){
+		if(is_array($page_key)){
+			[$page_key, $args]	= [wpjam_pull($page_key, 'page_key'), $page_key];
+		}
+
 		$item	= $this->get_item($page_key);
 
 		if(!$item){
@@ -771,7 +783,14 @@ class WPJAM_Platforms{
 		return $cb($this->platforms, fn($pf)=> $pf->has_path($page_key, $strict));
 	}
 
-	public function get_fields($args, $strict=false){
+	public function get_fields($args=[]){
+		if(is_array($args)){
+			$strict	= (bool)wpjam_pull($args, 'strict');
+		}else{
+			$strict	= (bool)$args;
+			$args	= [];
+		}
+
 		$prepend	= wpjam_pull($args, 'prepend_name');
 		$prepend	= $prepend ? ['prepend_name'=>$prepend] : [];
 		$suffix		= wpjam_pull($args, 'suffix');
@@ -1061,11 +1080,13 @@ class WPJAM_Data_Type extends WPJAM_Register{
 		if(is_a($name, 'WPJAM_Field')){
 			$field	= $name;
 			$name	= $field->data_type;
-			$object	= self::get($name);
+		}
 
-			if($object){
-				$args	= $field->query_args;
-				$args	= $args ? wp_parse_args($args) : [];
+		$object	= self::get($name);
+
+		if($object){
+			if(isset($field)){
+				$args	= wp_parse_args($field->query_args ?: []);
 
 				if($field->$name){
 					$args[$name]	= $field->$name;
@@ -1073,11 +1094,7 @@ class WPJAM_Data_Type extends WPJAM_Register{
 					$field->$name	= $args[$name];
 				}
 			}
-		}else{
-			$object	= self::get($name);
-		}
 
-		if($object){
 			if($name == 'model'){
 				$model	= $args['model'];
 
@@ -1106,11 +1123,20 @@ class WPJAM_Data_Type extends WPJAM_Register{
 
 		return $object;
 	}
+
+	public static function prepare($args, $output='args'){
+		$type	= (is_array($args) || is_object($args)) ? wpjam_get($args, 'data_type') : '';
+		$args	= ($type ? ['data_type' => $type] : [])+(in_array($type, ['post_type', 'taxonomy']) ? [$type => (wpjam_get($args, $type) ?: '')] : []);
+
+		return $output == 'key' ? ($args ? '__'.md5(serialize(array_map(fn($v)=> is_closure($v) ? spl_object_hash($v) : $v, $args))) : '') : $args;
+	}
+
+	public static function except($args){
+		return array_diff_key($args, self::prepare($args));
+	}
 }
 
 class WPJAM_Method{
-	use WPJAM_Items_Trait;
-
 	protected $class;
 
 	protected function __construct($class){
@@ -1157,7 +1183,12 @@ class WPJAM_Method{
 			return $is_public ? $cb : $reflection->getClosure();
 		}
 
-		$cb[0]	= $this->get_instance($args);
+		if($method == 'value_callback' && count($args) == 2){
+			$args	= array_reverse($args);
+			$cb[0]	= $this->get_instance($args);
+		}else{
+			$cb[0]	= $this->get_instance($args);
+		}
 
 		return $is_public ? $cb : $reflection->getClosure($cb[0]);
 	}

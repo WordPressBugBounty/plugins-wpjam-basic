@@ -376,34 +376,30 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 		}
 
 		if(!$type || $type == 'property'){
-			if($this->$name && is_callable($this->$name)){
+			if(is_callable($this->$name)){
 				return $this->bind_if_closure($this->$name);
 			}
 		}
 	}
 
 	public function call_method($method, ...$args){
-		$called	= $this->parse_method($method);
+		$called = $this->parse_method(...(is_array($method) ? $method : [$method]));
 
 		if($called){
 			return $called(...$args);
 		}
 
-		if(str_starts_with($method, 'filter_')){
+		if(is_string($method) && str_starts_with($method, 'filter_')){
 			return array_shift($args);
-		}
+		}	
 	}
 
 	protected function call_property($property, ...$args){
-		$called	= $this->parse_method($property, 'property');
-
-		return $called ? $called(...$args) : null;
+		return $this->call_method([$property, 'property'], ...$args);
 	}
 
 	protected function call_model($method, ...$args){
-		$called	= $this->parse_method($method, 'model');
-
-		return $called ? $called(...$args) : null;
+		return $this->call_method([$method, 'model'], ...$args);
 	}
 
 	protected function error($code, $msg){
@@ -466,7 +462,7 @@ class WPJAM_Register extends WPJAM_Args{
 			], fn($k, $v)=> ($args[$k] ?? $v[1]) === true ? [$k, $this->parse_method($v[0], $model)] : null));
 		}
 
-		wpjam_hooks(wpjam_pull($args, 'hooks'));
+		wpjam_hooks(maybe_callback(wpjam_pull($args, 'hooks')));
 		wpjam_init(wpjam_pull($args, 'init'));
 
 		return $args;
@@ -484,7 +480,7 @@ class WPJAM_Register extends WPJAM_Args{
 		return $this->args;
 	}
 
-	public function get_arg($key, $default=null, $do_callback=true){
+	public function get_arg($key, $default=null, $should_callback=true){
 		$value	= parent::get_arg($key);
 
 		if(is_null($value)){
@@ -495,7 +491,7 @@ class WPJAM_Register extends WPJAM_Args{
 			$value	= $this->bind_if_closure($value);
 		}
 
-		if($do_callback){
+		if($should_callback){
 			$value	= maybe_callback($value, $this->name);
 		}
 
@@ -743,7 +739,7 @@ class WPJAM_Register_Group extends WPJAM_Args{
 				$args	= preg_match_all('/@config\s+([^\r\n]*)/', $ref->getDocComment(), $matches) ? wp_parse_list($matches[1][0]) : [];
 			}
 
-			$this->config = wpjam_array($args, fn($k, $v)=> is_numeric($k) ? (str_contains($v, '=') ? explode('=', $v) : [$v, true]) : [$k, $v]);
+			$this->config = wpjam_array($args, fn($k, $v)=> is_numeric($k) ? (str_contains($v, '=') ? explode('=', $v, 2) : [$v, true]) : [$k, $v]);
 		}
 
 		return $this->config[$key] ?? null;
@@ -782,22 +778,27 @@ class WPJAM_Register_Group extends WPJAM_Args{
 	}
 
 	public function get_fields($args=[]){
-		$title_field	= wpjam_pull($args, 'title_field') ?: 'title';
-		$name_field		= wpjam_pull($args, 'name_field') ?: 'name';
-		$objects		= $this->get_objects(wpjam_pull($args, 'filter_args'));
+		$type		= wpjam_get($args, 'type');
+		$title_field= wpjam_pull($args, 'title_field') ?: 'title';
+		$name_field	= wpjam_pull($args, 'name_field') ?: 'name';
+		$objects	= $this->get_objects(wpjam_pull($args, 'filter_args'));
+		$options	= wpjam_array($objects, fn($k, $v)=> isset($v->active) ? null : [
+			$v->$name_field, 
+			$type == 'select' ? array_filter([
+				'title'			=> $v->$title_field,
+				'description'	=> $v->description,
+				'fields'		=> $v->get_arg('fields')
+			]) : (($v->field ?: [])+['label'=>$v->$title_field])
+		]);
 
-		if(wpjam_get($args, 'type') == 'select'){
-			return [wpjam_pull($args, 'name')=> $args+[
-				'show_option_none'	=> __('&mdash; Select &mdash;'),
-				'options'			=> wpjam_array($objects, fn($k, $v)=> [$v->$name_field, array_filter([
-					'title'			=> $v->$title_field,
-					'description'	=> $v->description,
-					'fields'		=> $v->get_arg('fields')
-				])])
-			]];
+		if($type == 'select'){
+			$name	= wpjam_pull($args, 'name');
+			$args	+= ['show_option_none'=>__('&mdash; Select &mdash;'), 'options'=>$options];
+
+			return $name ? [$name => $args] : $args;
 		}
 
-		return wpjam_array($objects, fn($k, $v)=> isset($v->active) ? null : [$v->$name_field, ($v->field ?: [])+['label'=>$v->$title_field]]);
+		return $options;
 	}
 
 	protected static $_groups	= [];
@@ -962,10 +963,6 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 		return $type ? array_intersect_key($this->fields, $this->$type ?: []) : $this->fields;
 	}
 
-	public function get_field($key, $type){
-		return $this->fields[$key][$type] ?? null;
-	}
-
 	public function validate(){
 		$this->sorted	= [];
 		$this->path		= [];
@@ -989,12 +986,10 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 			return array_map(fn($f)=> array_merge($f, ['formula'=>$this->parse_formula($f['formula'], $key)]), $formula);
 		}
 
-		$formula	= preg_replace('@\s@', '', $formula);
-		$signs		= ['+', '-', '*', '/', '(', ')', ',', '%'];
-		$pattern	= '/([\\'.implode('\\', $signs).'])/';
-		$formula	= preg_split($pattern, $formula, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+		$depth		= 0;
 		$methods	= ['abs', 'ceil', 'pow', 'sqrt', 'pi', 'max', 'min', 'fmod', 'round'];
-		$stack		= [];
+		$signs		= ['+', '-', '*', '/', '(', ')', ',', '%'];
+		$formula	= preg_split('/\s*(['.preg_quote(implode($signs), '/').'])\s*/', $formula, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
 
 		foreach($formula as $t){
 			if(is_numeric($t)){
@@ -1006,13 +1001,13 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 					return $this->invalid($key, '「'.$t.'」未定义');
 				}
 			}elseif($t == '('){
-				array_push($stack, '(');
+				$depth++;
 			}elseif($t == ')'){
-				if(empty($stack)){
+				if(!$depth){
 					return $this->invalid($key, '括号不匹配');
 				}
 
-				array_pop($stack);
+				$depth--;
 			}else{
 				if(!in_array($t, $signs) && !in_array(strtolower($t), $methods)){
 					return $this->invalid($key, '无效的「'.$t.'」');
@@ -1020,7 +1015,7 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 			}
 		}
 
-		return $stack ? $this->invalid($key, '括号不匹配') : $formula;
+		return $depth ? $this->invalid($key, '括号不匹配') : $formula;
 	}
 
 	protected function render_formular($key){
@@ -1117,15 +1112,10 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 			$key		= $args['key'];
 			$if_error	= $if_errors[$key] ?? null;
 			$formula	= $formulas[$key];
+			$formula	= is_array($formula[0]) ? (($f = array_find($formula, fn($f)=> wpjam_match($item, $f))) ? $f['formula'] : []) : $formula;
 
-			if(is_array($formula[0])){
-				$f	= array_find($formula, fn($f)=> wpjam_match($item, $f));
-
-				if(!$f){
-					return '';
-				}
-
-				$formula	= $f['formula'];
+			if(!$formula){
+				return '';
 			}
 
 			foreach($formula as &$t){
@@ -1145,28 +1135,12 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 				}
 			}
 
-			$handler	= set_error_handler(function($errno, $errstr){
-				if(str_contains($errstr , 'Division by zero')){
-					throw new DivisionByZeroError($errstr); 
-				}
-
-				throw new ErrorException($errstr , $errno);
-
-				return true;
-			});
-
 			try{
 				return eval('return '.implode($formula).';');
 			}catch(DivisionByZeroError $e){
 				return $if_error ?? '!除零错误';
 			}catch(throwable $e){
 				return $if_error ?? '!计算错误：'.$e->getMessage();
-			}finally{
-				if($handler){
-					set_error_handler($handler);
-				}else{
-					restore_error_handler();
-				}
 			}
 		}
 
@@ -1174,17 +1148,31 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 			$formulas	= array_intersect_key($formulas, array_filter($this->sumable, fn($v)=> $v == 2));
 		}
 
-		if(!$formulas){
-			return $item;
-		}
-		
-		$item	= wpjam_except($item, array_keys($formulas));
+		if($formulas){
+			$handler	= set_error_handler(function($no, $str){
+				if(str_contains($str , 'Division by zero')){
+					throw new DivisionByZeroError($str); 
+				}
 
-		foreach($formulas as $key => $formula){
-			if(!is_array($formula)){
-				$item[$key]	= is_wp_error($formula) ? '!公式错误' : $formula;
+				throw new ErrorException($str , $no);
+
+				return true;
+			});
+
+			$item	= array_diff_key($item, $formulas);
+
+			foreach($formulas as $key => $formula){
+				if(!is_array($formula)){
+					$item[$key]	= is_wp_error($formula) ? '!公式错误' : $formula;
+				}else{
+					$item[$key]	= $this->calc($item, array_merge($args, ['key'=>$key]));
+				}
+			}
+		
+			if($handler){
+				set_error_handler($handler);
 			}else{
-				$item[$key]	= $this->calc($item, array_merge($args, ['key'=>$key]));
+				restore_error_handler();
 			}
 		}
 

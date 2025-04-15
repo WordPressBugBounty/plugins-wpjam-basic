@@ -32,7 +32,7 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 		];
 
 		return [
-			'auto'		=> ['title'=>'缩略图设置',	'type'=>'radio',	'sep'=>'<br />',	'options'=>[
+			'auto'		=> ['title'=>'缩略图设置',	'type'=>'radio',	'direction'=>'column',	'options'=>[
 				0	=>'修改主题代码，手动使用 <a href="https://blog.wpjam.com/m/wpjam-basic-thumbnail-functions/" target="_blank">WPJAM 的缩略图函数</a>。',
 				1	=>'无需修改主题，自动应用 WPJAM 的缩略图设置。'
 			]],

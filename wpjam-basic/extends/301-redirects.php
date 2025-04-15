@@ -16,17 +16,16 @@ class WPJAM_Redirect extends WPJAM_Model{
 	}
 
 	public static function get_actions(){
-		return parent::get_actions()+['set'=> [
+		return parent::get_actions()+['update_setting'=> [
 			'title'				=> '设置',
 			'overall'			=> true,
 			'class'				=> 'button-primary',
-			'value_callback'	=> [self::class, 'get_setting'],
-			'callback'			=> [self::class, 'update_setting']
+			'value_callback'	=> [self::class, 'get_setting']
 		]];
 	}
 
 	public static function get_fields($action_key='', $id=0){
-		if($action_key == 'set'){
+		if($action_key == 'update_setting'){
 			return [
 				'redirect_view'	=> ['type'=>'view',		'value'=>'默认只在404页面支持跳转，开启下面开关后，所有页面都支持跳转'],
 				'redirect_all'	=> ['class'=>'switch',	'label'=>'所有页面都支持跳转'],
@@ -50,12 +49,12 @@ class WPJAM_Redirect extends WPJAM_Model{
 			}
 
 			if(!get_option('page_comments') && str_contains($url, 'comment-page-')){
-				wp_redirect(wpjam_replace('/comment-page-(.*)\//', '',  $url), 301);
+				wp_redirect(wpjam_preg_replace('/comment-page-(.*)\//', '',  $url), 301);
 				exit;
 			}
 
 			if(str_contains($url, 'page/')){
-				wp_redirect(wpjam_replace('/page\/(.*)\//', '',  $url), 301);
+				wp_redirect(wpjam_preg_replace('/page\/(.*)\//', '',  $url), 301);
 				exit;
 			}
 		}

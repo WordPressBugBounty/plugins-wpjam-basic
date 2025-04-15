@@ -166,13 +166,13 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 
 		if(self::get_setting('unique')){
 			if($meta){
-				add_filter('wpjam_html', fn($html)=> wpjam_replace('#<meta\s+name=([\'"])('.implode('|', array_keys($meta)).')\1(.*?)\/>#is', '', $html));
+				add_filter('wpjam_html', fn($html)=> wpjam_preg_replace('#<meta\s+name=([\'"])('.implode('|', array_keys($meta)).')\1(.*?)\/>#is', '', $html));
 
 				$title	= ($title ?: '\1')."\n".implode($meta);
 			}
 
 			if($title){
-				add_filter('wpjam_html', fn($html)=> wpjam_replace('#(<title>[^<]*<\/title>)#is', $title, $html));
+				add_filter('wpjam_html', fn($html)=> wpjam_preg_replace('#(<title>[^<]*<\/title>)#is', $title, $html));
 			}
 		}else{
 			echo implode($meta);
