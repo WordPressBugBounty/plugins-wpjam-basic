@@ -155,10 +155,6 @@ function wpjam_build_callback_unique_id($callback){
 }
 
 function wpjam_get_reflection($callback){
-	if(!is_callable($callback)){
-		return;
-	}
-
 	$id	= wpjam_build_callback_unique_id($callback);
 
 	return wpjam_get_instance('reflection', $id, fn()=> is_array($callback) ? new ReflectionMethod(...$callback) : new ReflectionFunction($callback));
