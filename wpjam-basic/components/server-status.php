@@ -256,7 +256,7 @@ class WPJAM_Server_Status{
 				'button_text'	=> '刷新缓存',
 				'direct'		=> true,
 				'confirm'		=> true,
-				'callback'		=> fn() => wp_cache_flush() ? ['errmsg'=>'缓存刷新成功'] : wp_die('缓冲刷新失败')
+				'callback'		=> fn() => wp_cache_flush() ? ['errmsg'=>'缓存刷新成功'] : wp_die('缓存刷新失败')
 			]);
 		}
 
@@ -271,6 +271,6 @@ wpjam_add_menu_page('server-status', [
 	'chart'			=> true,
 	'order'			=> 9,
 	'function'		=> 'tab',
+	'model'			=> 'WPJAM_Server_Status',
 	'capability'	=> is_multisite() ? 'manage_site' : 'manage_options',
-	'tabs'			=> ['WPJAM_Server_Status', 'get_tabs']
 ]);

@@ -23,10 +23,6 @@ function wpjam_include($hooks, $include, $priority=10){
 	wpjam_load($hooks, fn()=> array_map(fn($inc)=> include $inc, (array)$include), $priority);
 }
 
-function wpjam_loaded($action, ...$args){
-	wpjam_load('wp_loaded', fn()=> do_action($action, ...$args));
-}
-
 function wpjam_hooks($name, ...$args){
 	if(is_string($name) && in_array($name, ['add', 'remove'])){
 		$type	= $name;
@@ -45,7 +41,7 @@ function wpjam_hooks($name, ...$args){
 				wpjam_hook($type, ...$name);
 			}
 		}
-	}elseif($name && $args){
+	}elseif($name && is_string($name) && $args){
 		$callback	= array_shift($args);
 
 		if(is_array($callback) && !is_callable($callback)){
@@ -144,20 +140,30 @@ function wpjam_call_for_blog($blog_id, $callback, ...$args){
 	}
 }
 
-function wpjam_verify_callback($callback, $verify){
-	$reflection	= wpjam_get_reflection($callback);
+function wpjam_verify_callback($callback, $verifier){
+	$ref	= wpjam_get_reflection($callback);
 
-	return $verify($reflection->getParameters(), $reflection);
+	return $verifier($ref->getParameters(), $ref);
 }
 
 function wpjam_build_callback_unique_id($callback){
 	return _wp_filter_build_unique_id(null, $callback, null);
 }
 
-function wpjam_get_reflection($callback){
+function wpjam_get_reflection($callback, $type=''){
+	if(is_array($callback)){
+		return (WPJAM_Invoker::create($callback[0]))->get_reflection($callback[1]);
+	}
+
 	$id	= wpjam_build_callback_unique_id($callback);
 
-	return wpjam_get_instance('reflection', $id, fn()=> is_array($callback) ? new ReflectionMethod(...$callback) : new ReflectionFunction($callback));
+	return wpjam_get_instance('reflection', $id, fn()=> new ReflectionFunction($callback));
+}
+
+function wpjam_get_annotation($called, $key=''){
+	$data	= (WPJAM_Invoker::create($called))->get_annotation();
+
+	return $key ? ($data[$key] ?? null) : $data;
 }
 
 function wpjam_parse_callback($callback, &$args=[]){
@@ -165,11 +171,11 @@ function wpjam_parse_callback($callback, &$args=[]){
 }
 
 function wpjam_parse_method($class, $method, &$args=[]){
-	return (WPJAM_Method::create($class))->parse($method, $args);
+	return (WPJAM_Invoker::create($class))->parse($method, $args);
 }
 
 function wpjam_call_method($class, $method, ...$args){
-	return (WPJAM_Method::create($class))->call($method, ...$args);
+	return (WPJAM_Invoker::create($class))->call($method, ...$args);
 }
 
 if(!function_exists('maybe_callback')){
@@ -218,17 +224,17 @@ function wpjam_timer($callback, ...$args){
 
 		return $callback(...$args);
 	}finally{
-		$log	= "Callback: ".var_export($callback, true)."\n";
-		$log	.= "Time: ".number_format(microtime(true)-$timestart, 5)."\n";
+		$log[]	= "Callback: ".var_export($callback, true);
+		$log[]	= "Time: ".number_format(microtime(true)-$timestart, 5);
 
 		if(is_closure($callback)){
 			$reflection = wpjam_get_reflection($callback);
 
-			$log	.= "File: ".$reflection->getFileName(). "\n";
-			$log	.= "Line: ".$reflection->getStartLine() . "\n";
+			$log[]	= "File: ".$reflection->getFileName();
+			$log[]	= "Line: ".$reflection->getStartLine();
 		}
 
-		trigger_error($log."\n\n");
+		trigger_error(implode("\n", $log)."\n\n");
 	}
 }
 
@@ -332,23 +338,51 @@ function wpjam_db_transaction($callback, ...$args){
 	}
 }
 
+// WPJAM
+function wpjam($method='', ...$args){
+	$object	= WPJAM_API::get_instance();
+
+	return $method ? $object->$method(...$args) : $object;
+}
+
 // Var
 function wpjam_var($name, ...$args){
-	static $vars;
+	[$group, $name]	= str_contains($name, ':') ? explode(':', $name, 2) : ['vars', $name];
 
-	$vars	??= wpjam_parse_user_agent();
+	$value	= wpjam('get', $group, $name);
 
-	if($args && (!isset($vars[$name]) || !is_closure($args[0]))){
-		$value	= maybe_closure($args[0], $name);
+	if($args && ($value === null || !is_closure($args[0]))){
+		$value	= maybe_closure($args[0], $name, $group);
 
 		if(is_wp_error($value) || is_null($value)){
-			return $value;
+			wpjam('delete', $group, $name);
+		}else{
+			wpjam('set', $group, $name, $value);
 		}
-
-		$vars[$name]	= $value;
 	}
 
-	return $vars[$name] ?? null;
+	return $value;
+}
+
+function wpjam_pattern($key, ...$args){
+	return wpjam_var('pattern:'.$key, ...$args);
+}
+
+function wpjam_default($name='', ...$args){
+	$vars	= wpjam('get', 'defaults');
+
+	if(is_array($name) || ($name && $args)){
+		if(is_array($name)){
+			$replace	= $args && $args[0] === true;
+			$vars		= $replace ? $name : array_merge($vars, $name);
+		}else{
+			$vars[$name]	= $args[0];
+		}
+
+		wpjam('update', 'defaults', $vars);
+	}
+
+	return $name && (!is_array($name)) ? ($vars[$name] ?? null) : $vars;
 }
 
 function wpjam_get_current_user($required=false){
@@ -361,30 +395,36 @@ function wpjam_get_current_user($required=false){
 	}
 }
 
+function wpjam_ua($name=''){
+	$vars	= wpjam('get', 'user_agent') ?: wpjam('update', 'user_agent', wpjam_parse_user_agent());
+
+	return $name ? ($vars[$name] ?? null) : $vars;
+}
+
 function wpjam_current_supports($feature){
 	if($feature == 'webp'){
-		return wpjam_var('browser') == 'chrome' || wpjam_var('os') == 'Android' || (wpjam_var('os') == 'iOS' && version_compare(wpjam_var('os_version'), 14) >= 0);
+		return wpjam_ua('browser') == 'chrome' || wpjam_ua('os') == 'Android' || (wpjam_ua('os') == 'iOS' && version_compare(wpjam_ua('os_version'), 14) >= 0);
 	}
 }
 
 function wpjam_get_device(){
-	return wpjam_var('device');
+	return wpjam_ua('device');
 }
 
 function wpjam_get_os(){
-	return wpjam_var('os');
+	return wpjam_ua('os');
 }
 
 function wpjam_get_app(){
-	return wpjam_var('app');
+	return wpjam_ua('app');
 }
 
 function wpjam_get_browser(){
-	return wpjam_var('browser');
+	return wpjam_ua('browser');
 }
 
 function wpjam_get_version($key){
-	return wpjam_var($key.'_version');
+	return wpjam_ua($key.'_version');
 }
 
 function is_ipad(){
@@ -433,7 +473,9 @@ function is_bytedance(){
 
 // Parameter
 function wpjam_get_parameter($name='', $args=[], $method=''){
-	return WPJAM_API::get_parameter($name, array_merge($args, $method ? compact('method') : []));
+	$object	= WPJAM_Parameter::get_instance();
+
+	return $object->get($name, array_merge($args, $method ? compact('method') : []));
 }
 
 function wpjam_get_post_parameter($name='', $args=[]){
@@ -462,8 +504,11 @@ function wpjam_method_allow($method){
 function wpjam_remote_request($url='', $args=[], $err=[]){
 	$throw	= wpjam_pull($args, 'throw');
 	$field	= wpjam_pull($args, 'field') ?? 'body';
-	$result	= WPJAM_API::request($url, $args, $err);
-	$result	= $throw ? wpjam_if_error($result, 'throw') : $result;
+	$result	= WPJAM_HTTP::request($url, $args, $err);
+
+	if(is_wp_error($result)){
+		return $throw ? wpjam_throw($result) : $result;
+	}
 
 	return $field ? wpjam_get($result, $field) : $result;
 }
@@ -473,13 +518,19 @@ function wpjam_parse_error($data){
 	return WPJAM_Error::parse($data);
 }
 
-function wpjam_register_error_setting($code, $message='', $modal=[]){
+function wpjam_set_die_handler($type=''){
+	add_filter('wp_die'.($type ? '_'.ltrim($type, '_') : '').'_handler', fn()=> ['WPJAM_Error', 'wp_die_handler']);
+}
+
+function wpjam_add_error_setting($code, $message, $modal=[]){
 	return WPJAM_Error::add_setting($code, $message, $modal);
 }
 
 // Route
 function wpjam_register_route($module, $args){
-	WPJAM_Route::add($module, $args);
+	if($module){
+		wpjam('add', 'route', $module, $args);
+	}
 }
 
 function wpjam_get_query_var($key, $wp=null){
@@ -514,7 +565,7 @@ function wpjam_get_json_object($name){
 }
 
 function wpjam_add_json_module_parser($type, $callback){
-	return WPJAM_JSON::add_module_parser($type, $callback);
+	return WPJAM_JSON::module_parser($type, $callback);
 }
 
 function wpjam_parse_json_module($module){
@@ -534,7 +585,7 @@ function wpjam_is_json_request(){
 }
 
 function wpjam_register_activation($callback, $hook='wp_loaded'){
-	WPJAM_API::activation('add', $hook, $callback);
+	wpjam('activation', 'add', [$hook, $callback]);
 }
 
 function wpjam_register_source($name, $callback, $query_args=['source_id']){
@@ -559,24 +610,19 @@ function wpjam_register_config(...$args){
 			$args	= is_callable($args[1]) ? ['name'=>$args[0], 'callback'=>$args[1]] : [$args[0]=>$args[1]];
 		}
 
-		wpjam_add_item('config', null, $args, $group);
+		return wpjam('add', wpjam_join(':', 'config', $group), $args);
 	}
 }
 
-function wpjam_get_config($group=null){
-	$group	= is_array($group) ? array_get($group, 'group') : $group;
-	$items	= wpjam_get_items('config', $group) ?: [];
-
-	return array_reduce($items, function($config, $item){
+function wpjam_get_config($group=''){
+	return array_reduce(wpjam('get', wpjam_join(':', 'config', (is_array($group) ? array_get($group, 'group') : $group))), function($carry, $item){
 		if(!empty($item['callback'])){
-			$name	= $item['name'] ?? '';
-			$args	= $item['args'] ?? [];
-			$args	= $args ?: ($name ? [$name] : []);
-			$value	= $item['callback'](...$args);
+			$name	= wpjam_get($item, 'name');
+			$value	= $item['callback'](...(wpjam_get($item, 'args') ?: ($name ? [$name] : [])));
 			$item	= $name ? [$name=> $value] : (is_array($value) ? $value : []);
 		}
 
-		return array_merge($config, $item);
+		return array_merge($carry, $item);
 	}, []);
 }
 
@@ -589,8 +635,112 @@ function wpjam_get_file_summary($file){
 	return WPJAM_Extend::get_file_summay($file);
 }
 
-function wpjam_get_extend_summary($file){
-	return WPJAM_Extend::get_file_summay($file);
+// Video
+function wpjam_add_video_parser($pattern, $callback){
+	wpjam('add', 'video_parser', [$pattern, $callback]);
+}
+
+// Asset
+function wpjam_asset($type, $handle, $args, $load=false){
+	$args	= is_array($args) ? $args : ['src'=>$args];
+
+	if($load || array_any(['wp', 'admin', 'login'], fn($part)=> doing_action($part.'_enqueue_scripts'))){
+		$method	= wpjam_pull($args, 'method') ?: 'enqueue';
+
+		if(empty($args[$method.'_if']) || $args[$method.'_if']($handle, $type)){
+			$args	= wp_parse_args($args, ['src'=>'', 'deps'=>[], 'ver'=>false, 'media'=>'all', 'position'=>'after']);
+			$src	= maybe_closure($args['src'], $handle);
+			$data	= $args['data'] ?? '';
+
+			if($src || !$data){
+				wpjam_call('wp_'.$method.'_'.$type, $handle, $src, $args['deps'], $args['ver'], ($type == 'script' ? wpjam_pick($args, ['in_footer', 'strategy']) : $args['media']));
+			}
+
+			if($data){
+				wpjam_call('wp_add_inline_'.$type, $handle, $data, $args['position']);
+			}	
+		}
+	}else{
+		$parts	= is_admin() ? ['admin', 'wp'] : (is_login() ? ['login'] : ['wp']);
+		$parts	= isset($args['for']) ? array_intersect($parts, wp_parse_list($args['for'] ?: 'wp')) : $parts;
+
+		array_walk($parts, fn($part)=> wpjam_load($part.'_enqueue_scripts', fn()=> wpjam_asset($type, $handle, $args, true), ($args['priority'] ?? 10)));
+	}
+}
+
+function wpjam_script($handle, $args=[]){
+	wpjam_asset('script', $handle, $args);
+}
+
+function wpjam_style($handle, $args=[]){
+	wpjam_asset('style', $handle, $args);
+}
+
+// Capability
+function wpjam_map_meta_cap($cap, $map){
+	if($cap && $map && (is_callable($map) || wp_is_numeric_array($map))){
+		wpjam('add', 'map_meta_cap', $cap, $map);
+	}
+}
+
+function wpjam_current_user_can($capability, ...$args){
+	return ($capability = maybe_closure($capability, ...$args)) ? current_user_can($capability, ...$args) : true;
+}
+
+// Rewrite Rule
+function wpjam_add_rewrite_rule($args){
+	if(did_action('init')){
+		$args	= maybe_callback($args);
+
+		if($args && is_array($args)){
+			if(is_array($args[0])){
+				array_walk($args, 'wpjam_add_rewrite_rule');
+			}else{
+				add_rewrite_rule(...[$GLOBALS['wp_rewrite']->root.array_shift($args), ...$args]);
+			}
+		}
+	}else{
+		add_action('init', fn()=> wpjam_add_rewrite_rule($args));
+	}
+}
+
+// Menu Page
+function wpjam_add_menu_page(...$args){
+	if(is_array($args[0])){
+		if(wp_is_numeric_array($args[0])){
+			return array_walk($args[0], 'wpjam_add_menu_page');
+		}
+
+		$args	= $args[0];
+	}else{
+		$slug	= $args[0];
+		$type	= !empty($args[1]['plugin_page']) ? 'tab_slug' : 'menu_slug';
+		$args	= array_merge($args[1], [$type => $slug]);
+
+		if(!is_admin() && wpjam_get($args, 'function') == 'option' && (!empty($args['sections']) || !empty($args['fields']))){
+			wpjam_register_option(($args['option_name'] ?? $slug), $args);
+		}
+	}
+
+	$model	= $args['model'] ?? '';
+	$cap	= $args['capability'] ?? '';
+
+	if($model){
+		wpjam_hooks(wpjam_call([$model, 'add_hooks']));
+		wpjam_init([$model, 'init']);
+
+		if($cap && method_exists($model, 'map_meta_cap')){
+			$args['map_meta_cap']	= [$model, 'map_meta_cap'];
+		}
+	}
+
+	if($cap && !empty($args['map_meta_cap'])){
+		wpjam_map_meta_cap($cap, wpjam_pull($args, 'map_meta_cap'));
+	}
+
+	if(is_admin()){
+		wpjam_admin('add', 'menu', $args);
+	}
 }
 
 if(is_admin()){
@@ -610,27 +760,59 @@ if(is_admin()){
 		}
 	}
 
-	function wpjam_add_admin_inline_script($data){
-		WPJAM_Admin::add_var('script', $data);
-	}
+	function wpjam_admin(...$args){
+		$object	= WPJAM_Admin::get_instance();
 
-	function wpjam_add_admin_inline_style($data){
-		WPJAM_Admin::add_var('style', $data);
+		if(!$args){
+			return $object;
+		}
+
+		$key	= array_shift($args);
+		$cb		= [$object, $key];
+
+		if(method_exists(...$cb)){
+			return $cb(...$args);
+		}
+
+		if(!$args){
+			return $object->$key ?? wpjam_get($object->vars, $key);
+		}
+
+		if(!isset($object->$key) || !in_array($key, ['plugin_page', 'current_tab', 'screen'])){
+			return $object->$key = $args[0];
+		}
+
+		return count($args) >= 2 ? ($object->$key->{$args[0]} = $args[1]) : $object->$key->{$args[0]};
 	}
 
 	function wpjam_add_admin_ajax($action, $args=[]){
-		WPJAM_Admin::add_ajax($action, $args);
+		if(wpjam_get($_POST, 'action') == $action){
+			$args		= wpjam_is_assoc_array($args) ? $args : ['callback'=>$args];
+			$callback	= $args['callback'];
+			$fields		= $args['fields'] ?? [];
+
+			wpjam_set_die_handler('ajax');
+
+			add_action('wp_ajax_'.$action, fn()=> wpjam_send_json(wpjam_catch($callback, wpjam_if_error(wpjam_fields($fields)->catch('get_parameter', 'POST'), 'send'))));
+		}
 	}
 
 	function wpjam_add_admin_error($msg='', $type='success'){
-		WPJAM_Admin::add_error($msg, $type);
+		if(is_wp_error($msg)){
+			$msg	= $msg->get_error_message();
+			$type	= 'error';
+		}
+
+		if($msg && $type){
+			add_action('all_admin_notices',	fn()=> wpjam_echo(wpjam_tag('div', ['is-dismissible', 'notice', 'notice-'.$type], ['p', [], $msg])));
+		}
 	}
 
 	function wpjam_add_admin_load($args){
 		if(wp_is_numeric_array($args)){
 			array_walk($args, 'wpjam_add_admin_load');
 		}else{
-			WPJAM_Admin::add_load($args);
+			wpjam_admin('add', 'load', $args);
 		}
 	}
 
@@ -666,13 +848,11 @@ if(is_admin()){
 	}
 
 	function wpjam_register_page_action($name, $args){
-		return WPJAM_Page_Action::register($name, $args);
+		return WPJAM_Page_Action::create($name, $args);
 	}
 
 	function wpjam_get_page_button($name, $args=[]){
-		$object	= WPJAM_Page_Action::get($name);
-
-		return $object ? $object->get_button($args) : '';
+		return ($object = WPJAM_Page_Action::get($name)) ? $object->get_button($args) : '';
 	}
 
 	function wpjam_register_list_table_action($name, $args){
@@ -697,16 +877,6 @@ if(is_admin()){
 
 	function wpjam_register_dashboard_widget($name, $args){
 		WPJAM_Dashboard::add_widget($name, $args);
-	}
-
-	function wpjam_get_plugin_page_setting($key='', $tab=false){
-		$object	= WPJAM_Plugin_Page::get_current();
-
-		return $object ? $object->get_setting($key, $tab) : null;
-	}
-
-	function wpjam_get_current_tab_setting($key=''){
-		return wpjam_get_plugin_page_setting($key, true);
 	}
 
 	function wpjam_chart($type, $data, $args){
@@ -764,35 +934,41 @@ wpjam_load_extends([
 
 wpjam_style('remixicon', [
 	'src'		=> fn()=> wpjam_get_static_cdn().'/remixicon/4.2.0/remixicon.min.css',
-	'method'	=> 'register',
+	'method'	=> is_admin() ? 'enqueue' : 'register',
+	'data'		=> is_admin() ? "\n".'.wp-menu-image[class*=" ri-"]:before{display:inline-block; line-height:1; font-size:20px;}' : '',
 	'priority'	=> 1
 ]);
 
-wpjam_add_pattern('key', [
+wpjam_pattern('key', [
 	'pattern'			=> '^[a-zA-Z][a-zA-Z0-9_\-]*$',
 	'custom_validity'	=> '请输入英文字母、数字和 _ -，并以字母开头！'
 ]);
 
-wpjam_add_pattern('slug', [
+wpjam_pattern('slug', [
 	'pattern'			=> '[a-z0-9_\\-]+',
 	'custom_validity'	=> '请输入小写英文字母、数字和 _ -！'
 ]);
 
-wpjam_register_error_setting([
+wpjam_map([
 	['bad_authentication',	'无权限'],
 	['access_denied',		'操作受限'],
 	['incorrect_password',	'密码错误'],
-	['undefined_method',	fn($args)=> sprintf('「%s」'.(count($args) >= 2 ? '%s' : '').'未定义', ...$args)],
-	['quota_exceeded',		fn($args)=> sprintf('%s超过上限'.(count($args) >= 2 ? '「%s」' : ''), ...$args)],
-]);
+	['undefined_method',	fn($args)=> '「%s」'.(count($args) >= 2 ? '%s' : '').'未定义'],
+	['quota_exceeded',		fn($args)=> '%s超过上限'.(count($args) >= 2 ? '「%s」' : '')],
+], fn($args)=> wpjam_add_error_setting(...$args));
 
+wpjam_register_bind('phone', '', ['domain'=>'@phone.sms']);
 wpjam_register_route('json',	['model'=>'WPJAM_JSON']);
 wpjam_register_route('txt',		['model'=>'WPJAM_Verify_TXT']);
 
 add_action('plugins_loaded',	['WPJAM_API', 'on_plugins_loaded'], 0);
 
+add_filter('register_post_type_args',	['WPJAM_Post_Type', 'filter_register_args'], 999, 2);
+add_filter('register_taxonomy_args',	['WPJAM_Taxonomy', 'filter_register_args'], 999, 3);
+
 if(is_admin()){
 	add_action('plugins_loaded',	['WPJAM_Admin', 'on_plugins_loaded']);
+	add_action('plugins_loaded',	['WPJAM_Notice', 'on_plugins_loaded']);
 }
 
 if(wpjam_is_json_request()){

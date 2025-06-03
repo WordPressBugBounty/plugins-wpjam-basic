@@ -23,8 +23,10 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				'post_list_sort_selector'	=> ['value'=>1,	'label'=>'排序下拉选择框'],
 			]],
 			'other'		=> ['title'=>'功能优化',	'sep'=>'&emsp;',	'fields'=>[
+				'other_remove_display'	=> '移除：',
 				'remove_post_tag'		=> ['value'=>0,	'label'=>'移除文章标签功能'],
 				'remove_page_thumbnail'	=> ['value'=>0,	'label'=>'移除页面特色图片'],
+				'other_add_display'		=> '<br />增强：',
 				'add_page_excerpt'		=> ['value'=>0,	'label'=>'增加页面摘要功能'],
 				'404_optimization'		=> ['value'=>0,	'label'=>'增强404页面跳转'],
 			]],
@@ -90,9 +92,8 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 	}
 
 	public static function filter_single_row($row, $id){
-		$object	= get_screen_option('object');
-
 		if(get_current_screen()->base == 'edit'){
+			$object	= wpjam_admin('type_object');
 			$row	= wpjam_preg_replace('/(<strong><a class="row-title"[^>]*>.*?<\/a>.*?)(<\/strong>$)/is', '$1 [row_action name="set" class="row-action" dashicon="edit"]$2', $row);
 
 			if(self::get_setting('post_list_ajax', 1)){
@@ -104,7 +105,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				$thumb	= get_the_post_thumbnail($id, [50,50]) ?: '';
 			}
 		}else{
-			if(self::get_setting('post_list_set_thumbnail', 1) && $object->supports('thumbnail')){
+			if(self::get_setting('post_list_set_thumbnail', 1) && wpjam_admin('tax_object')->supports('thumbnail')){
 				$thumb	= wpjam_get_term_thumbnail_url($id, [100, 100]);
 				$thumb	= $thumb ? wpjam_tag('img', ['class'=>'wp-term-image', 'src'=>$thumb, 'width'=>50, 'height'=>50]) : '';
 			}
@@ -166,7 +167,6 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 
 	public static function load($screen){
 		$base	= $screen->base;
-		$object	= $screen->get_option('object');
 
 		if($base == 'post'){
 			if(self::get_setting('disable_trackbacks')){
@@ -179,6 +179,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		}elseif(in_array($base, ['edit', 'upload'])){
 			$style	= ['.fixed .column-date{width:8%;}'];
 			$ptype	= $screen->post_type;
+			$object	= wpjam_admin('type_object');
 
 			if(self::get_setting('post_list_author_filter', 1) && $object->supports('author')){
 				add_action('restrict_manage_posts',	fn($ptype)=> wp_dropdown_users([
@@ -254,6 +255,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				];
 			}
 
+			$object	= wpjam_admin('tax_object');
 			$style	= array_merge($style ?? [], wpjam_map(['slug', 'description', 'parent'], fn($v)=> $object->supports($v) ? '' : '.form-field.term-'.$v.'-wrap{display: none;}'));	
 		}
 
@@ -281,11 +283,11 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		}
 
 		if(!empty($scripts)){
-			wpjam_add_admin_inline_script($scripts);
+			wpjam_admin('add', 'script', $scripts);
 		}
 
 		if(!empty($style)){
-			wpjam_add_admin_inline_style($style);
+			wpjam_admin('add', 'style', $style);
 		}
 	}
 
@@ -365,16 +367,16 @@ class WPJAM_Posts_Widget extends WP_Widget{
 			unset($fields['post_type']);
 		}
 
-		foreach($fields as $key => &$field){
+		wpjam_fields(wpjam_map($fields, function($field, $key){
 			$field['id']	= $this->get_field_id($key);
 			$field['name']	= $this->get_field_name($key);
 
 			if(isset($instance[$key])){
 				$field['value']	= $instance[$key];
 			}
-		}
 
-		wpjam_fields($fields, ['wrap_tag'=>'p']);
+			return $field;
+		}), ['wrap_tag'=>'p']);
 	}
 }
 

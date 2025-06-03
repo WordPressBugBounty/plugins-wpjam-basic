@@ -53,9 +53,7 @@ class WPJAM_Setting extends WPJAM_Args{
 				return;
 			}
 
-			$blog_id	= $name;
-			$name		= $type;
-			$type		= 'option';
+			[$blog_id, $name, $type]	= [$name, $type, 'option'];
 		}else{
 			if(!$name){
 				return;
@@ -161,13 +159,15 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		$sections	= $get_subs ? array_reduce($this->get_subs(), fn($carry, $sub)=> array_merge($carry, $sub->get_sections(false, false)), $sections) : $sections;
 
 		if($filter){
-			$parent	= $this->sub_name ? $this->get_parent() : $this;
-
-			foreach($parent->get_items('section_objects') as $object){
+			foreach(wpjam_sort(self::get_by(['type'=>'section', 'name'=>$this->name]), fn($v)=> $v['order'] ?? 10) as $object){
 				foreach(($object->get_arg('sections') ?: []) as $id => $section){
 					$section	= $this->parse_section($section, $id);
 
 					if(isset($sections[$id])){
+						if(wpjam_get($object, 'order', 10) > 10){
+							$sections[$id]	= wpjam_merge($section, $sections[$id]);	// 字段靠前
+						}
+
 						$sections[$id]	= wpjam_merge($sections[$id], $section);
 					}else{
 						if(isset($section['title']) && isset($section['fields'])){
@@ -186,12 +186,9 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	public function add_section(...$args){
 		$args	= is_array($args[0]) ? $args[0] : [$args[0]=> isset($args[1]['fields']) ? $args[1] : ['fields'=>$args[1]]];
 		$args	= isset($args['model']) || isset($args['sections']) ? $args : ['sections'=>$args];
-		$name	= md5(maybe_serialize($args));
-		$object = new static('', ['sub_name'=>$name]+$args);
+		$name	= md5(maybe_serialize(wpjam_map($args, fn($v)=> is_closure($v) ? spl_object_hash($v) : $v, true)));
 
-		$this->add_item($object, 'section_objects');
-
-		return self::register($this->name.'-'.$name, $object);
+		return self::register($name, new static($this->name, $args+['type'=>'section']));
 	}
 
 	public function get_fields(...$args){
@@ -317,9 +314,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			wp_die('access_denied');
 		}
 
-		if($this->flush_rewrite_rules){
-			flush_rewrite_rules();
-		}
+		flush_rewrite_rules();
 
 		$name	= wpjam_get_post_parameter('submit_name');
 		$values	= wpjam_get_data_parameter();
@@ -375,12 +370,12 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		];
 
 		$sub	= self::generate_sub_name($args);
-		$rest	= $sub ? wpjam_except($args, ['title', 'model', 'menu_page', 'admin_load', 'plugin_page', 'current_tab']) : [];
+		$rest	= $sub ? wpjam_except($args, ['model', 'menu_page', 'admin_load', 'plugin_page', 'current_tab']) : [];
 		$object	= self::get($name);
 
 		if($object){
 			if($sub){
-				return $object->update_args($rest)->register_sub($sub, $args);
+				return $object->update_args(wpjam_except($rest, 'title'))->register_sub($sub, $args);
 			}
 
 			if(is_null($object->primary)){
@@ -428,62 +423,160 @@ class WPJAM_Option_Model{
 	}
 }
 
-class WPJAM_Notice{
-	public static function add($item, $type='admin', $id=''){
-		if($type == 'admin'){
-			if(is_multisite() && $id && !get_site($id)){
-				return;
-			}
+class WPJAM_Extend extends WPJAM_Args{
+	public function load(){
+		$this->dir = maybe_callback($this->dir);
+
+		if(!is_dir($this->dir)){
+			return;
+		}
+
+		if($this->option){
+			$this->option	= wpjam_register_option($this->option, $this->to_array()+[
+				'model'			=> $this,
+				'ajax'			=> false,
+				'site_default'	=> $this->sitewide
+			]);
+
+			$extends	= array_keys(array_merge($this->get_option(), $this->get_option(true)));
 		}else{
-			if($id && !get_userdata($id)){
-				return;
+			$extends	= array_diff(scandir($this->dir), ['.', '..']);
+
+			if($plugins	= get_option('active_plugins')){
+				$extends	= array_filter($extends, fn($v)=> !in_array($v.(is_dir($this->dir.'/'.$v) ? '/'.$v : '').'.php', $plugins));
 			}
 		}
 
-		$item	= is_array($item) ? $item : ['notice'=>$item];
-		$item	+= ['type'=>'error', 'notice'=>'', 'time'=>time(), 'key'=>md5(serialize($item))];
-
-		return (self::get_instance($type, $id))->insert($item);
+		array_walk($extends, fn($extend)=> $this->handle($extend, 'include'));
 	}
 
-	public static function ajax_delete(){
-		$type	= wpjam_get_data_parameter('notice_type');
-		$key	= wpjam_get_data_parameter('notice_key');
+	private function handle($extend, $action='include'){
+		if(str_ends_with($extend, '.php')){
+			$extend	= substr($extend, 0, -4);
+		}
 
-		if($key){
-			if($type == 'admin' && !current_user_can('manage_options')){
-				wp_die('bad_authentication');
+		if($action == 'parse'){
+			return $extend;
+		}
+
+		if($extend == 'extends'){
+			return;
+		}
+
+		$file	= $this->dir.'/'.$extend;
+		$file	.= is_dir($file) ? '/'.$extend.'.php' : '.php';
+
+		if(is_file($file)){
+			if($action == 'get_data'){
+				return $this->get_file_data($file);
 			}
 
-			return (self::get_instance($type))->delete($key);
+			if(is_admin() || !str_ends_with($file, '-admin.php')){
+				include_once $file;
+			}
 		}
 	}
 
-	public static function get_instance($type='admin', $id=0){
-		$filter	= fn($items)=> array_filter(($items ?: []), fn($v)=> $v['time']>(time()-MONTH_IN_SECONDS*3) && trim($v['notice']));
+	private function get_option($site=false){
+		return $this->sanitize_callback($this->option->get_option($site));
+	}
 
-		if($type == 'user'){
-			$id	= (int)$id ?: get_current_user_id();
+	public function get_fields(){
+		return wpjam_sort(wpjam_array(array_diff(scandir($this->dir), ['.', '..']), function($k, $extend){
+			$extend	= $this->handle($extend, 'parse');
+			$data	= $this->handle($extend, 'get_data');
 
-			return wpjam_get_handler('notice:user:'.$id, [
-				'meta_key'		=> 'wpjam_notices',
-				'user_id'		=> $id,
-				'primary_key'	=> 'key',
-				'get_items'		=> fn()=> $filter(get_user_meta($this->user_id, $this->meta_key, true)),
-				'delete_items'	=> fn()=> delete_user_meta($this->user_id, $this->meta_key),
-				'update_items'	=> fn($items)=> update_user_meta($this->user_id, $this->meta_key, $items),
-			]);
+			if($data && $data['Name']){
+				$option	= $this->get_option();
+
+				if(is_multisite() && $this->sitewide){
+					$sitewide	= $this->get_option(true);
+
+					if(is_network_admin()){
+						$option	= $sitewide;
+					}elseif(!empty($sitewide[$extend])){
+						return;
+					}
+				}
+			
+				return [$extend, [
+					'value'	=> !empty($option[$extend]),
+					'title'	=> $data['URI'] ? '<a href="'.$data['URI'].'" target="_blank">'.$data['Name'].'</a>' : $data['Name'],
+					'label'	=> $data['Description']
+				]];
+			}
+		}), ['value'=>'DESC']);
+	}
+
+	public function sanitize_callback($data){
+		return wpjam_array(array_filter($data), fn($k)=> $this->handle($k, 'parse'));
+	}
+
+	public static function get_file_data($file){
+		$data	= $file ? get_file_data($file, [
+			'Name'			=> 'Name',
+			'URI'			=> 'URI',
+			'PluginName'	=> 'Plugin Name',
+			'PluginURI'		=> 'Plugin URI',
+			'Version'		=> 'Version',
+			'Description'	=> 'Description'
+		]) : [];
+
+		return $data ? wpjam_fill(['URI', 'Name'], fn($k)=> !empty($data[$k]) ? $data[$k] : ($data['Plugin'.$k] ?? ''))+$data : [];
+	}
+
+	public static function get_file_summay($file){
+		$data	= self::get_file_data($file);
+
+		return str_replace('。', '，', $data['Description']).'详细介绍请点击：<a href="'.$data['URI'].'" target="_blank">'.$data['Name'].'</a>。';
+	}
+
+	public static function create($dir, ...$args){
+		$args	= is_array($dir) ? $dir : array_merge(($args[0] ?? []), compact('dir'));
+		$hook	= wpjam_pull($args, 'hook');
+		$object	= new self($args);
+
+		if($hook){
+			wpjam_load($hook, [$object, 'load'], ($object->priority ?? 10));
 		}else{
-			$id	= (int)$id ?: get_current_blog_id();
-
-			return wpjam_get_handler('notice:admin:'.$id, [
-				'option_name'	=> 'wpjam_notices',
-				'blog_id'		=> $id,
-				'primary_key'	=> 'key',
-				'get_items'		=> fn()=> $filter(wpjam_call_for_blog($this->blog_id, 'get_option', $this->option_name)),
-				'update_items'	=> fn($items)=> wpjam_call_for_blog($this->blog_id, 'update_option', $this->option_name, $items),
-			]);
+			$object->load();
 		}
+	}
+}
+
+class WPJAM_Verify_TXT{
+	public static function get_rewrite_rule(){
+		add_filter('root_rewrite_rules', fn($rewrite)=> $GLOBALS['wp_rewrite']->root ? $rewrite : array_merge(['([^/]+)\.txt?$'=>'index.php?module=txt&action=$matches[1]'], $rewrite));
+	}
+
+	public static function redirect($action){
+		$data	= wpjam_get_option('wpjam_verify_txts') ?: [];
+		$name	= str_replace('.txt', '', $action).'.txt';
+		$txt	= array_find($data, fn($v)=> $v['name'] == $name);
+
+		if($txt	){
+			header('Content-Type: text/plain');
+			echo $txt['value'];
+
+			exit;
+		}
+	}
+
+	public static function get($name, $key=null){
+		$data	= wpjam_get_setting('wpjam_verify_txts', $name);
+
+		if($key == 'fields'){
+			return [
+				'name'	=>['title'=>'文件名称',	'type'=>'text',	'required', 'value'=>$data['name'] ?? '',	'class'=>'all-options'],
+				'value'	=>['title'=>'文件内容',	'type'=>'text',	'required', 'value'=>$data['value'] ?? '']
+			];
+		}
+
+		return $key ? ($data[$key] ?? '') : $data;
+	}
+
+	public static function set($name, $data){
+		return wpjam_update_setting('wpjam_verify_txts', $name, $data);
 	}
 }
 
@@ -539,9 +632,14 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 
 	protected function preprocess_args($args){
 		$wpdb	= $GLOBALS['wpdb'];
+		$global	= $args['global'] ?? false;
 		$table	= $args['table_name'] ?? $this->name.'meta';
 
-		$wpdb->$table ??= $args['table'] ?? $wpdb->prefix.$this->name.'meta';
+		$wpdb->$table ??= $args['table'] ?? ($global ? $wpdb->base_prefix : $wpdb->prefix).$this->name.'meta';
+
+		if($global){
+			wp_cache_add_global_groups($this->name.'_meta');
+		}
 
 		return parent::preprocess_args($args);
 	}

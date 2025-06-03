@@ -35,7 +35,7 @@ trait WPJAM_Instance_Trait{
 	}
 
 	public static function prepare_data($data, $id=0){
-		wpjam_try(fn()=> static::validate_data($data, $id));
+		wpjam_if_error(static::validate_data($data, $id), 'throw');
 
 		return static::sanitize_data($data, $id);
 	}
@@ -44,7 +44,7 @@ trait WPJAM_Instance_Trait{
 		if(array_all(['is_deletable', 'get_instance'], fn($m)=> method_exists(get_called_class(), $m))){
 			$object	= static::get_instance($id);
 
-			if($object && !wpjam_try(fn()=> $object->is_deletable())){
+			if($object && !wpjam_if_error($object->is_deletable(), 'throw')){
 				wpjam_throw('indelible', '不可删除');
 			}
 		}
@@ -153,8 +153,8 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 	}
 
 	public function save($data=[]){
-		$meta_input	= self::get_meta_type() ? wpjam_pull($data, 'meta_input') : null;
-		$data		= array_merge($this->_data, $data);
+		$meta	= self::get_meta_type() ? wpjam_pull($data, 'meta_input') : null;
+		$data	= array_merge($this->_data, $data);
 
 		if($this->_id){
 			$data	= wpjam_except($data, static::get_primary_key());
@@ -168,8 +168,8 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 				$this->_id	= $result;
 			}
 
-			if($meta_input){
-				$this->meta_input($meta_input);
+			if($meta){
+				$this->meta_input($meta);
 			}
 
 			$this->reset_data();
@@ -262,6 +262,8 @@ abstract class WPJAM_Model implements ArrayAccess, IteratorAggregate{
 }
 
 class WPJAM_Handler{
+	static $handlers	= [];
+
 	public static function call($name, $method, ...$args){
 		$method	= strtolower($method);
 		$object	= is_object($name) ? $name : self::get($name);
@@ -316,8 +318,12 @@ class WPJAM_Handler{
 				$name	= wpjam_pull($args, 'name') ?: md5(serialize($args));
 			}
 
-			return wpjam_get_item('handler', $name) ?: ($args ? self::create($name, maybe_closure($args, $name)) : null);
+			return self::$handlers[$name] ?? ($args ? self::create($name, maybe_closure($args, $name)) : null);
 		}
+	}
+
+	public static function set($name, $object){
+		return $name ? (self::$handlers[$name] = $object) : null;
 	}
 
 	public static function create($name, $args=[]){
@@ -327,13 +333,13 @@ class WPJAM_Handler{
 		}
 
 		if(is_object($args)){
-			return $name ? wpjam_set_item('handler', $name, $args) : null;
+			return self::set($name, $args);
 		}
 
 		if(!empty($args['table_name'])){
 			$name	= $name ?: $args['table_name'];
 
-			return self::create($name, new WPJAM_DB($args));
+			return self::set($name, new WPJAM_DB($args));
 		}
 
 		if(!empty($args['option_name'])){
@@ -353,17 +359,17 @@ class WPJAM_Handler{
 				$args['type']	= wpjam_pull($args, 'items_type');
 			}
 
-			return self::create($name, new WPJAM_Items($args));
+			return self::set($name, new WPJAM_Items($args));
 		}
 
 		if(!empty($args['items_model'])){	// 不建议使用了
 			$args	= wp_parse_args($args, wpjam_fill(['get_items', 'update_items'], fn($k)=> [$args['items_model'], $k]));
 
-			return self::create($name, new WPJAM_Items($args));
+			return self::set($name, new WPJAM_Items($args));
 		}
 
 		if(wpjam_pull($args, 'type') == 'option_items'){	// 不建议使用
-			return self::create($name, new WPJAM_Items(wp_parse_args($args, ['type'=>'option', 'option_name'=>$name])));
+			return self::set($name, new WPJAM_Items(wp_parse_args($args, ['type'=>'option', 'option_name'=>$name])));
 		}
 	}
 }
@@ -679,7 +685,7 @@ class WPJAM_DB extends WPJAM_Args{
 			return [];
 		}
 
-		$ids	= array_filter(array_unique($ids));
+		$ids	= $raw = array_filter(array_unique($ids));
 		$data	= $this->cache_get_multiple($ids) ?: [];
 		$data	= array_filter($data, 'is_array');
 		$ids	= array_diff($ids, array_keys($data));
@@ -703,6 +709,8 @@ class WPJAM_DB extends WPJAM_Args{
 		}
 
 		if($data){
+			$data	= wpjam_pick($data, $raw);
+
 			$this->lazyload_meta(array_keys($data));
 
 			if($this->lazyload_key){
@@ -1503,7 +1511,9 @@ class WPJAM_Items extends WPJAM_Args{
 				}
 			}
 
-			$item	= wpjam_filter($item, fn($v)=> !is_null($v));
+			if(in_array($method, ['add', 'insert'])){
+				$item	= wpjam_filter($item, fn($v)=> !is_null($v));
+			}
 		}
 
 		if($method == 'insert'){
@@ -1546,10 +1556,8 @@ class WPJAM_Items extends WPJAM_Args{
 		}
 
 		if($type == 'array' && $items && is_array($items) && in_array($this->primary_key, ['option_key','id'])){
-			foreach($items as &$item){
-				$item	= wpjam_except($item, $this->primary_key);
-				$item	= wpjam_except($item, $this->parent_key ?: []);
-			}
+			$except	= array_filter([$this->primary_key, $this->parent_key]);
+			$items	= wpjam_map($items, fn($item)=> wpjam_except($item, $except));
 		}
 
 		$result	= $this->update_items($items);
@@ -1579,9 +1587,7 @@ class WPJAM_Items extends WPJAM_Args{
 		$items	??= $this->get_items();
 
 		if($items && is_array($items)){
-			foreach($items as $id => &$item){
-				$item	= $this->parse_item($item, $id);
-			}
+			$items	= wpjam_map($items, fn($item, $id)=> $this->parse_item($item, $id));
 
 			if($this->item_type == 'array' && $this->lazyload_key){
 				wpjam_lazyload($this->lazyload_key, $items);
@@ -1689,95 +1695,6 @@ class WPJAM_Items extends WPJAM_Args{
 			if($parser){
 				return $parser($args, $type);
 			}
-		}
-	}
-}
-
-class WPJAM_Lazyloader{
-	public static function queue($name, $ids){
-		if(is_array($name)){
-			if(wp_is_numeric_array($name)){
-				array_walk($name, fn($n)=> self::queue($n, $ids));
-			}else{
-				array_walk($name, fn($n, $k)=> self::queue($n, array_column($ids, $k)));
-			}
-
-			return;
-		}
-
-		$ids	= array_unique($ids);
-		$ids	= array_filter($ids);
-
-		if(!$ids){
-			return;
-		}
-
-		if(in_array($name, ['blog', 'site'])){
-			_prime_site_caches($ids);
-		}elseif($name == 'post'){
-			_prime_post_caches($ids, false, false);
-
-			self::queue('post_meta', $ids);
-		}elseif($name == 'term'){
-			_prime_term_caches($ids);
-		}elseif($name == 'comment'){
-			_prime_comment_caches($ids);
-		}elseif(in_array($name, ['term_meta', 'comment_meta', 'blog_meta'])){
-			wp_metadata_lazyloader()->queue_objects(substr($name, 0, -5), $ids);
-		}else{
-			self::call_pending('add', $name, $ids);
-		}
-	}
-
-	public static function add($name, $args){
-		wpjam_add_item('lazyloader', $name, $args);
-	}
-
-	public static function call_pending($action, $name, ...$args){
-		$items	= array_unique(wpjam_get_items('lazyloader', $name));
-
-		if($action == 'load'){
-			if($items){
-				if($args){
-					$args[0]($items, $name);
-				}else{
-					self::remove_filter($name, $items);
-				}
-			}
-
-			$items	= [];
-		}elseif($action == 'add'){
-			if(!$items){
-				self::add_filter($name);
-			}
-
-			$items	= array_merge($items, $args[0]);
-		}
-
-		wpjam_update_items('lazyloader', $items, $name);
-	}
-
-	public static function __callStatic($method, $args){
-		if(str_ends_with($method, 'filter')){
-			$name		= $args[0];
-			$setting	= wpjam_get_item('lazyloader', $name);
-			$filter		= $setting ? $setting['filter'] : (str_ends_with($name, '_meta') ? 'get_'.$name.'data' : '');
-
-			if($filter){
-				if($method == 'remove_filter'){
-					if($filter == 'get_'.$name.'data'){
-						update_meta_cache(substr($name, 0, -5), $args[1]);
-					}else{
-						$setting['callback']($args[1]);
-					}
-				}
-
-				$method($filter, [self::class, 'callback_'.$name]);
-			}
-		}elseif(try_remove_prefix($method, 'callback_')){
-			self::call_pending('load', $method);
-
-			return array_shift($args);
 		}
 	}
 }

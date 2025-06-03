@@ -66,8 +66,7 @@ jQuery(function($){
 			{name: 'click',		selector: 'body'},
 		]},
 		{name: 'input',		selector: 'input',	events: [
-			{name: 'add_label',	selector: 'input'},
-			{name: 'click',		selector: '.query-title span',	action: 'del_label'}
+			{name: 'query_label',	selector: 'input'},
 		]},
 		{name: 'textarea',	selector: 'textarea'},
 		{name: 'select',	selector: 'select'},
@@ -75,7 +74,7 @@ jQuery(function($){
 		{name: 'show_if',	selector: '[data-show_if]'},
 		{name: 'data_type',	selector: '[data-data_type][data-query_args]'},
 		{name: 'mu',		selector: '.mu',	events: [
-			{name: 'keydown',	selector: '.mu-text input'},
+			{name: 'keydown',	selector: '.mu-text :input, .mu-fields :input'},
 			{name: 'click',		selector: '.mu .new-item',	action: 'new_item'},
 			{name: 'click',		selector: '.mu .del-item',	action: 'del_item'}
 		]},
@@ -175,7 +174,7 @@ jQuery(function($){
 			}
 		}else{
 			if(this.hasClass('mu-select')){
-				this.before($('<button>', {type:'button', text: this.data('show_option_all')})).find('label').html((i, v)=> v.replace(/(<input[^>]*type="checkbox"[^>]*>)([\u2003]+)(.*)$/, (match, p1, p2, p3) => p2+p1+p3));
+				this.before($('<button>', {type:'button', class:'selectable', text: this.data('show_option_all')})).find('label').html((i, v)=> v.replace(/(<input[^>]*type="checkbox"[^>]*>)([\u2003]+)(.*)$/, (match, p1, p2, p3) => p2+p1+p3));
 			}
 
 			if(this.find(':checkbox').length){
@@ -187,17 +186,21 @@ jQuery(function($){
 	};
 
 	$.fn.wpjam_input	= function(action){
-		if(action == 'add_label'){
-			let label	= this.data('label') || (this.hasClass('plupload-input') ? this.val().split('/').pop() : this.val());
+		if(action == 'query_label'){
+			let $label	= this.prev('span.query-label');
 
-			if(label){
-				this.before($('<span class="query-title"><span class="dashicons-before"></span>'+label+'</span>').addClass(this.closest('.tag-input').length ? '' : this.data('class')));
-			}
-		}else if(action == 'del_label'){
-			if(this.closest('.mu-text').length){
-				this.wpjam_mu('del_item');
+			if($label.length){
+				if($label.closest('.mu-text').length){
+					$label.wpjam_mu('del_item');
+				}else{
+					$label.next('input').val('').change().end().fadeOut(300, ()=> $label.remove());
+				}
 			}else{
-				this.parent().next('input').val('').change().end().fadeOut(300, ()=> this.parent().remove())
+				let label	= this.data('label') || (this.hasClass('plupload-input') ? this.val().split('/').pop() : this.val());
+
+				if(label){
+					$('<span class="query-label">'+label+'</span>').prepend($('<span class="dashicons"></span>').on('click', ()=> this.trigger('query_label'))).addClass(this.closest('.tag-input').length ? '' : this.data('class')).insertBefore(this);
+				}
 			}
 		}else{
 			let type	= this.attr('type');
@@ -290,7 +293,7 @@ jQuery(function($){
 		}
 
 		this.attr('id', up_args.container);
-		$input.before('<input type="button" id="'+up_args.browse_button+'" value="'+up_args.button_text+'" class="button">').trigger('add_label');
+		$input.before('<input type="button" id="'+up_args.browse_button+'" value="'+up_args.button_text+'" class="button">').trigger('query_label');
 
 		let uploader	= new plupload.Uploader(_.extend(up_args, {
 			url : ajaxurl,
@@ -326,7 +329,7 @@ jQuery(function($){
 					if(response.errcode){
 						alert(response.errmsg);
 					}else{
-						$input.val(response.path).trigger('add_label');
+						$input.val(response.path).trigger('query_label');
 					}
 				}
 			}
@@ -397,7 +400,7 @@ jQuery(function($){
 
 				if(!args[1]){
 					if(this.is('input')){
-						this.removeClass('hidden').prev('span.query-title').find('span').click();
+						this.trigger('query_label');
 					}else if(this.is('select')){
 						this.addClass('hidden').empty().wpjam_select().wpjam_data_type('query', items => (items.length ? this.append(items.map(item => '<option value="'+item.value+'">'+item.label+'</option>')).removeClass('hidden') : this).trigger('change.wpjam'));
 					}
@@ -421,7 +424,7 @@ jQuery(function($){
 			if($hidden){
 				this.removeAttr('name').val(this.data('label') || this.val());
 			}else{
-				this.trigger('add_label');
+				this.trigger('query_label');
 			}
 
 			return this.autocomplete({
@@ -447,7 +450,7 @@ jQuery(function($){
 						}
 
 						if(!_.isNull(ui.item.value)){
-							this.data('label', ui.item.label).trigger('add_label');
+							this.data('label', ui.item.label).trigger('query_label');
 						}
 					}
 				},
@@ -461,9 +464,7 @@ jQuery(function($){
 					this.autocomplete('close');
 				}
 			}).on('input', (e)=>{
-				if($hidden && $hidden.val() !== ''){
-					$hidden.val('');
-				}
+				$hidden.val(this.val());
 			});
 		}
 	};
@@ -479,7 +480,9 @@ jQuery(function($){
 
 		if(action == 'new_item'){
 			if(max && rest <= 0){
-				alert('最多支持'+max+'个');
+				if(args !== false){
+					alert('最多支持'+max+'个');
+				}
 
 				return args ? false : -1;
 			}
@@ -488,7 +491,9 @@ jQuery(function($){
 				let value	= $mu.wpjam_val();
 
 				if(value && _.uniq(value).length !== value.length){
-					alert('不允许重复');
+					if(args !== false){
+						alert('不允许重复');
+					}
 
 					return args ? false : -1;
 				}
@@ -502,6 +507,19 @@ jQuery(function($){
 					selected:	(data)=> $mu.wpjam_mu('add_item', (type == 'img' ? data : data.value))
 				});
 			}else{
+				let $items	= $mu.find('> .mu-item');
+				let $item	= $items.length >= 2 ? $items.eq(-2) : null;
+
+				if($item){
+					if(!$item.wpjam_mu('validate')){
+						return false;
+					}
+
+					if(type == 'fields'){
+						$item.wpjam_mu('tag_label');
+					}
+				}
+
 				$mu.wpjam_mu('add_item');
 			}
 
@@ -519,7 +537,7 @@ jQuery(function($){
 
 				$new.find('input').val(args).end().insertBefore($tmpl);
 			}else if(type == 'text'){
-				let $input	= $new.find(':input');
+				let $input	= $new.find(':input').val('');
 
 				if(args){
 					if(_.isObject(args)){
@@ -532,7 +550,7 @@ jQuery(function($){
 						$input.val(args);
 
 						if(is_tag && !$input.is('[data-data_type]')){
-							$input.trigger('add_label');
+							$input.trigger('query_label');
 						}
 					}
 
@@ -543,9 +561,9 @@ jQuery(function($){
 					}
 
 					$tmpl.find('.new-item').insertAfter($input);
-					$new.insertAfter($tmpl).wpjam_init().find('.query-title').remove();
+					$new.insertAfter($tmpl).wpjam_init();
 
-					$input.val('').focus();
+					$input.focus();
 				}
 
 				if(!is_tag && max && rest <= 1){
@@ -568,6 +586,16 @@ jQuery(function($){
 			});
 
 			return false;
+		}else if(action == 'validate'){
+			for(let input of this.find(':input').toArray()){
+				if(!input.checkValidity()){
+					input.reportValidity();
+
+					return false;
+				}
+			}
+
+			return true;
 		}else if(action == 'keydown'){
 			if(is_tag){
 				if(args.key === 'Backspace' && !this.val()){
@@ -586,27 +614,65 @@ jQuery(function($){
 			}
 
 			if(args.key === 'Enter'){
-				if(this.val() && !this.data('data_type')){
-					let rest	= $mu.wpjam_mu('new_item');
+				if($mu.is('.mu-text')){
+					if(this.val() && !this.data('data_type')){
+						let rest	= $mu.wpjam_mu('new_item');
 
-					if(rest !== -1){
-						let $items	= this.closest('.mu-text').find('.mu-item:has(input:visible)');
+						if(rest !== -1){
+							let $items	= this.closest('.mu-text').find('.mu-item:has(input:visible)');
 
-						if($items.length > 1){
-							$items.last().insertAfter(this.closest('.mu-item')).find('input').focus();
+							if($items.length > 1){
+								$items.last().insertAfter(this.closest('.mu-item')).find('input').focus();
+							}
+						}
+
+						if(is_tag){
+							if(rest === -1){
+								this.val('');
+							}else{
+								this.trigger('query_label');
+							}
 						}
 					}
+				}else if($mu.data('tag_label')){
+					let $inputs = this.closest('.mu-item').find(':input:visible');
+					let $next	= $inputs.eq($inputs.index(this)+1);
 
-					if(is_tag){
-						if(rest === -1){
-							this.val('');
+					if($next.length){
+						$next.focus().select();
+					}else{
+						let $items	= $mu.find('> .mu-item');
+						let $item	= this.closest('.mu-item');
+
+						if($item.is($items.eq(-2))){
+							let result	= $mu.wpjam_mu('new_item');
+
+							if(result && result !== -1){
+								$mu.find('.mu-item:has(:input)').last().find(':input').first().focus();
+							}
 						}else{
-							this.trigger('add_label');
+							if(!$item.wpjam_mu('validate')){
+								return false;
+							}
+
+							$item.wpjam_mu('tag_label');
 						}
 					}
 				}
 
 				return false;
+			}
+		}else if(action == 'tag_label'){
+			let tag_label	= $mu.data('tag_label');
+
+			if(tag_label && !this.has('template').length && !this.has('span.tag-label').length){
+				tag_label	= tag_label.replace(/\${(.*?)}/g, (match, name) => {
+					let $field	= this.find('[data-name="'+name+'"]');
+
+					return $field.is('select') ? $field.find('option:selected').text().trim() : $field.val();
+				});
+
+				$('<span class="tag-label">'+tag_label+'</span>').prependTo(this).append(this.find('.del-item')).on('dblclick', (e)=>$(e.target).remove());
 			}
 		}else{
 			if(type != 'fields'){
@@ -616,10 +682,6 @@ jQuery(function($){
 			let value		= $mu.data('value') || [];
 			let sortable	= $mu.is('.sortable') && !$mu.closest('.disabled, .readonly').length;
 
-			if(type == 'text' && is_row && value.length <= 1){
-				value.push(null);
-			}
-
 			if(value){
 				value.forEach(v => $mu.wpjam_mu('add_item', v));
 			}
@@ -627,17 +689,30 @@ jQuery(function($){
 			if(is_tag){
 				$mu.addClass('has-validator').on('validate.wpjam', ()=> $mu.find('input:visible').val(''));
 			}else{
-				let $items	= $mu.find('> .mu-item');
-				let btn		= $mu.data('button_text');
+				let btn	= type == 'img' ? '' : ($mu.data('button_text') || null);
 
-				if(btn || type == 'img'){
-					$items.last().append($('<a class="new-item button">'+(type == 'img' ? '' : btn)+'</a>'));
+				if(btn !== null){
+					$mu.find('> .mu-item:last').append($('<a class="new-item button">'+btn+'</a>'));
 				}
 
-				$items.append([
-					'<a class="del-item '+(is_row ? 'dashicons dashicons-no-alt' : 'button')+'">'+(is_row ? '' : '删除')+'</a>',
-					sortable && type != 'img' ? '<span class="dashicons dashicons-menu"></span>' : ''
-				]);
+				if(type == 'fields' && $mu.data('tag_label')){
+					$mu.addClass('taggable');
+				}
+
+				$mu.wpjam_each('> .mu-item', $el => {
+					$el.append([
+						'<a class="del-item '+(is_row ? 'dashicons dashicons-no-alt' : 'button')+'">'+(is_row ? '' : '删除')+'</a>',
+						sortable && type != 'img' ? '<span class="move-item dashicons dashicons-menu"></span>' : ''
+					]);
+
+					if(type == 'fields'){
+						$el.wpjam_mu('tag_label');	
+					}
+				});
+			}
+
+			if(['text', 'fields'].includes(type) && is_row){
+				$mu.wpjam_mu('new_item', false);
 			}
 
 			if(sortable){
@@ -684,7 +759,9 @@ jQuery(function($){
 
 	$.fn.wpjam_expend	= function(action){
 		if(this.is('input')){
-			this.width('').width(Math.min(522, this.prop('scrollWidth')-(this.innerWidth()-this.width())));
+			if(this.is(':visible')){
+				this.width('').width(Math.min(522, this.prop('scrollWidth')-(this.innerWidth()-this.width())));
+			}
 		}else if(this.is('textarea')){
 			if(action){
 				this.animate({height: Math.min(320, this.height('').prop('scrollHeight')+5)}, action == 'click' ? 300 : 0);
@@ -760,11 +837,6 @@ jQuery(function($){
 		events:		['mouseenter', 'mousemove', 'mouseleave', 'mouseout']
 	};
 
-	$.fn.wpjam_tooltip.rule	= {
-		selector:	'[data-tooltip], [data-description]', 
-		events:		['mouseenter', 'mousemove', 'mouseleave', 'mouseout']
-	};
-
 	$.fn.wpjam_link = function(){
 		this.attr('href', this.attr('href').replace('admin/page=', 'admin/admin.php?page='));
 	};
@@ -774,13 +846,13 @@ jQuery(function($){
 	};
 
 	$.fn.wpjam_form	= function(action){
-		let fields	= this.is('body');
+		let init	= this.is('body');
 
 		(this.is('body') ? this.find('form') : this).each(function(){
 			if(!$(this).data('initialized')){
 				$(this).data('initialized', true);
 
-				if(fields){
+				if(init){
 					$(this).wpjam_init();
 				}
 			}
@@ -941,9 +1013,8 @@ jQuery(function($){
 	});
 
 	$('body').wpjam_init([
-		{name: 'tabs',		selector: '.tabs', callback: $el => $el.tabs({activate: (e, ui)=> window.history.replaceState(null, null, ui.newTab.children('a')[0].hash)})},
-		{name: 'remixicon',	selector: '[class*="-ri-"]', callback: $el => $el.attr('class', (i, v)=> v.replace('dashicons-before dashicons-ri-', 'ri-'))},
-		{name: 'form',		selector: 'form'}
+		{name: 'tabs',	selector: '.tabs', callback: $el => $el.tabs({activate: (e, ui)=> window.history.replaceState(null, null, ui.newTab.children('a')[0].hash)})},
+		{name: 'form',	selector: 'form'}
 	]);
 });
 

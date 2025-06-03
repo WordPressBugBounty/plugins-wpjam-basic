@@ -87,8 +87,7 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 			if(self::get_setting('auto')){
 				$src	= $object->get_thumbnail_url(wpjam_parse_size($size, 2));
 			}elseif($object->supports('images')){
-				$images	= $object->images;
-				$src	= $images ? wpjam_get_thumbnail(reset($images), wpjam_parse_size($size, 2)) : ''; 
+				$src	= $object->images ? wpjam_get_thumbnail(wpjam_at($object->images, 0), wpjam_parse_size($size, 2)) : ''; 
 			}
 
 			if(!empty($src)){
@@ -108,21 +107,8 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 	}
 
 	public static function init(){
-		$taxonomies	= self::get_setting('term_thumbnail_taxonomies', []);
-
-		if($taxonomies){
-			$size	= self::get_setting('term_thumbnail_size');
-
-			if(!$size){
-				$size	= [
-					'width'		=> self::get_setting('term_thumbnail_width', 200),
-					'height'	=> self::get_setting('term_thumbnail_height', 200)
-				];
-
-				self::update_setting('term_thumbnail_size', $size);
-			}
-
-			$args	=  ['thumbnail_type'=>self::get_setting('term_thumbnail_type'), 'thumbnail_size'=>$size];
+		if($taxonomies = self::get_setting('term_thumbnail_taxonomies', [])){
+			$args	= wpjam_fill(['thumbnail_type', 'thumbnail_size'], fn($k)=> self::get_setting('term_'.$k));
 
 			foreach($taxonomies as $taxonomy){
 				$tax_object	= wpjam_get_taxonomy_object($taxonomy);

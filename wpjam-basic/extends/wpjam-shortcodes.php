@@ -17,7 +17,7 @@ class WPJAM_Shortcode{
 
 			return antispambot($content, $attr['mailto']);
 		}elseif(in_array($tag, ['bilibili', 'youku', 'tudou', 'qqv', 'sohutv'])){
-			return wpjam_video($content, $attr) ?: wp_video_shortcode(array_merge($attr, ['src'=>$content]));
+			return wp_video_shortcode(array_merge($attr, ['src'=>$content]));
 		}elseif($tag == 'code'){
 			$attr	= shortcode_atts(['type'=>'php'], $attr);
 			$type	= $attr['type'] == 'html' ? 'markup' : $attr['type'];
@@ -126,23 +126,42 @@ class WPJAM_Shortcode{
 		];
 	}
 
+	public static function filter_video_override($override, $attr, $content){
+		$src	= $attr['src'] ?? $content;
+		$src	= $src ? wpjam_found(wpjam('get', 'video_parser'), fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : '') : '';
+
+		if($src){
+			$attr	= shortcode_atts(['width'=>0, 'height'=>0], $attr);
+			$attr	= ($attr['width'] || $attr['height']) ? image_hwstring($attr['width'], $attr['height']).' style="aspect-ratio:4/3;"' : 'style="width:100%; aspect-ratio:4/3;"';
+
+			return '<iframe class="wpjam_video" '.$attr.' src="'.$src.'" scrolling="no" border="0" frameborder="no" framespacing="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>';
+		}
+
+		return $override;
+	}
+
 	public static function add_hooks(){
+		add_filter('wp_video_shortcode_override', [self::class, 'filter_video_override'], 10, 3);
+
 		wpjam_map(['hide', 'email', 'list', 'table', 'code', 'youku', 'qqv', 'bilibili', 'tudou', 'sohutv'], fn($tag)=> add_shortcode($tag,	[self::class, 'callback']));
 
-		if(is_admin()){
-			add_action('wpjam_admin_init', fn()=> wpjam_add_menu_page('wpjam-shortcodes', [
-				'parent'		=> 'wpjam-basic',
-				'menu_title'	=> '常用简码',
-				'network'		=> false,
-				'summary'		=> __FILE__,
-				'function'		=> 'list',
-				'list_table'	=> [
-					'model'			=> self::class,
-					'primary_key'	=> 'tag',
-				],
-			]));
-		}
+		wpjam_map([
+			['//www.bilibili.com/video/(BV[a-zA-Z0-9]+)',				fn($m)=> 'https://player.bilibili.com/player.html?bvid='.esc_attr($m[1])],
+			['//v.qq.com/(.*)iframe/(player|preview).html\?vid=(.+)',	fn($m)=> 'https://v.qq.com/'.esc_attr($m[1]).'iframe/player.html?vid='.esc_attr($m[3])],
+			['//v.youku.com/v_show/id_(.*?).html',						fn($m)=> 'https://player.youku.com/embed/'.esc_attr($m[1])],
+			['//www.tudou.com/programs/view/(.*?)',						fn($m)=> 'https://www.tudou.com/programs/view/html5embed.action?code='.esc_attr($m[1])],
+			['//tv.sohu.com/upload/static/share/share_play.html\#(.+)',	fn($m)=> 'https://tv.sohu.com/upload/static/share/share_play.html#'.esc_attr($m[1])],
+			['//www.youtube.com/watch\?v=([a-zA-Z0-9\_]+)',				fn($m)=> 'https://www.youtube.com/embed/'.esc_attr($m[1])],
+		], fn($args)=> wpjam_add_video_parser(...$args));
 	}
 }
 
-WPJAM_Shortcode::add_hooks();
+wpjam_add_menu_page('wpjam-shortcodes', [
+	'parent'		=> 'wpjam-basic',
+	'menu_title'	=> '常用简码',
+	'model'			=> 'WPJAM_Shortcode',
+	'network'		=> false,
+	'summary'		=> __FILE__,
+	'function'		=> 'list',
+	'list_table'	=> ['primary_key'=>'tag']
+]);

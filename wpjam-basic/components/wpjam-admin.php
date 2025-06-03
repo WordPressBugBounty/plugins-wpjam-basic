@@ -1,23 +1,46 @@
 <?php
 class WPJAM_Basic_Admin{
 	public static function on_admin_init(){
-		wpjam_map([
+		foreach([
 			'wpjam-user'	=> ['menu_title'=>'用户设置',		'order'=>16],
 			'wpjam-page'	=> ['menu_title'=>'页面设置',		'order'=>15],
 			'wpjam-links'	=> ['menu_title'=>'链接设置',		'order'=>14],
 			'wpjam-seo'		=> ['menu_title'=>'SEO 设置',	'order'=>12],
 			'wpjam-about'	=> ['menu_title'=>'关于WPJAM',	'order'=>1,	'function'=>[self::class, 'about_page']],
 			'wpjam-icons'	=> ['menu_title'=>'图标列表',		'order'=>9,	'tabs'=>['dashicons'=>['title'=>'Dashicons', 'function'=>[self::class, 'dashicons_page']]]],
-		], fn($args, $slug)=> (empty($args['function']) && !WPJAM_Menu_Page::get_tabs($slug)) ? null : wpjam_add_menu_page($slug, $args+[
-			'parent'	=> 'wpjam-basic',
-			'function'	=> 'tab',
-			'network'	=> false
-		]));
+		] as $slug => $args){
+			if($args['order'] < 10 || wpjam_filter(wpjam_admin('tabs') ?: [], fn($v)=> wpjam_get($v, 'plugin_page') == $slug)){
+				wpjam_add_menu_page($slug, $args+[
+					'parent'	=> 'wpjam-basic',
+					'function'	=> 'tab',
+					'network'	=> false
+				]);
+			}
+		}
 
 		wpjam_add_admin_load([
 			'type'	=> 'builtin_page',
 			'model'	=> self::class
 		]);
+
+		add_action('admin_menu', fn()=> $GLOBALS['menu'] += ['58.88'=> ['',	'read',	'separator'.'58.88', '', 'wp-menu-separator']]);
+
+		if(get_transient('wpjam_basic_verify')){
+			wpjam_admin('pages', wpjam_except(wpjam_admin('pages'), 'wpjam-basic.subs.wpjam-about'));
+		}elseif(WPJAM_Verify::verify()){
+			if(isset($_GET['unbind_wpjam_user'])){
+				delete_user_meta(get_current_user_id(), 'wpjam_weixin_user');
+
+				wp_redirect(admin_url('admin.php?page=wpjam-verify'));
+			}
+		}else{
+			wpjam_admin('pages', wpjam_set(wpjam_admin('pages'), 'wpjam-basic.subs', ['wpjam-verify'=> [
+				'menu_title'	=> '扩展管理',
+				'page_title'	=> '验证 WPJAM',
+				'function'		=> 'form',
+				'model'			=> 'WPJAM_Verify'
+			]]));
+		}
 	}
 
 	public static function dashicons_page(){
@@ -115,13 +138,16 @@ class WPJAM_Basic_Admin{
 
 			add_action('pre_get_comments', fn($query)=> $query->query_vars	= array_merge($query->query_vars, ['post_type'=>$post_type, 'type'=>'comment']));
 
-			(new WPJAM_Dashboard(['widgets'=>['wpjam_update'=>[
-				'title'		=> 'WordPress资讯及技巧',
-				'context'	=> 'side',
-				'callback'	=> [self::class, 'update_dashboard_widget']
-			]]]))->page_load();
+			(new WPJAM_Dashboard([
+				'name'		=> 'dashboard',
+				'widgets'	=> ['wpjam_update'=>[
+					'title'		=> 'WordPress资讯及技巧',
+					'context'	=> 'side',
+					'callback'	=> [self::class, 'update_dashboard_widget']
+				]]
+			]))->page_load();
 
-			wpjam_add_admin_inline_style([
+			wpjam_admin('add', 'style', [
 				'#dashboard_wpjam .inside{margin:0; padding:0;}',
 				'a.jam-post {border-bottom:1px solid #eee; margin: 0 !important; padding:6px 0; display: block; text-decoration: none; }',
 				'a.jam-post:last-child{border-bottom: 0;}',
@@ -133,7 +159,7 @@ class WPJAM_Basic_Admin{
 			$base	= array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base));
 
 			if($base){
-				wpjam_add_admin_inline_script("
+				wpjam_admin('add', 'script', "
 				$('tr.plugin-update-tr').each(function(){
 					let detail_link	= $(this).find('a.open-plugin-details-modal');
 					let detail_href	= detail_link.attr('href');
@@ -220,7 +246,7 @@ class WPJAM_Verify{
 
 		delete_user_meta($user_id, 'wpjam_weixin_user_failed_times');
 
-		if(empty($response) || !$response['subscribe']){
+		if(empty($response) || !is_array($response) || !$response['subscribe']){
 			delete_user_meta($user_id, 'wpjam_weixin_user');
 
 			return false;
@@ -236,7 +262,7 @@ class WPJAM_Verify{
 	}
 
 	public static function get_form(){
-		wpjam_add_admin_inline_style('.form-table th{width: 100px;}');
+		wpjam_admin('add', 'style', '.form-table th{width: 100px;}');
 
 		$qrcode	= wpjam_tag('img', ['src'=>'https://open.weixin.qq.com/qr/code?username=wpjamcom', 'style'=>'max-width:250px;'])->wrap('p')->before('p', [], '使用微信扫描下面的二维码：');
 
@@ -258,38 +284,6 @@ class WPJAM_Verify{
 			]
 		];
 	}
-
-	public static function on_admin_init(){
-		$menu_page	= wpjam_get_item('menu_page', 'wpjam-basic');
-
-		if(get_transient('wpjam_basic_verify')){
-			if($menu_page){
-				wpjam_set_item('menu_page', 'wpjam-basic', wpjam_except($menu_page, 'subs.wpjam-about'));
-			}
-		}elseif(self::verify()){
-			if(isset($_GET['unbind_wpjam_user'])){
-				delete_user_meta(get_current_user_id(), 'wpjam_weixin_user');
-
-				wp_redirect(admin_url('admin.php?page=wpjam-verify'));
-			}
-		}else{
-			if($menu_page && isset($menu_page['subs'])){
-				$menu_page['subs']	= wpjam_pick($menu_page['subs'], ['wpjam-basic'])+['wpjam-verify'=> [
-					'parent'		=> 'wpjam-basic',
-					'order'			=> 3,
-					'menu_title'	=> '扩展管理',
-					'page_title'	=> '验证 WPJAM',
-					'function'		=> 'form',
-					'form'			=> [self::class, 'get_form']
-				]];
-
-				wpjam_set_item('menu_page', 'wpjam-basic', $menu_page);
-			}
-		}
-	}
 }
 
-add_action('admin_menu', fn()=> $GLOBALS['menu'] += ['58.88'=> ['',	'read',	'separator'.'58.88', '', 'wp-menu-separator']]);
-
 add_action('wpjam_admin_init',	['WPJAM_Basic_Admin', 'on_admin_init'], 99);
-add_action('wpjam_admin_init',	['WPJAM_Verify', 'on_admin_init'], 100);

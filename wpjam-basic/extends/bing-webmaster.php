@@ -59,9 +59,7 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 		$current	= untrailingslashit(site_url());
 
 		if($current != $site_url){
-			foreach($urls as &$url){
-				$url	= str_replace($current, $site_url, $url);
-			}
+			$urls	= wpjam_map($urls, fn($url)=> str_replace($current, $site_url, $url));
 		}
 
 		$api_url	= 'https://ssl.bing.com/webmaster/api.svc/json/SubmitUrlbatch?apikey='.$api_key;

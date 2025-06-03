@@ -164,15 +164,9 @@ if(is_admin()){
 		'title'			=> '角色管理',
 		'order'			=> 8,
 		'capability'	=> 'edit_roles',
-		'map_meta_cap'	=> ['WPJAM_Role', 'map_meta_cap'],
+		'model'			=> 'WPJAM_Role',
 		'function'		=> 'list',
-		'list_table'	=> [
-			'singular'		=> 'wpjam-role',
-			'plural'		=> 'wpjam-roles',
-			'primary_key'	=> 'role',
-			'capability'	=> 'edit_roles',
-			'model'			=> 'WPJAM_Role',
-		]
+		'list_table'	=> ['singular'=>'role',	'plural'=>'roles',	'primary_key'=>'role']
 	]);
 
 	wpjam_add_admin_load([

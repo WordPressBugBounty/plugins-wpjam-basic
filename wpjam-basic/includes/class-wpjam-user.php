@@ -185,7 +185,7 @@ class WPJAM_User{
 	}
 
 	public static function get_path_fields(){
-		return ['author' => ['type'=>'select', 'options'=>fn()=> wp_list_pluck(self::get_authors(), 'display_name', 'ID')]];
+		return ['author' => ['type'=>'select', 'options'=>fn()=> wp_list_pluck(WPJAM_User::get_authors(), 'display_name', 'ID')]];
 	}
 
 	public static function options_callback($field){
@@ -334,12 +334,11 @@ class WPJAM_Bind extends WPJAM_Register{
 	}
 
 	public function bind_openid($meta_type, $object_id, $openid){
-		wpjam_register_error_setting('is_bound', '已绑定其他账号，请先解绑再试！');
-
+		$bound_msg	= '已绑定其他账号，请先解绑再试！';
 		$current	= $this->get_openid($meta_type, $object_id);
 
 		if($current && $current != $openid){
-			return new WP_Error('is_bound');
+			return new WP_Error('is_bound', $bound_msg);
 		}
 
 		$exists	= $this->get_by_openid($meta_type, $openid);
@@ -349,7 +348,7 @@ class WPJAM_Bind extends WPJAM_Register{
 		}
 
 		if($exists && $exists->id != $object_id){
-			return new WP_Error('is_bound');
+			return new WP_Error('is_bound', $bound_msg);
 		}
 
 		$this->update_value($openid, $meta_type.'_id', $object_id);
@@ -709,7 +708,7 @@ class WPJAM_User_Signup extends WPJAM_Register{
 	// 	}
 	// }
 
-	public function registered($count){
+	public function registered(){
 		foreach(['login', 'bind'] as $action){
 			wpjam_register_ajax($this->name.'-'.$action, [
 				'nopriv'	=> true,
@@ -740,6 +739,112 @@ class WPJAM_User_Signup extends WPJAM_Register{
 		$args['type']	= $type;
 
 		return self::register(new $model($name, $args));
+	}
+
+	public static function on_admin_init(){
+		if($objects	= self::get_registereds()){
+			if($binds = array_filter($objects, fn($o)=> $o->bind)){
+				wpjam_add_menu_page([
+					'parent'		=> 'users',
+					'menu_slug'		=> 'wpjam-bind',
+					'menu_title'	=> '账号绑定',
+					'order'			=> 20,
+					'capability'	=> 'read',
+					'function'		=> 'tab',
+					'tabs'			=> fn()=> wpjam_map($binds, fn($object)=> [
+						'title'			=> $object->title,
+						'capability'	=> 'read',
+						'function'		=> 'form',
+						'form'			=> fn()=> array_merge([
+							'callback'		=> [$object, 'ajax_response'],
+							'capability'	=> 'read',
+							'validate'		=> true,
+							'response'		=> 'redirect'
+						], $object->get_attr('bind', 'admin'))
+					])
+				]);
+			}
+
+			wpjam_add_admin_load([
+				'base'		=> 'users',
+				'callback'	=> fn()=> wpjam_register_list_table_column('openid', [
+					'title'		=> '绑定账号',
+					'order'		=> 20,
+					'callback'	=> fn($user_id)=> implode('<br /><br />', array_filter(wpjam_map($objects, fn($object)=> ($openid = $object->get_openid($user_id)) ? $object->title.'：<br />'.$openid : '')))
+				])
+			]);
+		}
+	}
+
+	public static function on_login_init(){
+		wp_enqueue_script('wpjam-ajax');
+
+		$action		= wpjam_get_request_parameter('action', ['default'=>'login']);
+		$objects	= in_array($action, ['login', 'bind']) ? self::get_registereds([$action=>true]) : [];
+
+		if($objects){
+			$type	= wpjam_get_request_parameter($action.'_type');
+
+			if($action == 'login'){
+				$type	= $type ?: apply_filters('wpjam_default_login_type', 'login');
+				$type	= $type ?: ($_SERVER['REQUEST_METHOD'] == 'POST' ? 'login' : array_key_first($objects));
+
+				if(isset($objects[$type])){
+					wpjam_call($objects[$type]->login_action);
+				}
+
+				if(empty($_COOKIE[TEST_COOKIE])){
+					$_COOKIE[TEST_COOKIE]	= 'WP Cookie check';
+				}
+
+				$objects['login']	= '使用账号和密码登录';
+			}else{
+				if(!is_user_logged_in()){
+					wp_die('登录之后才能执行绑定操作！');
+				}
+
+				add_filter('login_display_language_dropdown', '__return_false');
+			}
+
+			$type	= ($type == 'login' || ($type && isset($objects[$type]))) ? $type : array_key_first($objects);
+	
+			foreach($objects as $name => $object){
+				if($name == 'login'){
+					$data	= ['type'=>'login'];
+					$title	= $object;
+				}else{
+					$data	= ['type'=>$name, 'action'=>'get-'.$name.'-'.$action];
+					$title	= $action == 'bind' ? '绑定'.$object->title : $object->login_title;
+
+					add_action('login_footer',	fn()=> wpjam_call([$object, $action.'_script']), 1000);
+				}
+
+				$append[]	= ['a', ['class'=>($type == $name ? 'current' : ''), 'data'=>$data], $title];
+			}
+
+			wp_enqueue_script('wpjam-login', wpjam_url(dirname(__DIR__).'/static/login.js'), ['wpjam-ajax']);
+
+			add_action('login_form', fn()=> wpjam_echo(wpjam_tag('p')->add_class('types')->data('action', $action)->append($append)));
+		}
+
+		wp_add_inline_style('login', join("\n", [
+			'.login .message, .login #login_error{margin-bottom: 0;}',
+			'.code_wrap label:last-child{display:flex;}',
+			'.code_wrap input.button{margin-bottom:10px;}',
+			'.login form .input, .login input[type=password], .login input[type=text]{font-size:20px; margin-bottom:10px;}',
+
+			'p.types{line-height:2; float:left; clear:left; margin-top:10px;}',
+			'p.types a{text-decoration: none; display:block;}',
+			'p.types a.current{display:none;}',
+			'div.fields{margin-bottom:10px;}',
+		]));
+	}
+
+	public static function add_hooks(){
+		if(wp_using_ext_object_cache()){
+			add_action('login_init',		[self::class, 'on_login_init']);
+			add_action('wpjam_admin_init',	[self::class, 'on_admin_init']);
+		}
 	}
 }
 
@@ -833,5 +938,104 @@ class WPJAM_User_Qrcode_Signup extends WPJAM_User_Signup{
 				'action'	=> ['type'=>'hidden',	'value'=>$action],
 			];
 		}
+	}
+}
+
+class WPJAM_Notice{
+	public static function add($item, $type='admin', $id=''){
+		if($type == 'admin'){
+			if(is_multisite() && $id && !get_site($id)){
+				return;
+			}
+		}else{
+			if($id && !get_userdata($id)){
+				return;
+			}
+		}
+
+		$item	= is_array($item) ? $item : ['notice'=>$item];
+		$item	+= ['type'=>'error', 'notice'=>'', 'time'=>time(), 'key'=>md5(serialize($item))];
+
+		return (self::get_instance($type, $id))->insert($item);
+	}
+
+	public static function ajax_delete(){
+		$type	= wpjam_get_data_parameter('notice_type');
+		$key	= wpjam_get_data_parameter('notice_key');
+
+		if($key){
+			if($type == 'admin' && !current_user_can('manage_options')){
+				wp_die('bad_authentication');
+			}
+
+			return (self::get_instance($type))->delete($key);
+		}
+	}
+
+	public static function get_instance($type='admin', $id=0){
+		$filter	= fn($items)=> array_filter(($items ?: []), fn($v)=> $v['time']>(time()-MONTH_IN_SECONDS*3) && trim($v['notice']));
+
+		if($type == 'user'){
+			$id	= (int)$id ?: get_current_user_id();
+
+			return wpjam_get_handler('notice:user:'.$id, [
+				'meta_key'		=> 'wpjam_notices',
+				'user_id'		=> $id,
+				'primary_key'	=> 'key',
+				'get_items'		=> fn()=> $filter(get_user_meta($this->user_id, $this->meta_key, true)),
+				'delete_items'	=> fn()=> delete_user_meta($this->user_id, $this->meta_key),
+				'update_items'	=> fn($items)=> update_user_meta($this->user_id, $this->meta_key, $items),
+			]);
+		}else{
+			$id	= (int)$id ?: get_current_blog_id();
+
+			return wpjam_get_handler('notice:admin:'.$id, [
+				'option_name'	=> 'wpjam_notices',
+				'blog_id'		=> $id,
+				'primary_key'	=> 'key',
+				'get_items'		=> fn()=> $filter(wpjam_call_for_blog($this->blog_id, 'get_option', $this->option_name)),
+				'update_items'	=> fn($items)=> wpjam_call_for_blog($this->blog_id, 'update_option', $this->option_name, $items),
+			]);
+		}
+	}
+
+	public static function on_admin_notices(){
+		self::ajax_delete();
+
+		foreach((current_user_can('manage_options') ? ['user', 'admin'] : ['user']) as $type){
+			$object	= self::get_instance($type);
+
+			foreach($object->get_items() as $key => $item){
+				$item	+= ['class'=>'is-dismissible', 'title'=>'', 'modal'=>0];
+				$notice	= trim($item['notice']);
+				$notice	.= !empty($item['admin_url']) ? (($item['modal'] ? "\n\n" : ' ').'<a style="text-decoration:none;" href="'.add_query_arg(['notice_key'=>$key, 'notice_type'=>$type], home_url($item['admin_url'])).'">点击查看<span class="dashicons dashicons-arrow-right-alt"></span></a>') : '';
+
+				$notice	= wpautop($notice).wpjam_get_page_button('delete_notice', ['data'=>['notice_key'=>$key, 'notice_type'=>$type]]);
+
+				if($item['modal']){
+					if(empty($modal)){	// 弹窗每次只显示一条
+						$modal	= $notice;
+						$title	= $item['title'] ?: '消息';
+
+						echo '<div id="notice_modal" class="hidden" data-title="'.esc_attr($title).'">'.$modal.'</div>';
+					}
+				}else{
+					echo '<div class="notice notice-'.$item['type'].' '.$item['class'].'">'.$notice.'</div>';
+				}
+			}
+		}
+	}
+
+	public static function on_plugins_loaded(){
+		wpjam_register_page_action('delete_notice', [
+			'button_text'	=> '删除',
+			'tag'			=> 'span',
+			'class'			=> 'hidden delete-notice',
+			'validate'		=> true,
+			'direct'		=> true,
+			'callback'		=> [self::class, 'ajax_delete'],
+		]);
+
+		add_action('admin_notices',	[self::class, 'on_admin_notices']);
 	}
 }

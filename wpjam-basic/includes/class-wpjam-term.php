@@ -164,7 +164,7 @@ class WPJAM_Term{
 		if(isset($data['taxonomy'])){
 			$tax	= $data['taxonomy'];
 
-			if(!taxonomy_exists($taxonomy)){
+			if(!taxonomy_exists($tax)){
 				return new WP_Error('invalid_taxonomy');
 			}
 		}else{
@@ -493,10 +493,6 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 			if(!$value || !class_exists($value) || !is_subclass_of($value, 'WPJAM_Term')){
 				return 'WPJAM_Term';
 			}
-		}elseif($key == 'filterable'){
-			if(is_null($value)){
-				return $this->name == 'category';
-			}
 		}elseif($key == 'permastruct'){
 			$value	??= $this->call_model('get_'.$key);
 			$value	= $value ? trim($value, '/') : $value;
@@ -519,20 +515,15 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 
 	protected function preprocess_args($args){
 		$args	= parent::preprocess_args($args);
-		$args	+= ['_jam'=>true];
+		$args	+= ['supports'=>['slug', 'description', 'parent']]+(empty($args['_jam']) ? [] : [
+			'rewrite'			=> true,
+			'show_ui'			=> true,
+			'show_in_nav_menus'	=> false,
+			'show_admin_column'	=> true,
+			'hierarchical'		=> true,
+		]);
 
-		if($args['_jam']){
-			$args += [
-				'rewrite'			=> true,
-				'show_ui'			=> true,
-				'show_in_nav_menus'	=> false,
-				'show_admin_column'	=> true,
-				'hierarchical'		=> true,
-			];
-		}
-
-		$supports			= wpjam_pull($args, 'supports', ['slug', 'description', 'parent']) ?: [];
-		$args['supports']	= wpjam_array($supports, fn($k, $v)=> is_numeric($k) ? [$v, true] : [$k, $v]);
+		$args['supports']	= wpjam_array($args['supports'], fn($k, $v)=> is_numeric($k) ? [$v, true] : [$k, $v]);
 
 		if($this->name == 'category'){
 			$args['query_key']		= 'cat';
@@ -545,10 +536,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		}else{
 			$args['query_key']		= $this->name.'_id';
 			$args['column_name']	= 'taxonomy-'.$this->name;
-
-			if(empty($args['plural'])){
-				$args['plural']	= $this->name.'s';
-			}
+			$args['plural']			??= $this->name.'s';
 		}
 
 		return $args;
@@ -557,31 +545,28 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 	public function to_array(){
 		$this->filter_args();
 
-		if(doing_filter('register_taxonomy_args')){
-			if($this->permastruct){
-				$this->permastruct	= str_replace('%term_id%', '%'.$this->query_key.'%', $this->permastruct);
+		if($this->permastruct){
+			$this->permastruct	= str_replace('%term_id%', '%'.$this->query_key.'%', $this->permastruct);
 
-				if(strpos($this->permastruct, '%'.$this->query_key.'%')){
-					$this->remove_support('slug');
+			if(strpos($this->permastruct, '%'.$this->query_key.'%')){
+				$this->remove_support('slug');
 
-					$this->query_var	??= false;
-				}
-
-				$this->rewrite	= $this->rewrite ?: true;
+				$this->query_var	??= false;
 			}
 
-			if($this->levels == 1){
-				$this->remove_support('parent');
-			}else{
-				if(!$this->supports('parent')){
-					$this->add_support('parent');
-				}
-			}
+			$this->rewrite	= $this->rewrite ?: true;
+		}
 
-			if($this->rewrite && $this->_jam){
-				$this->rewrite	= is_array($this->rewrite) ? $this->rewrite : [];
-				$this->rewrite	= $this->rewrite+['with_front'=>false, 'hierarchical'=>false];
+		if($this->levels == 1){
+			$this->remove_support('parent');
+		}else{
+			if(!$this->supports('parent')){
+				$this->add_support('parent');
 			}
+		}
+
+		if($this->rewrite && $this->_jam){
+			$this->rewrite	= (is_array($this->rewrite) ? $this->rewrite : [])+['with_front'=>false, 'hierarchical'=>false];
 		}
 
 		return $this->args;
@@ -757,30 +742,6 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		}
 	}
 
-	public function registered_callback($name, $object_type, $args){
-		if($this->name == $name){
-			if($this->permastruct){
-				if(strpos($this->permastruct, '%'.$this->query_key.'%')){
-					add_rewrite_tag('%'.$this->query_key.'%', '([^/]+)', 'taxonomy='.$name.'&term_id=');
-
-					remove_rewrite_tag('%'.$name.'%');
-				}
-
-				if($this->permastruct == '%'.$name.'%'){
-					if(!is_admin()){
-						add_filter('request',	[$this, 'filter_request']);
-					}
-				}else{
-					add_permastruct($name, $this->permastruct, $args['rewrite']);
-				}
-
-				add_filter('pre_term_link',	[$this, 'filter_link'], 1, 2);
-			}
-
-			wpjam_call($this->registered_callback, $name, $this);
-		}
-	}
-
 	public function filter_labels($labels){
 		$labels	= (array)$labels;
 		$name	= $labels['name'];
@@ -793,103 +754,114 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 			$replace	= [$name, ucfirst($name), $name];
 		}
 
-		foreach($labels as $key => &$label){
-			if($label && $label != $name){
-				$label	= str_replace($search, $replace, $label);
-			}
-		}
-
-		return array_merge($labels, (array)($this->labels ?: []));
-	}
-
-	public function filter_request($query_vars){
-		$structure	= get_option('permalink_structure');
-		$request	= $GLOBALS['wp']->request;
-		
-		if($structure && $request && ($this->hierarchical || !str_contains($request, '/')) && !isset($query_vars['module'])){
-			if($GLOBALS['wp_rewrite']->use_verbose_page_rules){
-				if(!empty($query_vars['error']) && $query_vars['error'] == '404'){
-					$key	= 'error';
-
-					if(preg_match("#(.?.+?)/page/?([0-9]{1,})/?$#", $request, $matches)){
-						$request	= $matches[1];
-						$query_vars	+= ['paged'=>$matches[2]];
-					}
-				}elseif(str_starts_with($structure, '/%postname%')){
-					if(!empty($query_vars['name'])){
-						$key	= 'name';
-					}
-				}elseif(str_starts_with($structure, '/%author%')){
-					if(!str_starts_with($request, 'author/') && !empty($query_vars['author_name'])){
-						$key	= ['author_name', 'name'];
-					}
-				}elseif(str_starts_with($structure, '/%category%')){
-					if($this->name != 'category' && !str_starts_with($request, 'category/') && !empty($query_vars['category_name'])){
-						$key	= ['category_name', 'name'];
-					}
-				}
-			}else{
-				if(!empty($query_vars['pagename']) && !isset($_GET['page_id']) && !isset($_GET['pagename'])){
-					$key	= 'pagename';
-				}
-			}
-
-			if(!empty($key)){
-				$k		= is_array($key) ? reset($key) : $key;
-				$name	= $k == 'error' ? $request : ($query_vars[$k] ?? $request);
-				$name	= $this->hierarchical ? wp_basename($name) : $request;
-				$terms	= wpjam_get_all_terms($this->name);
-
-				if($terms && in_array($name, array_column($terms, 'slug'))){
-					$query_vars	= wpjam_except($query_vars, $key);
-
-					if($this->name == 'category'){
-						$query_vars['category_name']	= $name;
-					}else{
-						$query_vars['taxonomy']	= $this->name;
-						$query_vars['term']		= $name;
-					}
-				}
-			}
-		}
-
-		return $query_vars;
-	}
-
-	public function filter_link($term_link, $term){
-		if($term->taxonomy == $this->name){
-			if(strpos($this->permastruct, '%'.$this->query_key.'%')){
-				$term_link	= str_replace('%'.$this->query_key.'%', $term->term_id, $term_link);
-			}elseif($this->permastruct == '%'.$this->name.'%'){
-				$term_link	= $this->permastruct;
-			}
-		}
-
-		return $term_link;
+		return array_merge(wpjam_map($labels, fn($label)=> ($label && $label != $name) ? str_replace($search, $replace, $label) : $label), (array)($this->labels ?: []));
 	}
 
 	public function registered(){
-		add_action('registered_taxonomy_'.$this->name,	[$this, 'registered_callback'], 10, 3);
+		add_action('registered_taxonomy_'.$this->name, function($name, $object_type, $args){
+			$struct	= $this->permastruct;
 
-		if($this->_jam){
-			if(is_admin() && $this->show_ui){
-				add_filter('taxonomy_labels_'.$this->name,	[$this, 'filter_labels']);
+			if($struct == '%'.$name.'%'){
+				if(!is_admin()){
+					add_filter('request',	[self::class, 'filter_request']);
+				}
+
+				add_filter('pre_term_link',	fn($link, $term)=> $term->taxonomy == $name ? $struct : $link, 1, 2);
+			}elseif($struct){
+				$tag	= '%'.$this->query_key.'%';
+
+				if(str_contains($struct, $tag)){
+					add_rewrite_tag($tag, '([^/]+)', 'taxonomy='.$name.'&term_id=');
+
+					add_filter('pre_term_link',	fn($link, $term)=> $term->taxonomy == $name ? str_replace($tag, $term->term_id, $link) : $link, 1, 2);
+				}
+
+				if(!str_contains($struct, '%'.$name.'%')){
+					remove_rewrite_tag('%'.$name.'%');
+				}
+
+				add_permastruct($name, $struct, $args['rewrite']);
 			}
 
-			wpjam_init(fn()=> register_taxonomy($this->name, $this->object_type, $this->to_array()));
+			if($this->registered_callback){
+				wpjam_call($this->registered_callback, $name, $object_type, $args);
+			}
+		}, 10, 3);
 
-			if($this->options){
-				wpjam_map($this->options, fn($option, $name)=> wpjam_register_term_option($name, $option+['taxonomy'=>$this->name]));
+		wpjam_init(function(){
+			if($this->_jam){
+			
+				if(is_admin() && $this->show_ui){
+					add_filter('taxonomy_labels_'.$this->name,	[$this, 'filter_labels']);
+				}
+
+				register_taxonomy($this->name, $this->object_type, $this->get_args());
+
+				wpjam_map($this->options ?:[], fn($option, $name)=> wpjam_register_term_option($name, $option+['taxonomy'=>$this->name]));
+			}
+		});
+	}
+
+	public static function filter_request($vars){
+		$structure	= get_option('permalink_structure');
+		$request	= $GLOBALS['wp']->request;
+		$no_base	= ($structure && $request && !isset($vars['module'])) ? array_filter(get_taxonomies(), fn($tax)=> wpjam_get_taxonomy_setting($tax, 'permastruct') == '%'.$tax.'%') : [];
+
+		if($no_base){
+			if($GLOBALS['wp_rewrite']->use_verbose_page_rules){
+				if(preg_match("#(.?.+?)/page/?([0-9]{1,})/?$#", $request, $matches)){
+					$request	= $matches[1];
+					$paged		= $matches[2];
+				}
+
+				if(!empty($vars['error']) && $vars['error'] == '404'){
+					$key	= 'error';
+				}elseif(str_starts_with($structure, '/%postname%')){
+					if(!empty($vars['name'])){
+						$key	= 'name';
+					}
+				}elseif(!str_contains($request, '/')){
+					$k	= array_find(['author', 'category'], fn($k)=> str_starts_with($structure, '/%'.$k.'%'));
+
+					if($k && !str_starts_with($request, $k.'/') && !empty($vars[$k.'_name'])){
+						$key	= [$k.'_name', 'name'];
+					}
+				}
+			}elseif(!empty($vars['pagename']) && !isset($_GET['page_id']) && !isset($_GET['pagename'])){
+				$key	= 'pagename';
+			}
+
+			if(!empty($key)){
+				foreach($no_base as $tax){
+					$name	= is_taxonomy_hierarchical($tax) ? wp_basename($request) : $request;
+
+					if(array_find(wpjam_get_all_terms($tax), fn($term)=> $term->slug == $name)){
+						$vars	= wpjam_except($vars, $key);
+
+						if($tax == 'category'){
+							$vars['category_name']	= $name;
+						}else{
+							$vars['taxonomy']	= $tax;
+							$vars['term']		= $name;
+						}
+
+						if(!empty($paged)){
+							$vars['paged']	= $paged;
+						}
+
+						break;
+					}
+				}				
 			}
 		}
+
+		return $vars;
 	}
 
 	public static function filter_register_args($args, $name, $object_type){
 		if(did_action('init') || empty($args['_builtin'])){
-			$object	= self::get($name);
-			$object	= $object ? $object->update_args($args) : self::register($name, array_merge($args, ['_jam'=>false, 'object_type'=>$object_type]));
-
-			return $object->to_array();
+			$object	= self::get($name) ?: self::register($name, array_merge($args, ['object_type'=>$object_type]));
+			$args	= $object->to_array();
 		}
 
 		return $args;
@@ -934,6 +906,17 @@ class WPJAM_Terms{
 		}else{
 			return $parse ? array_map('wpjam_get_term', $terms) : $terms;
 		}
+	}
+
+	public static function cleanup(){	// term_relationships 的 object_id 可能不是 post_id 如果要清理，需要具体业务逻辑的时候，进行清理。
+		$wpdb	= $GLOBALS['wpdb'];
+		$sql	= "SELECT tr.* FROM {$wpdb->term_relationships} tr LEFT JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id WHERE tt.term_taxonomy_id is NULL;";
+
+		if($results	= $wpdb->get_results($sql)){
+			$wpdb->query(str_replace("SELECT tr.* ", "DELETE tr ", $sql));
+		}
+
+		return $results;
 	}
 
 	protected static function parse_hierarchical(&$hierarchical, $parent, $depth, $args){
@@ -1001,19 +984,5 @@ class WPJAM_Terms{
 		$terms	= $terms ? array_values($terms) : [];
 
 		return [$output	=> $terms];
-	}
-
-	public static function cleanup(){
-		// term_relationships 的 object_id 可能不是 post_id 
-		// 如果要清理需要具体业务逻辑的时候，进行清理。
-
-		$wpdb		= $GLOBALS['wpdb'];
-		$results	= $wpdb->get_results("SELECT tr.* FROM {$wpdb->term_relationships} tr LEFT JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id WHERE tt.term_taxonomy_id is NULL;");
-
-		if($results){
-			$wpdb->query("DELETE tr FROM {$wpdb->term_relationships} tr LEFT JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id WHERE tt.term_taxonomy_id is NULL;");
-		}
-
-		return $results;
 	}
 }

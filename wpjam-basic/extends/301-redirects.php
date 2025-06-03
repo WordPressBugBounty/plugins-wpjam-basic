@@ -84,24 +84,16 @@ class WPJAM_Redirect extends WPJAM_Model{
 
 	public static function add_hooks(){
 		add_action('template_redirect', [self::class, 'on_template_redirect'], 99);
-
-		if(is_admin()){
-			add_action('wpjam_admin_init', fn()=> wpjam_add_menu_page('redirects', [
-				'plugin_page'	=> 'wpjam-links',
-				'title'			=> '链接跳转',
-				'summary'		=> __FILE__,
-				'function'		=> 'list',
-				'list_table'	=> [
-					'title'		=> '跳转规则',
-					'plural'	=> 'redirects',
-					'singular'	=> 'redirect',
-					'model'		=> self::class,
-				]
-			]));
-		}
 	}
 }
 
-WPJAM_Redirect::add_hooks();
+wpjam_add_menu_page('redirects', [
+	'plugin_page'	=> 'wpjam-links',
+	'title'			=> '链接跳转',
+	'summary'		=> __FILE__,
+	'function'		=> 'list',
+	'model'			=> 'WPJAM_Redirect',
+	'list_table'	=> ['title'=>'跳转规则',	'plural'=>'redirects',	'singular'=>'redirect']
+]);
 
 

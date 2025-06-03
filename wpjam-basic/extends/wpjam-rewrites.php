@@ -137,24 +137,17 @@ class WPJAM_Rewrite{
 				$wp_rewrite->rules = array_merge(array_column($rewrites, 'query', 'regex'), $wp_rewrite->rules);
 			}
 		});
-
-		if(is_admin()){
-			add_action('wpjam_admin_init', fn()=> wpjam_add_menu_page('wpjam-rewrites', [
-				'parent'		=> 'wpjam-basic',
-				'menu_title'	=> 'Rewrites',
-				'network'		=> false,
-				'summary'		=> __FILE__,
-				'capability'	=> is_multisite() ? 'manage_sites' : 'manage_options',
-				'function'		=> 'list',
-				'list_table'	=> [
-					'title'			=> 'Rewrite 规则',
-					'model'			=> self::class,
-					'primary_key'	=> 'no'
-				],
-			]));
-		}
 	}
 }
 
-WPJAM_Rewrite::add_hooks();
+wpjam_add_menu_page('wpjam-rewrites', [
+	'parent'		=> 'wpjam-basic',
+	'menu_title'	=> 'Rewrites',
+	'network'		=> false,
+	'summary'		=> __FILE__,
+	'capability'	=> is_multisite() ? 'manage_sites' : 'manage_options',
+	'model'			=> 'WPJAM_Rewrite',
+	'function'		=> 'list',
+	'list_table'	=> ['title'=>'Rewrite 规则',	'primary_key'=>'no']
+]);
 

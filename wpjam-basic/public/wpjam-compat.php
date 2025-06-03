@@ -1,5 +1,4 @@
 <?php
-class_alias('WPJAM_Verify_TXT', 'WPJAM_VerifyTXT');
 class_alias('WPJAM_Option_Items', 'WPJAM_Option');
 class_alias('WPJAM_Items', 'WPJAM_Item');
 class_alias('WPJAM_Post', 'WPJAM_PostType');
@@ -37,12 +36,6 @@ if(!function_exists('wp_hash')){
 if(!function_exists('update_usermeta_cache')){
 	function update_usermeta_cache($user_ids){
 		return update_meta_cache('user', $user_ids);
-	}
-}
-
-if(!function_exists('str_replace_deep')){
-	function str_replace_deep($s, $r, $value){
-		return map_deep($value, fn($v) => str_replace($s, $r, $v));
 	}
 }
 
@@ -127,48 +120,48 @@ if(!function_exists('is_populated')){
 }
 
 if(!function_exists('mb_strwidth')){
-	function_alias('_mb_strwidth', 'mb_strwidth');
+	function mb_strwidth($str){
+		preg_match_all('/./us', $str, $match);
+
+		return array_sum(wpjam_map($match[0], fn($char)=> ord($char) >=224 ? 2 : 1));
+	}
 }
 
 if(!function_exists('mb_strimwidth')){
-	function_alias('_mb_strimwidth', 'mb_strimwidth');
-}
+	function mb_strimwidth($str, $start, $width, $trimmarker=''){
+		preg_match_all('/./us', $str, $match);
 
-function _mb_strwidth($str){
-	preg_match_all('/./us', $str, $match);
+		$count	= count($match[0]);
+		$start	= $start < 0 ? $count-1+$start : $start;
+		$chars	= array_slice($match[0], $start);
 
-	return array_sum(wpjam_map($match[0], fn($char)=> ord($char) >=224 ? 2 : 1));
-}
-
-function _mb_strimwidth($str, $start, $width, $trimmarker=''){
-	preg_match_all('/./us', $str, $match);
-
-	$count	= count($match[0]);
-	$start	= $start < 0 ? $count-1+$start : $start;
-	$chars	= array_slice($match[0], $start);
-
-	if($width >= array_sum(wpjam_map($chars, fn($char)=> ord($char) >=224 ? 2 : 1))){
-		return implode('', $chars);
-	}
-
-	$length	= 0;
-	$result	= '';
-	$count	-= $start;
-	$width	-= strlen($trimmarker);
-
-	for($i=0; $i<$count; $i++){
-		$char	= $chars[$i];
-		$w		= ord($char) >= 224 ? 2 : 1;
-
-		if($length + $w > $width){
-			break;
+		if($width >= array_sum(wpjam_map($chars, fn($char)=> ord($char) >=224 ? 2 : 1))){
+			return implode('', $chars);
 		}
 
-		$result	.= $char;
-		$length	+= $w;
-	}
+		$length	= 0;
+		$result	= '';
+		$count	-= $start;
+		$width	-= strlen($trimmarker);
 
-	return $result.$trimmarker;
+		for($i=0; $i<$count; $i++){
+			$char	= $chars[$i];
+			$w		= ord($char) >= 224 ? 2 : 1;
+
+			if($length + $w > $width){
+				break;
+			}
+
+			$result	.= $char;
+			$length	+= $w;
+		}
+
+		return $result.$trimmarker;
+	}
+}
+
+function wpjam_loaded($action, ...$args){
+	wpjam_load('wp_loaded', fn()=> do_action($action, ...$args));
 }
 
 function wpjam_die_if_error($result){
@@ -224,23 +217,19 @@ function wpjam_migrate_option($from, $to, $default=null){
 	}
 }
 
-function wpjam_pending_objects($name){
-	return WPJAM_Lazyloader::get_pending($name);
-}
-
 function wpjam_generate_random_string($length){
 	return wp_generate_password($length, false);
 }
 
 function wpjam_http_request($url, $args=[], $err=[], &$headers=null){
-	$response	= WPJAM_Http::request($url, $args, $err);
+	$result	= WPJAM_Http::request($url, $args, $err);
 
-	if(!is_wp_error($response)){
-		$headers	= $response['headers'];
-		$response	= $response['body'];
+	if(!is_wp_error($result)){
+		$headers	= $result['headers'];
+		$result		= $result['body'];
 	}
 
-	return $response;
+	return $result;
 }
 
 function wpjam_generate_query_data($args, $type='data'){
@@ -312,11 +301,7 @@ function wpjam_set_current_user($user){
 function wpjam_get_current_commenter(){
 	$commenter	= wp_get_current_commenter();
 
-	if(empty($commenter['comment_author_email'])){
-		return new WP_Error('access_denied');
-	}
-
-	return $commenter;
+	return empty($commenter['comment_author_email']) ? new WP_Error('access_denied') : $commenter;
 }
 
 function wpjam_wrap_tag($text, $tag='', $attr=[]){
@@ -345,24 +330,17 @@ function wpjam_parse_data_type($args, $output='args'){
 
 function wpjam_slice_data_type(&$args, $strip=false){
 	$result	= WPJAM_Data_Type::prepare($args);
-
-	if($strip && $result){
-		$args	= wpjam_except($args, wpjam_pull($args, 'data_type'));
-	}
+	$args	= ($strip && $result) ? wpjam_except($args, wpjam_pull($args, 'data_type')) : $args;
 
 	return $result;
 }
 
 function wpjam_option_get_setting($option, $setting='', $default=null){
-	$object = wpjam_get_option_object($option);
-
-	return $object ? $object->get_setting($setting, $default) : $default;
+	return ($object = wpjam_get_option_object($option)) ? $object->get_setting($setting, $default) : $default;
 }
 
 function wpjam_option_update_setting($option, $setting, $value){
-	$object = wpjam_get_option_object($option);
-
-	return $object ? $object->update_setting($setting, $value) : null;
+	return ($object = wpjam_get_option_object($option)) ? $object->update_setting($setting, $value) : null;
 }
 
 function wpjam_get_option_setting($name){
@@ -374,7 +352,7 @@ function wpjam_add_option_section_fields($option_name, $section_id, $fields){
 }
 
 function wpjam_get_admin_prefix(){
-	return WPJAM_Admin::get_prefix();
+	return wpjam_admin()->prefix;
 }
 
 function wpjam_get_page_summary($type='page'){
@@ -389,6 +367,14 @@ function wpjam_call_list_table_model_method($method, ...$args){
 	return;
 }
 
+function wpjam_add_admin_inline_script($data){
+	wpjam_admin('add', 'script', $data);
+}
+
+function wpjam_add_admin_inline_style($data){
+	wpjam_admin('add', 'style', $data);
+}
+
 function wpjam_register_builtin_page_load(...$args){
 	$args	= is_array($args[0]) ? $args[0] : $args[1];
 
@@ -401,21 +387,16 @@ function wpjam_register_plugin_page_load(...$args){
 	return wpjam_add_admin_load(['type'=>'plugin_page']+$args);
 }
 
-function wpjam_get_ajax_button($args){
-	$name	= wpjam_pull($args, 'action');
+function wpjam_get_ajax_button($args, $type='button'){
+	if($name = wpjam_pull($args, 'action')){
+		$object	= WPJAM_Page_Action::get($name) ?: wpjam_register_page_action($name, $args);
 
-	if($name){
-		$object	= WPJAM_Page_Action::get($name);
-		$object	= $object ?: wpjam_register_page_action($name, $args);
-
-		return $object->get_button($args);
+		return $type == 'form' ? $object->get_form() : $object->get_button($args);
 	}
 }
 
 function wpjam_get_ajax_form($args){
-	$name	= wpjam_pull($args, 'action');
-
-	return $name ? wpjam_register_page_action($name, $args)->get_form() : '';
+	return wpjam_get_ajax_button($args, 'form');
 }
 
 function wpjam_ajax_button($args){
@@ -430,8 +411,32 @@ function wpjam_get_nonce_action($key){
 	return ($GLOBALS['plugin_page'] ?? $GLOBALS['current_screen']->id).'-'.$key;
 }
 
+function wpjam_get_plugin_page_setting($key='', $tab=false){
+	if($key == 'query_data'){
+		return wpjam_admin('query_data');
+	}
+
+	if($object = wpjam_admin('plugin_page')){
+		[$tab, $default]	= str_ends_with($key, '_name') ? [true, $object->menu_slug] : [$tab, null]; 
+
+		if($tab && $object->type == 'tab'){
+			$object = wpjam_admin('current_tab');
+
+			if(!$object){
+				return null;
+			}
+		}
+	
+		return $key ? ($object->$key ?: $default) : $object->to_array();
+	}
+}
+
+function wpjam_get_current_tab_setting($key=''){
+	return wpjam_get_plugin_page_setting($key, true);
+}
+
 function wpjam_get_plugin_page_query_data(){
-	return wpjam_get_plugin_page_setting('query_data');
+	return wpjam_admin('query_data');
 }
 
 function wpjam_set_plugin_page_summary($summary, $append=true){
@@ -447,7 +452,7 @@ function wpjam_get_plugin_page_type(){
 }
 
 function wpjam_register_plugin_page_tab($name, $args){
-	return WPJAM_Menu_Page::add(array_merge($args, ['tab_slug'=>$name]));
+	return wpjam_admin('add', 'menu', array_merge($args, ['tab_slug'=>$name]));
 }
 
 function wpjam_get_list_table_setting($key){
@@ -467,28 +472,11 @@ function wpjam_render_list_table_column_items($id, $items, $args=[]){
 }
 
 function wpjam_register_list_table($name, $args=[]){
-	if(!wpjam_get_items('list_table')){
-		add_action('wpjam_preprocess_plugin_page', 'wpjam_preprocess_plugin_page', 10, 2);
-	}
-
-	wpjam_add_item('list_table', $name, $args);
+	add_filter(wpjam_get_filter_name($name, 'list_table'), fn()=> $args);
 }
 
 function wpjam_register_dashboard($name, $args){
-	if(!wpjam_get_items('dashboard')){
-		add_action('wpjam_preprocess_plugin_page', 'wpjam_preprocess_plugin_page', 10, 2);
-	}
-
-	wpjam_add_item('dashboard', $name, $args);
-}
-
-function wpjam_preprocess_plugin_page($page, $name){
-	$type	= $page->function;
-	$args	= in_array($type, ['list_table', 'dashboard']) ? wpjam_get_item($type, $name) : [];
-
-	if($args){
-		$page->$type	= $args;
-	}
+	add_action('wpjam_plugin_page', fn($object, $type)=> $type == 'dashboard' ? ($object->$type = $args) : null, 10, 2);
 }
 
 function wpjam_get_post_option_fields($post_type, $post_id=null){
@@ -535,10 +523,10 @@ function wpjam_list_filter($list, $args=[], $operator='AND'){
 }
 
 function wpjam_list_flatten($list, $args=[]){
-	$name		= $args['name'] ?? 'name'; 
-	$children	= $args['children'] ?? 'children'; 
+	$name	= $args['name'] ?? 'name';
+	$key	= $args['children'] ?? 'children';
 
-	return wpjam_flatten($list, $children, fn($item, $k, $d)=> [array_merge($item, [$name=>str_repeat('&emsp;', $d).$item[$name]])]);
+	return wpjam_reduce($list, fn($carry, $v, $k, $d)=> array_merge($carry, [array_merge($v, [$name=>str_repeat('&emsp;', $d).$v[$name]])]), [], $key);
 }
 
 //中文截取方式
@@ -750,8 +738,6 @@ function wpjam_get_term_thumbnail($term=null, $size='thumbnail', $crop=1, $class
 	}
 }
 
-function wpjam_display_errors(){}
-
 function wpjam_parse_field_value($field, $args=[]){
 	return wpjam_field($field)->value_callback($args);
 }
@@ -907,8 +893,9 @@ function_alias('wp_cache_delete_multiple', 'wp_cache_delete_multi');
 function_alias('wp_cache_get_multiple', 'wp_cache_get_multi');
 
 add_action('wpjam_loaded', function(){
-	function_alias('wpjam_if', 'wpjam_show_if');
+	function_alias('wpjam_get_file_summary', 'wpjam_get_extend_summary');
 	function_alias('wpjam_strip_control_chars', 'wpjam_strip_control_characters');
+	function_alias('wpjam_get_registered', 'wpjam_get_registered_object');
 
 	function_alias('wpjam_merge', 'wpjam_array_merge');
 	function_alias('wpjam_filter', 'wpjam_array_filter');
@@ -917,6 +904,7 @@ add_action('wpjam_loaded', function(){
 	function_alias('wpjam_add_admin_error', 'wpjam_admin_add_error');
 
 	function_alias('wpjam_map_meta_cap', 'wpjam_register_capability');
+	function_alias('wpjam_add_error_setting', 'wpjam_register_error_setting');
 	function_alias('wpjam_setting', 'wpjam_get_setting_object');
 	function_alias('wpjam_get_post_excerpt', 'get_post_excerpt');
 	function_alias('wpjam_attr', 'wpjam_attribute_string');
@@ -987,6 +975,25 @@ add_action('wpjam_loaded', function(){
 add_action('wpjam_api', fn($json)=> do_action('wpjam_api_template_redirect', $json));
 add_filter('rewrite_rules_array', fn($rules)=> array_merge(apply_filters('wpjam_rewrite_rules', []), $rules));
 
+if(is_admin()){
+	add_action('wpjam_plugin_page', function($object, $type){
+		if($type == 'tab'){
+			$filter	= wpjam_get_filter_name($object->menu_slug, 'tabs');
+
+			if(has_filter($filter)){
+				$object->tabs	= apply_filters($filter, $object->get_arg('tabs', [], 'callback'));
+			}
+		}elseif(in_array($type, ['option', 'list_table']) && !$object->$type){
+			$name	= $object->{$type.'_name'} ?: $object->menu_slug;
+			$filter	= wpjam_get_filter_name($name, $type == 'option' ? 'setting' : $type);
+
+			if(has_filter($filter)){
+				$object->$type	= apply_filters($filter, []);
+			}
+		}
+	}, 10, 2);
+}
+
 // add_action('wpjam_admin_init', function(){
 // 	$user_id	= get_current_user_id();
 // 	$instance	= WPJAM_User_Message::get_instance($user_id);
@@ -1014,7 +1021,7 @@ class WPJAM_Crypt extends WPJAM_Args{
 			'method'	=> 'aes-256-cbc',
 			'key'		=> '',
 			'iv'		=> '',
-			'options'	=> OPENSSL_ZERO_PADDING,	
+			'options'	=> OPENSSL_ZERO_PADDING,
 		];
 	}
 
@@ -1036,12 +1043,6 @@ class WPJAM_Crypt extends WPJAM_Args{
 
 	public static function generate_signature(...$args){
 		return wpjam_generate_signature('sha1', ...$args);
-	}
-}
-
-class WPJAM_Http{
-	public static function request($url, $args=[], $err=[]){
-		return WPJAM_API::request($url, $args, $err);
 	}
 }
 
@@ -1076,16 +1077,6 @@ class WPJAM_Content_Items extends WPJAM_Items{
 class WPJAM_Cache_Items extends WPJAM_Items{
 	public function __construct($key, $args=[]){
 		parent::__construct(array_merge($args, ['type'=>'cache', 'cache_key'=> $key]));
-	}
-}
-
-class WPJAM_Singleton extends WPJAM_Args{	// delete 2024-12-31
-	protected function __construct(){}
-
-	public static function get_instance(){
-		$name	= self::get_called();
-
-		return $GLOBALS[$name] ??= new static();
 	}
 }
 

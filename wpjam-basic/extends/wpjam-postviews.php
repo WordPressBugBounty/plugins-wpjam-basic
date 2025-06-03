@@ -167,5 +167,5 @@ if(!function_exists('the_views')){
 		echo '<span class="view">浏览：'.(wpjam_get_post_views(get_the_ID()) ?: 0).'</span>';
 	}
 
-	add_action('wp_head', fn()=> is_single() ? wpjam_update_post_views(get_queried_object_id()) : null);
+	add_action('wp_head', fn()=> is_single() && wpjam_get_query_var('module') != 'json' ? wpjam_update_post_views(get_queried_object_id()) : null);
 }
