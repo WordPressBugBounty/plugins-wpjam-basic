@@ -102,6 +102,10 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	public function get_arg($key, $default=null, $do_callback=true){
 		$value	= parent::get_arg($key, $default, $do_callback);
 
+		if(!$value && $key == 'menu_page' && $this->post_type && $this->title){
+			$value	= ['parent'=>wpjam_get_post_type_setting($this->post_type, 'plural'), 'order'=>1];
+		}
+
 		if($value){
 			if($key == 'menu_page'){
 				if(!$this->name || (is_network_admin() && !$this->site_default)){
@@ -159,7 +163,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		$sections	= $get_subs ? array_reduce($this->get_subs(), fn($carry, $sub)=> array_merge($carry, $sub->get_sections(false, false)), $sections) : $sections;
 
 		if($filter){
-			foreach(wpjam_sort(self::get_by(['type'=>'section', 'name'=>$this->name]), fn($v)=> $v['order'] ?? 10) as $object){
+			foreach(wpjam_sort(self::get_by(['type'=>'section', 'name'=>$this->name]), 'order', 'desc', 10) as $object){
 				foreach(($object->get_arg('sections') ?: []) as $id => $section){
 					$section	= $this->parse_section($section, $id);
 
@@ -209,7 +213,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		}
 
 		$cb		= 'wpjam_get_'.($site ? 'site_' : '').'option';
-		$data	= $cb($this->option);
+		$data	= $cb($this->name);
 
 		return $data ?: [];
 	}
@@ -252,7 +256,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	}
 
 	public function prepare(){
-		return $this->get_fields(true, 'object')->prepare();
+		return wpjam_get($this->get_fields(true, 'object')->prepare(), $this->option_type == 'array' ? null : $this->name);
 	}
 
 	public function validate($value){
@@ -883,11 +887,7 @@ class WPJAM_Meta_Option extends WPJAM_Register{
 	}
 
 	public function prepare($id=null){
-		if($this->callback){
-			return [];
-		}
-
-		return $this->get_fields($id)->prepare();
+		return $this->callback ? [] : $this->get_fields($id)->prepare();
 	}
 
 	public function validate($id=null, $data=null){

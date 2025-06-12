@@ -379,7 +379,7 @@ function wpjam_default($name='', ...$args){
 			$vars[$name]	= $args[0];
 		}
 
-		wpjam('update', 'defaults', $vars);
+		wpjam('set', 'defaults', $vars);
 	}
 
 	return $name && (!is_array($name)) ? ($vars[$name] ?? null) : $vars;
@@ -396,9 +396,7 @@ function wpjam_get_current_user($required=false){
 }
 
 function wpjam_ua($name=''){
-	$vars	= wpjam('get', 'user_agent') ?: wpjam('update', 'user_agent', wpjam_parse_user_agent());
-
-	return $name ? ($vars[$name] ?? null) : $vars;
+	return $name ? wpjam_get(wpjam_ua(), $name) : (wpjam('get', 'user_agent') ?: wpjam('set', 'user_agent', wpjam_parse_user_agent()));
 }
 
 function wpjam_current_supports($feature){
@@ -712,10 +710,16 @@ function wpjam_add_menu_page(...$args){
 		}
 
 		$args	= $args[0];
+		$type	= array_find(['tab_slug'=>'tabs', 'menu_slug'=>'pages'], fn($v, $k)=> !empty($args[$k]) && !is_numeric($args[$k]));
+
+		if(!$type){
+			return;
+		}
 	}else{
 		$slug	= $args[0];
-		$type	= !empty($args[1]['plugin_page']) ? 'tab_slug' : 'menu_slug';
-		$args	= array_merge($args[1], [$type => $slug]);
+		$key	= !empty($args[1]['plugin_page']) ? 'tab_slug' : 'menu_slug';
+		$type	= $key == 'tab_slug' ? 'tabs' : 'pages';
+		$args	= array_merge($args[1], [$key => $slug]);
 
 		if(!is_admin() && wpjam_get($args, 'function') == 'option' && (!empty($args['sections']) || !empty($args['fields']))){
 			wpjam_register_option(($args['option_name'] ?? $slug), $args);
@@ -739,7 +743,7 @@ function wpjam_add_menu_page(...$args){
 	}
 
 	if(is_admin()){
-		wpjam_admin('add', 'menu', $args);
+		wpjam_admin($type.'[]', $args);
 	}
 }
 
@@ -763,38 +767,11 @@ if(is_admin()){
 	function wpjam_admin(...$args){
 		$object	= WPJAM_Admin::get_instance();
 
-		if(!$args){
-			return $object;
-		}
-
-		$key	= array_shift($args);
-		$cb		= [$object, $key];
-
-		if(method_exists(...$cb)){
-			return $cb(...$args);
-		}
-
-		if(!$args){
-			return $object->$key ?? wpjam_get($object->vars, $key);
-		}
-
-		if(!isset($object->$key) || !in_array($key, ['plugin_page', 'current_tab', 'screen'])){
-			return $object->$key = $args[0];
-		}
-
-		return count($args) >= 2 ? ($object->$key->{$args[0]} = $args[1]) : $object->$key->{$args[0]};
+		return $args ? $object->call(...$args) : $object;
 	}
 
 	function wpjam_add_admin_ajax($action, $args=[]){
-		if(wpjam_get($_POST, 'action') == $action){
-			$args		= wpjam_is_assoc_array($args) ? $args : ['callback'=>$args];
-			$callback	= $args['callback'];
-			$fields		= $args['fields'] ?? [];
-
-			wpjam_set_die_handler('ajax');
-
-			add_action('wp_ajax_'.$action, fn()=> wpjam_send_json(wpjam_catch($callback, wpjam_if_error(wpjam_fields($fields)->catch('get_parameter', 'POST'), 'send'))));
-		}
+		wpjam_register_ajax($action, ['admin'=>true]+(wpjam_is_assoc_array($args) ? $args : ['callback'=>$args]));
 	}
 
 	function wpjam_add_admin_error($msg='', $type='success'){
@@ -812,7 +789,13 @@ if(is_admin()){
 		if(wp_is_numeric_array($args)){
 			array_walk($args, 'wpjam_add_admin_load');
 		}else{
-			wpjam_admin('add', 'load', $args);
+			$type	= wpjam_pull($args, 'type') ?: array_find(['base'=>'builtin_page', 'plugin_page'=>'plugin_page'], fn($v, $k)=> isset($args[$k])) ?: '';
+
+			if(!in_array($type, ['builtin_page', 'plugin_page'])){
+				return;
+			}
+
+			wpjam_admin($type.'_load[]', $args);
 		}
 	}
 
@@ -856,23 +839,23 @@ if(is_admin()){
 	}
 
 	function wpjam_register_list_table_action($name, $args){
-		return WPJAM_List_Table::call_type('action', 'register', $name, $args);
+		return WPJAM_List_Table_Action::register($name, $args);
 	}
 
 	function wpjam_unregister_list_table_action($name, $args=[]){
-		return WPJAM_List_Table::call_type('action', 'unregister', $name, $args);
+		return WPJAM_List_Table_Action::unregister($name, $args);
 	}
 
 	function wpjam_register_list_table_column($name, $field){
-		return WPJAM_List_Table::call_type('column', 'register', $name, $field);
+		return WPJAM_List_Table_Column::register($name, $field);
 	}
 
 	function wpjam_unregister_list_table_column($name, $field=[]){
-		return WPJAM_List_Table::call_type('column', 'unregister', $name, $field);
+		return WPJAM_List_Table_Column::unregister($name, $field);
 	}
 
 	function wpjam_register_list_table_view($name, $view=[]){
-		return WPJAM_List_Table::call_type('view', 'register', $name, $view);
+		return WPJAM_List_Table_View::register($name, $view);
 	}
 
 	function wpjam_register_dashboard_widget($name, $args){

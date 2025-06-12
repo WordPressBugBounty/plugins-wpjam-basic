@@ -572,6 +572,14 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		return $this->args;
 	}
 
+	public function add_field($key, $value){
+		return $this->update_arg('_fields['.$key.']', $value);
+	}
+
+	public function remove_field($key, $value){
+		return $this->delete_arg('_fields['.$key.']');
+	}
+
 	public function get_fields($id=0, $action_key=''){
 		$fields	= [];
 
@@ -623,14 +631,14 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 				'size'			=> $this->banner_size,
 				'description'	=> $this->banner_size ? '尺寸：'.$this->banner_size : '',
 				'show_if'		=> [
-					'key'		=> 'parent', 
+					'key'		=> 'parent',
 					'value'		=> -1,
 					'external'	=> $action_key != 'set'
 				],
 			];
 		}
 
-		return array_merge($fields, $this->get_items('_fields'));
+		return array_merge($fields, $this->get_arg('_fields[]'));
 	}
 
 	public function register_option($list_table=false){
@@ -657,15 +665,15 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 	}
 
 	public function add_support($feature, $value=true){
-		return $this->add_item($feature, $value, 'supports');
+		return $this->update_arg('supports.'.$feature, $value);
 	}
 
 	public function remove_support($feature){
-		return $this->delete_item($feature, 'supports');
+		return $this->delete_arg('supports.'.$feature);
 	}
 
 	public function supports($feature){
-		return (bool)$this->get_item($feature, 'supports');
+		return (bool)$this->get_arg('supports.'.$feature);
 	}
 
 	public function get_mapping($post_id){
@@ -783,14 +791,12 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 				add_permastruct($name, $struct, $args['rewrite']);
 			}
 
-			if($this->registered_callback){
-				wpjam_call($this->registered_callback, $name, $object_type, $args);
-			}
+			wpjam_call($this->registered_callback, $name, $object_type, $args);
 		}, 10, 3);
 
 		wpjam_init(function(){
 			if($this->_jam){
-			
+
 				if(is_admin() && $this->show_ui){
 					add_filter('taxonomy_labels_'.$this->name,	[$this, 'filter_labels']);
 				}
@@ -807,51 +813,55 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		$request	= $GLOBALS['wp']->request;
 		$no_base	= ($structure && $request && !isset($vars['module'])) ? array_filter(get_taxonomies(), fn($tax)=> wpjam_get_taxonomy_setting($tax, 'permastruct') == '%'.$tax.'%') : [];
 
-		if($no_base){
-			if($GLOBALS['wp_rewrite']->use_verbose_page_rules){
-				if(preg_match("#(.?.+?)/page/?([0-9]{1,})/?$#", $request, $matches)){
-					$request	= $matches[1];
-					$paged		= $matches[2];
-				}
+		if(!$no_base){
+			return $vars;
+		}
 
-				if(!empty($vars['error']) && $vars['error'] == '404'){
-					$key	= 'error';
-				}elseif(str_starts_with($structure, '/%postname%')){
-					if(!empty($vars['name'])){
-						$key	= 'name';
-					}
-				}elseif(!str_contains($request, '/')){
-					$k	= array_find(['author', 'category'], fn($k)=> str_starts_with($structure, '/%'.$k.'%'));
+		if(preg_match("#(.?.+?)/page/?([0-9]{1,})/?$#", $request, $matches)){
+			$request	= $matches[1];
+			$paged		= $matches[2];
+		}
 
-					if($k && !str_starts_with($request, $k.'/') && !empty($vars[$k.'_name'])){
-						$key	= [$k.'_name', 'name'];
-					}
+		if($GLOBALS['wp_rewrite']->use_verbose_page_rules){
+			if(!empty($vars['error']) && $vars['error'] == '404'){
+				$key	= 'error';
+			}elseif(str_starts_with($structure, '/%postname%')){
+				if(!empty($vars['name'])){
+					$key	= 'name';
 				}
-			}elseif(!empty($vars['pagename']) && !isset($_GET['page_id']) && !isset($_GET['pagename'])){
-				$key	= 'pagename';
+			}elseif(!str_contains($request, '/')){
+				$k	= array_find(['author', 'category'], fn($k)=> str_starts_with($structure, '/%'.$k.'%'));
+
+				if($k && !str_starts_with($request, $k.'/') && !empty($vars[$k.'_name'])){
+					$key	= [$k.'_name', 'name'];
+				}
 			}
+		}elseif(!empty($vars['pagename']) && !isset($_GET['page_id']) && !isset($_GET['pagename'])){
+			$key	= 'pagename';
+		}
 
-			if(!empty($key)){
-				foreach($no_base as $tax){
-					$name	= is_taxonomy_hierarchical($tax) ? wp_basename($request) : $request;
+		if(empty($key)){
+			return $vars;
+		}
 
-					if(array_find(wpjam_get_all_terms($tax), fn($term)=> $term->slug == $name)){
-						$vars	= wpjam_except($vars, $key);
+		foreach($no_base as $tax){
+			$name	= is_taxonomy_hierarchical($tax) ? wp_basename($request) : $request;
 
-						if($tax == 'category'){
-							$vars['category_name']	= $name;
-						}else{
-							$vars['taxonomy']	= $tax;
-							$vars['term']		= $name;
-						}
+			if(array_find(wpjam_get_all_terms($tax), fn($term)=> $term->slug == $name)){
+				$vars	= wpjam_except($vars, $key);
 
-						if(!empty($paged)){
-							$vars['paged']	= $paged;
-						}
+				if($tax == 'category'){
+					$vars['category_name']	= $name;
+				}else{
+					$vars['taxonomy']	= $tax;
+					$vars['term']		= $name;
+				}
 
-						break;
-					}
-				}				
+				if(!empty($paged)){
+					$vars['paged']	= $paged;
+				}
+
+				break;
 			}
 		}
 

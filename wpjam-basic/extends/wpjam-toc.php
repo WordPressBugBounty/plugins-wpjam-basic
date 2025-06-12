@@ -5,7 +5,7 @@ URI: https://mp.weixin.qq.com/s/vgNtvc1RcWyVCmnQdxAV0A
 Description: 自动根据文章内容里的子标题提取出文章目录，并显示在内容前。
 Version: 1.0
 */
-class WPJAM_Toc_Setting extends WPJAM_Option_Model{
+class WPJAM_Toc extends WPJAM_Option_Model{
 	public static function get_fields(){
 		$fields	= [
 			'script'	=> ['title'=>'JS代码：',	'type'=>'textarea',	'class'=>''],
@@ -27,60 +27,105 @@ class WPJAM_Toc_Setting extends WPJAM_Option_Model{
 		]+($fields ? ['auto'=>['title'=>'自动插入',	'fields'=>['auto'=> ['type'=>'checkbox', 'value'=>1,	'fields'=>$fields,	'label'=>'自动插入文章目录的 JavaScript 和 CSS 代码。。', 'description'=>'如不自动插入也可以将相关的代码复制主题的对应文件中。<br />请点击这里获取<a href="https://blog.wpjam.com/m/toc-js-css-code/" target="_blank">文章目录的默认 JS 和 CSS</a>']] ]] : []);
 	}
 
-	public static function filter_content($content){
-		if(self::get_setting('position') == 'shortcode' && strpos($content, '[toc]') === false){
-			return $content;
-		}
-
-		$post_id	= get_the_ID();
-
-		if(doing_filter('get_the_excerpt') || !is_singular() || $post_id != get_queried_object_id()){
-			return $content;
-		}
-
-		$depth	= self::get_setting('depth', 6);
-
+	public static function get_depth($post_id){
 		if(self::get_setting('individual', 1)){
 			if(get_post_meta($post_id, 'toc_hidden', true)){
-				return $content;
+				return;
 			}
 
 			if(metadata_exists('post', $post_id, 'toc_depth')){
-				$depth = get_post_meta($post_id, 'toc_depth', true);
+				return get_post_meta($post_id, 'toc_depth', true);
 			}
 		}
 
-		$object	= wpjam_get_instance('toc', $post_id, fn()=> new WPJAM_Toc($content, $depth));
-		$toc	= $object->get_toc();
-
-		if($toc){
-			if(strpos($content, '[toc]') !== false){
-				$content	= str_replace('[toc]', $toc, $content);
-			}elseif(self::get_setting('position', 'content') == 'content'){
-				$content	= $toc.$content;
-			}
-		}
-
-		return $content;
+		return self::get_setting('depth', 6);
 	}
 
-	public static function on_head(){
-		if(is_singular()){
-			if(!current_theme_supports('script', 'toc')){
-				echo '<script type="text/javascript">'."\n".self::get_setting('script')."\n".'</script>'."\n";	
+	public static function render(){
+		if(!wpjam('get', 'toc')){
+			return '';
+		}
+
+		$index	= '';
+		$path	= [];
+
+		foreach(wpjam('get', 'toc') as $item){
+			if($path){
+				if(end($path) < $item['depth']){
+					$index	.= "\n<ul>\n";
+				}elseif(end($path) == $item['depth']){
+					$index	.= "</li>\n";
+
+					array_pop($path);
+				}else{
+					while(end($path) > $item['depth']){
+						$index	.= "</li>\n</ul>\n";
+
+						array_pop($path);
+					}
+				}
 			}
 
-			if(!current_theme_supports('style', 'toc')){
-				echo '<style type="text/css">'."\n".self::get_setting('css')."\n".'</style>'."\n";
-			}
+			$index	.= '<li class="toc-level'.$item['depth'].'"><a href="#'.$item['id'].'">'.$item['text'].'</a>';
+			$path[]	= $item['depth'];
 		}
+
+		$index	.= "</li>\n".str_repeat("</li>\n</ul>\n", count($path)-1);
+		$index	= "<ul>\n".$index."</ul>\n";
+
+		return '<div id="toc">'."\n".'<p class="toc-title"><strong>文章目录</strong><span class="toc-controller toc-controller-show">[隐藏]</span></p>'."\n".$index.'</div>'."\n";
+	}
+
+	public static function add_item($m){
+		$attr	= $m[2] ? shortcode_parse_atts($m[2]) : [];
+		$attr	= wp_parse_args($attr, ['class'=>'', 'id'=>'']);
+
+		if(!$attr['class'] || !str_contains($attr['class'], 'toc-noindex')){
+			$attr['class']	.= ($attr['class'] ? ' ' : '').'toc-index';
+			$attr['id']		= $attr['id'] ?: 'toc_'.(count(wpjam('get', 'toc'))+1);
+
+			wpjam('add', 'toc', ['text'=>trim(strip_tags($m[3])), 'depth'=>$m[1],	'id'=>$attr['id']]);
+		}
+
+		return wpjam_tag('h'.$m[1], $attr, $m[3]);
 	}
 
 	public static function add_hooks(){
-		add_filter('the_content',	[self::class, 'filter_content'], 11);
+		add_filter('the_content', function($content){
+			if(!is_singular() 
+				|| get_the_ID() != get_queried_object_id() 
+				|| doing_filter('get_the_excerpt') 
+				|| (self::get_setting('position') == 'shortcode' && !str_contains($content, '[toc]'))
+			){
+				return $content;
+			}
+
+			$depth		= self::get_depth(get_the_ID());
+			$content	= wpjam_preg_replace('#<h([1-'.$depth.'])\b([^>]*)>(.*?)</h\1>#', fn($m)=> self::add_item($m), $content);
+
+			if($toc	= self::render()){
+				if(str_contains($content, '[toc]')){
+					return str_replace('[toc]', $toc, $content);
+				}elseif(self::get_setting('position', 'content') == 'content'){
+					return $toc.$content;
+				}
+			}
+
+			return $content;
+		}, 11);
 
 		if(self::get_setting('auto', 1)){
-			add_action('wp_head',	[self::class, 'on_head']);
+			add_action('wp_head', function(){
+				if(is_singular()){
+					if(!current_theme_supports('script', 'toc')){
+						echo '<script type="text/javascript">'."\n".self::get_setting('script')."\n".'</script>'."\n";	
+					}
+
+					if(!current_theme_supports('style', 'toc')){
+						echo '<style type="text/css">'."\n".self::get_setting('css')."\n".'</style>'."\n";
+					}
+				}
+			});
 		}
 
 		if(is_admin() && self::get_setting('individual', 1)){
@@ -98,84 +143,12 @@ class WPJAM_Toc_Setting extends WPJAM_Option_Model{
 	}
 }
 
-class WPJAM_Toc{
-	protected $items	= [];
-
-	public function __construct(&$content, $depth=6){
-		$content	= wpjam_preg_replace('#<h([1-'.$depth.'])\b([^>]*)>(.*?)</h\1>#', fn($m)=> $this->add_item($m), $content);
-	}
-
-	public function get_toc(){
-		if(empty($this->items)){
-			return '';
-		}
-
-		$index		= '<ul>'."\n";
-		$prev_depth	= 0;
-		$to_depth	= 0;
-
-		foreach($this->items as $i => $item){
-			$depth	= $item['depth'];
-
-			if($prev_depth){
-				if($depth == $prev_depth){
-					$index .= '</li>'."\n";
-				}elseif($depth > $prev_depth){
-					$to_depth++;
-					$index .= "\n".'<ul>'."\n";
-				}else{
-					$to_depth2 = ($to_depth > ($prev_depth - $depth))? ($prev_depth - $depth) : $to_depth;
-
-					if($to_depth2){
-						for($i=0; $i<$to_depth2; $i++){
-							$index .= '</li>'."\n".'</ul>'."\n";
-							$to_depth--;
-						}
-					}
-
-					$index .= '</li>'."\n";
-				}
-			}
-
-			$prev_depth	= $depth;
-
-			$index .= '<li class="toc-level'.$depth.'"><a href="#'.$item['id'].'">'.$item['text'].'</a>';
-		}
-
-		for($i=0; $i<=$to_depth; $i++){
-			$index .= '</li>'."\n".'</ul>'."\n";
-		}
-
-		return '<div id="toc">'."\n".'<p class="toc-title"><strong>文章目录</strong><span class="toc-controller toc-controller-show">[隐藏]</span></p>'."\n".$index.'</div>'."\n";
-	}
-
-	public function add_item($matches){
-		$attr	= $matches[2] ? shortcode_parse_atts($matches[2]) : [];
-
-		$attr['class']	= $attr['class'] ?? '';
-		$attr['class']	= wp_parse_list($attr['class']);
-
-		if(!$attr['class'] || !in_array('toc-noindex', $attr['class'])){
-			$attr['class'][]= 'toc-index';
-			$attr['id']		= !empty($attr['id']) ? $attr['id'] : 'toc_'.(count($this->items)+1);
-
-			$this->items[]	= ['text'=>trim(strip_tags($matches[3])), 'depth'=>$matches[1],	'id'=>$attr['id']];
-		}
-
-		return wpjam_tag('h'.$matches[1], $attr, $matches[3]);
-	}
-}
-
 wpjam_register_option('wpjam-toc', [
-	'model'		=> 'WPJAM_Toc_Setting',
+	'model'		=> 'WPJAM_Toc',
 	'title'		=> '文章目录',
 	'menu_page'	=> ['tab_slug'=>'toc', 'plugin_page'=>'wpjam-posts', 'summary'=> __FILE__]
 ]);
 
 function wpjam_get_toc(){
-	$post_id	= get_the_ID();
-	$object		= $post_id ? wpjam_get_instance('toc', $post_id) : null;
-
-	return $object ? $object->get_toc() : '';
+	return is_singular() ? WPJAM_Toc::render() : '';
 }
-

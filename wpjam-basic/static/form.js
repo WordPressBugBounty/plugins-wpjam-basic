@@ -344,7 +344,7 @@ jQuery(function($){
 		if(args.length){
 			let show	= args[0] === null ? false : wpjam.compare(args[0], show_if);
 
-			this.add(this.next('br')).toggleClass('hidden', !show);
+			this.add(this.nextAll('br')).add(this.next('p.after')).add(this.nextAll('p.description')).add(this.prev('p.before')).toggleClass('hidden', !show);
 
 			(this.is('option, :input') ? this : this.find(':input:not(.disabled)')).prop('disabled', !show);
 

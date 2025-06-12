@@ -9,7 +9,7 @@ class WPJAM_Basic_Admin{
 			'wpjam-about'	=> ['menu_title'=>'关于WPJAM',	'order'=>1,	'function'=>[self::class, 'about_page']],
 			'wpjam-icons'	=> ['menu_title'=>'图标列表',		'order'=>9,	'tabs'=>['dashicons'=>['title'=>'Dashicons', 'function'=>[self::class, 'dashicons_page']]]],
 		] as $slug => $args){
-			if($args['order'] < 10 || wpjam_filter(wpjam_admin('tabs') ?: [], fn($v)=> wpjam_get($v, 'plugin_page') == $slug)){
+			if($args['order'] < 10 || wpjam_filter(wpjam_admin('tabs[]'), fn($v)=> wpjam_get($v, 'plugin_page') == $slug)){
 				wpjam_add_menu_page($slug, $args+[
 					'parent'	=> 'wpjam-basic',
 					'function'	=> 'tab',
@@ -26,7 +26,7 @@ class WPJAM_Basic_Admin{
 		add_action('admin_menu', fn()=> $GLOBALS['menu'] += ['58.88'=> ['',	'read',	'separator'.'58.88', '', 'wp-menu-separator']]);
 
 		if(get_transient('wpjam_basic_verify')){
-			wpjam_admin('pages', wpjam_except(wpjam_admin('pages'), 'wpjam-basic.subs.wpjam-about'));
+			wpjam_admin('pages[wpjam-basic][subs][wpjam-about]', null);
 		}elseif(WPJAM_Verify::verify()){
 			if(isset($_GET['unbind_wpjam_user'])){
 				delete_user_meta(get_current_user_id(), 'wpjam_weixin_user');
@@ -34,12 +34,12 @@ class WPJAM_Basic_Admin{
 				wp_redirect(admin_url('admin.php?page=wpjam-verify'));
 			}
 		}else{
-			wpjam_admin('pages', wpjam_set(wpjam_admin('pages'), 'wpjam-basic.subs', ['wpjam-verify'=> [
+			wpjam_admin('pages[wpjam-basic][subs]', ['wpjam-verify'=> [
 				'menu_title'	=> '扩展管理',
 				'page_title'	=> '验证 WPJAM',
 				'function'		=> 'form',
 				'model'			=> 'WPJAM_Verify'
-			]]));
+			]]);
 		}
 	}
 
@@ -147,7 +147,7 @@ class WPJAM_Basic_Admin{
 				]]
 			]))->page_load();
 
-			wpjam_admin('add', 'style', [
+			wpjam_admin('style', [
 				'#dashboard_wpjam .inside{margin:0; padding:0;}',
 				'a.jam-post {border-bottom:1px solid #eee; margin: 0 !important; padding:6px 0; display: block; text-decoration: none; }',
 				'a.jam-post:last-child{border-bottom: 0;}',
@@ -159,7 +159,7 @@ class WPJAM_Basic_Admin{
 			$base	= array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base));
 
 			if($base){
-				wpjam_admin('add', 'script', "
+				wpjam_admin('script', "
 				$('tr.plugin-update-tr').each(function(){
 					let detail_link	= $(this).find('a.open-plugin-details-modal');
 					let detail_href	= detail_link.attr('href');
@@ -262,7 +262,7 @@ class WPJAM_Verify{
 	}
 
 	public static function get_form(){
-		wpjam_admin('add', 'style', '.form-table th{width: 100px;}');
+		wpjam_admin('style', '.form-table th{width: 100px;}');
 
 		$qrcode	= wpjam_tag('img', ['src'=>'https://open.weixin.qq.com/qr/code?username=wpjamcom', 'style'=>'max-width:250px;'])->wrap('p')->before('p', [], '使用微信扫描下面的二维码：');
 

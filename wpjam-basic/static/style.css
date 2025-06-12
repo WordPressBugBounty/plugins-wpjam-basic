@@ -55,7 +55,8 @@ summary + .sub-field{margin-top:20px;}
 .field-group{display:flex; flex-wrap:wrap; align-items:flex-start; gap:6px;}
 .field-group .sub-field:not(:first-child) > label{min-width:initial;}
 
-fieldset > .field-group, fieldset > .inline{display:inline-flex; margin:0 0 .5em !important;}
+fieldset > .field-group,
+fieldset > .inline{display:inline-flex; margin:0 0 .5em !important;}
 fieldset > .field-group:has(> label) > *{margin:.35em 0 .5em!important;}
 fieldset > .field-group > label,
 fieldset.mu-item.field-group > label{line-height:30px !important;}
@@ -156,7 +157,8 @@ div.mu-img .new-item:before{content:"\f543"; display:block; line-height:100px; f
 
 .add-media span{font-size:18px; margin-right:4px; line-height:30px;}
 
-div.wpjam-file, div.wpjam-image{display:flex; gap:4px;}
+div.wpjam-file,
+div.wpjam-image{display:flex; gap:4px;}
 div.wpjam-img{position:relative; cursor:pointer; text-decoration:none; display:inline-block;}
 div.wpjam-img img{max-width:300px !important; max-height:300px !important; object-fit:cover;}
 div.wpjam-img img ~ .add-media,
@@ -203,10 +205,20 @@ input[type=checkbox].switch:checked:after{content:' '; background-color:#2271b1;
 form table.form-table tr > td:only-child{padding:15px 10px 15px 0;}
 form table.form-table th a,
 form table.form-table td a{text-decoration:none;}
-
+form table.form-table td .before,
+form table.form-table td .after{margin:0px;}
+form table.form-table td p.before{margin-bottom:4px;}
+form table.form-table td p.after{margin-top:4px;}
+form table.form-table td span.before{margin-right:4px;}
+form table.form-table td span.after{margin-left:4px;}
 form table.form-table td .description{font-size:13px;}
+form table.form-table td fieldset .after,
+form table.form-table td fieldset .description{margin-bottom:0.5em;}
+
 form table.form-table td label:has(input:not([type=hidden]):not(.regular-text):not([type=checkbox])) + .description,
 form table.form-table td input:not([type=hidden]):not(.regular-text) + .description{display:inline-block; margin-left:6px;}
+
+#TB_ajaxContent form table.form-table td .after,
 #TB_ajaxContent form table.form-table td .description{padding:0;}
 
 a.wpjam-button{text-decoration:none;}
@@ -241,9 +253,11 @@ div#poststuff div.postbox.closed .nav-tab-wrapper a.nav-tab-active{background:#f
 
 div.summary{font-size:13px; line-height:1.5; margin:1em 0;}
 
-div.card.response, .widefat td{overflow-wrap:break-word; word-wrap:break-word; word-break:break-word; hyphens:auto;}
+div.card.response,
+.widefat td{overflow-wrap:break-word; word-wrap:break-word; word-break:break-word; hyphens:auto;}
 
-table.wp-list-table th, table.wp-list-table.nowrap td{white-space:nowrap;}
+table.wp-list-table th,
+table.wp-list-table.nowrap td{white-space:nowrap;}
 
 table.wp-list-table.nowrap td{overflow:hidden; text-overflow:ellipsis;}
 table.wp-list-table.nowrap td.is-truncated:hover{overflow:visible; white-space:normal;}
@@ -395,7 +409,8 @@ div.news-items div.small span.item-thumb img{position:relative; left :50%; top :
 .welcome-panel.wpjam-welcome-panel .welcome-panel-content{min-height:initial;}
 .welcome-panel.wpjam-welcome-panel .welcome-panel-column-container{margin:0;}
 
-li.ui-tabs-active > a{border-bottom:1px solid #f0f0f1; box-shadow:none;margin-bottom:-1px; background:#f0f0f1 !important; color:#000;}
+li.ui-tabs-active > a{border-bottom:1px solid #f0f0f1; box-shadow:none;margin-bottom:-1px; background:none !important; color:#000;}
+div#poststuff div.postbox .nav-tab-wrapper li.ui-tabs-active > a{border-bottom:1px solid #ffffff;}
 li.ui-state-hover > a{background-color:#fff; color:#3c434a;}
 
 @media screen and (max-width:782px){

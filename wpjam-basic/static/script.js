@@ -958,7 +958,7 @@ jQuery(function($){
 
 						let params	= wpjam.parse_params(new URL($a.prop('href')).search);
 
-						if(wpjam.builtin_page && params.page){
+						if(wpjam.builtin_page && (params.page || params.action)){
 							return;
 						}
 

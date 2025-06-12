@@ -89,6 +89,12 @@ if(!function_exists('array_find_index')){
 	}
 }
 
+if(!function_exists('filter_deep')){
+	function filter_deep($arr, $data){
+		return wpjam_filter($arr, $callback, true);
+	}
+}
+
 if(!function_exists('filter_null')){
 	function filter_null($array, $deep=false){
 		return wpjam_filter($array, fn($v)=> !is_null($v), $deep);
@@ -304,6 +310,10 @@ function wpjam_get_current_commenter(){
 	return empty($commenter['comment_author_email']) ? new WP_Error('access_denied') : $commenter;
 }
 
+function wpjam_localize_script($handle, $name, $l10n ){
+	wp_localize_script($handle, $name, ['l10n_print_after' => $name.' = '.wpjam_json_encode($l10n)]);
+}
+
 function wpjam_wrap_tag($text, $tag='', $attr=[]){
 	return wpjam_tag($tag, $attr, $text);
 }
@@ -352,7 +362,7 @@ function wpjam_add_option_section_fields($option_name, $section_id, $fields){
 }
 
 function wpjam_get_admin_prefix(){
-	return wpjam_admin()->prefix;
+	return wpjam_admin()->prefix();
 }
 
 function wpjam_get_page_summary($type='page'){
@@ -368,11 +378,11 @@ function wpjam_call_list_table_model_method($method, ...$args){
 }
 
 function wpjam_add_admin_inline_script($data){
-	wpjam_admin('add', 'script', $data);
+	wpjam_admin('script', $data);
 }
 
 function wpjam_add_admin_inline_style($data){
-	wpjam_admin('add', 'style', $data);
+	wpjam_admin('style', $data);
 }
 
 function wpjam_register_builtin_page_load(...$args){
@@ -452,7 +462,7 @@ function wpjam_get_plugin_page_type(){
 }
 
 function wpjam_register_plugin_page_tab($name, $args){
-	return wpjam_admin('add', 'menu', array_merge($args, ['tab_slug'=>$name]));
+	return wpjam_add_menu_page(['tab_slug'=>$name]+$args);
 }
 
 function wpjam_get_list_table_setting($key){

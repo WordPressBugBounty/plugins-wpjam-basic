@@ -115,7 +115,7 @@ class WPJAM_Attr extends WPJAM_Args{
 
 	protected function render_data($args){
 		return implode(wpjam_map($args, function($v, $k){
-			if(is_null($v) || $v === false){
+			if(is_null($v) || $v === false || $k == '__data'){
 				return '';
 			}
 
@@ -713,9 +713,10 @@ class WPJAM_Field extends WPJAM_Attr{
 
 	public function wrap($tag='', $args=[]){
 		if(is_object($tag)){
-			$wrap	= $this->wrap_tag ?: (($this->is('fieldset') && !$this->group && !$args) ? '' : 'div');
+			$group	= $this->group && !$this->is('fields');
+			$wrap	= $this->wrap_tag ?: (($this->is('fieldset') && !$group && !$args) ? '' : 'div');
 
-			$tag->wrap($wrap, $args)->add_class($this->group ? 'field-group' : '');
+			$tag->wrap($wrap, $args)->add_class($group ? 'field-group' : '');
 
 			if($wrap == 'fieldset' && $this->title){
 				$tag->prepend('legend', ['screen-reader-text'], $this->title);
@@ -748,17 +749,14 @@ class WPJAM_Field extends WPJAM_Attr{
 			$this->after	= wpjam_join(' ', [$this->after, implode(' ', wpjam_map($this->buttons, [self::class, 'create']))]);
 		}
 
-		foreach(array_filter(wpjam_pick($this, ['before', 'after'])) as $k => $v){
-			$action	= $field->is('div') ? ($k == 'before' ? 'prepend' : 'append') : $k;
-
-			$field->$action($k == 'before' ? $v.'&nbsp;' : '&nbsp;'.$v);
+		foreach(['before', 'after'] as $k){
+			if($v = $this->$k){
+				$field->$k(($field->is('div') || $this->is('textarea,editor') ? 'p' : 'span'), [$k], $v);
+			}
 		}
 
 		if($this->is('fieldset')){
-			$_args	= array_filter(wpjam_pick($this, ['class', 'style'])+['data'=>$this->data()]);
-			$_args	= $_args ? wpjam_set($_args, 'data.key', $this->key) : [];
-
-			$this->wrap($field, $_args);
+			$this->wrap($field, (($attr = array_filter(wpjam_pick($this, ['class', 'style'])+['data'=>$this->data()])) ? wpjam_set($attr, 'data.key', $this->key) : []));
 
 			$wrap->after("\n");
 		}else{
@@ -769,25 +767,19 @@ class WPJAM_Field extends WPJAM_Attr{
 
 		$class	= [$this->wrap_class, wpjam_get($args, 'wrap_class'), $this->disabled, $this->readonly, ($this->is('hidden') ? 'hidden' : '')];
 		$title	= $this->title ? wpjam_tag('label', $label, $this->title) : '';
-		$desc	= $this->description ?: '';
+		$desc	= (array)$this->description;
 
-		if($desc){
-			if(is_array($desc)){
-				$attr	= $desc[1] ?? [];
-				$attr	= (isset($attr['show_if']) ? ['data-show_if'=>$this->parse_show_if(wpjam_pull($attr, 'show_if'))] : []) + $attr;
-				$desc	= $desc[0];
-			}
+		if($desc && $desc[0]){
+			[$desc, $attr]	= $desc+['', []];
 
-			$desc	= wpjam_tag('p', ($attr ?? [])+['class'=>'description'], $desc);
+			$field->after('p', ['class'=>'description', 'data-show_if'=>$this->parse_show_if(wpjam_pull($attr, 'show_if'))]+$attr, $desc);
 		}
-
-		$field->after($desc);
 
 		$show_if	= $this->parse_show_if();
 
 		if($creator && !$creator->is('fields')){
 			if($creator->wrap_tag == 'fieldset'){
-				if($title || $desc || ($show_if && ($this->is('fields') || !is_null($field->data('query_title'))))){
+				if($title || ($show_if && ($this->is('fields') || !is_null($field->data('query_title'))))){
 					$field->before($title ? ['<br />', $title] : null)->wrap('div', ['inline']);
 				}
 
@@ -1386,7 +1378,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 				$subs	= wpjam_reduce($field['options'], fn($carry, $item, $opt)=> array_merge($carry, is_array($item) ? array_map(fn($v)=> $v+['show_if'=>[$key, '=', $opt]], $item['fields'] ?? []) : []), [], 'options');
 			}
 
-			$parsed	= array_merge($parsed, $subs ? self::parse($subs, $args) : []);
+			$parsed	= array_merge($parsed, !empty($subs) ? self::parse($subs, $args) : []);
 		}
 
 		return $parsed ?? [];

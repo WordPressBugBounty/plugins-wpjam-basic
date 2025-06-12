@@ -170,14 +170,15 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 
 		if($base == 'post'){
 			if(self::get_setting('disable_trackbacks')){
-				$style[]	= 'label[for="ping_status"]{display:none !important;}';
+				wpjam_admin('style', 'label[for="ping_status"]{display:none !important;}');
 			}
 
 			if(self::get_setting('disable_autoembed') && $screen->is_block_editor){
-				$scripts[]	= "wp.domReady(()=> wp.blocks.unregisterBlockType('core/embed'));\n";
+				wpjam_admin('script', "wp.domReady(()=> wp.blocks.unregisterBlockType('core/embed'));\n");
 			}
 		}elseif(in_array($base, ['edit', 'upload'])){
-			$style	= ['.fixed .column-date{width:8%;}'];
+			wpjam_admin('style', '.fixed .column-date{width:8%;}');
+
 			$ptype	= $screen->post_type;
 			$object	= wpjam_admin('type_object');
 
@@ -224,10 +225,10 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 					]);
 				}
 
-				$style[]	= '#bulk-titles, ul.cat-checklist{height:auto; max-height: 14em;}';
+				wpjam_admin('style', '#bulk-titles, ul.cat-checklist{height:auto; max-height: 14em;}');
 
 				if($ptype == 'page'){
-					$style[]	= '.fixed .column-template{width:15%;}';
+					wpjam_admin('style', '.fixed .column-template{width:15%;}');
 
 					wpjam_register_posts_column('template', '模板', 'get_page_template_slug');
 				}elseif($ptype == 'product'){
@@ -241,53 +242,44 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			$width_columns	= array_merge($width_columns, $object->supports('author') ? ['.fixed .column-author'] : []);
 
 			if($width_columns){
-				$style[]	= implode(',', $width_columns).'{width:'.(['14%', '12%', '10%', '8%', '7%'][count($width_columns)-1] ?? '6%').'}';
+				wpjam_admin('style', implode(',', $width_columns).'{width:'.(['14%', '12%', '10%', '8%', '7%'][count($width_columns)-1] ?? '6%').'}');
 			}
 		}elseif(in_array($base, ['edit-tags', 'term'])){
 			if($base == 'edit-tags'){
 				add_filter('wpjam_single_row',	[self::class, 'filter_single_row'], 10, 2);
 
-				$style	= [
+				wpjam_admin('style', [
 					'.fixed th.column-slug{width:16%;}',
 					'.fixed th.column-description{width:22%;}',
 					'.form-field.term-parent-wrap p{display: none;}',
 					'.form-field span.description{color:#666;}'
-				];
+				]);
 			}
 
-			$object	= wpjam_admin('tax_object');
-			$style	= array_merge($style ?? [], wpjam_map(['slug', 'description', 'parent'], fn($v)=> $object->supports($v) ? '' : '.form-field.term-'.$v.'-wrap{display: none;}'));	
+			array_map(fn($v)=> wpjam_admin('tax_object')->supports($v) ? '' : wpjam_admin('style', '.form-field.term-'.$v.'-wrap{display: none;}'), ['slug', 'description', 'parent']);	
 		}
 
 		if($base == 'edit-tags' || ($base == 'edit' && !self::is_wc_shop($ptype))){
 			if(self::get_setting('post_list_ajax', 1)){
-				$scripts[]	= <<<'EOD'
+				wpjam_admin('script', <<<'EOD'
 				$(window).load(function(){
 					wpjam.delegate('#the-list', '.editinline');
 					wpjam.delegate('#doaction');
 				});
-				EOD;
+				EOD);
 			}else{
-				$scripts[]	= "wpjam.list_table.ajax 	= false;\n";
+				wpjam_admin('script', "wpjam.list_table.ajax 	= false;\n");
 			}
 
 			if($base == 'edit'){
-				$scripts[]	= <<<'EOD'
+				wpjam_admin('script', <<<'EOD'
 				wpjam.add_extra_logic(inlineEditPost, 'setBulk', ()=> $('#the-list').trigger('bulk_edit'));
 
 				wpjam.add_extra_logic(inlineEditPost, 'edit', function(id){
 					return ($('#the-list').trigger('quick_edit', typeof(id) === 'object' ? this.getId(id) : id), false);
 				});
-				EOD;
+				EOD);
 			}
-		}
-
-		if(!empty($scripts)){
-			wpjam_admin('add', 'script', $scripts);
-		}
-
-		if(!empty($style)){
-			wpjam_admin('add', 'style', $style);
 		}
 	}
 

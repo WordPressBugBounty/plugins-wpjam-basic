@@ -17,7 +17,7 @@ wpjam_add_admin_load([
 		}
 
 		if(!wp_doing_ajax()){
-			wpjam_admin('add', 'script', <<<'EOD'
+			wpjam_admin('script', <<<'EOD'
 			$('body').on('quick_edit', '#the-list', function(event, id){
 				let edit_row	= $('#edit-'+id);
 

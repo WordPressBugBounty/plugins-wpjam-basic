@@ -23,7 +23,7 @@ class WPJAM_Mobile_Stylesheet{
 			'callback'		=> fn()=> WPJAM_Basic::update_setting('mobile_stylesheet', wpjam_get_data_parameter('stylesheet'))
 		]);
 
-		wpjam_admin('add', 'script', <<<'EOD'
+		wpjam_admin('script', <<<'EOD'
 		if(wp && wp.Backbone && wp.themes && wp.themes.view.Theme){
 			let original_render	= wp.themes.view.Theme.prototype.render;
 			let mobile	= ".wpjam_json_encode(wpjam_basic_get_setting('mobile_stylesheet')).";
@@ -42,7 +42,7 @@ class WPJAM_Mobile_Stylesheet{
 		}
 		EOD);
 
-		// wpjam_admin('add', 'style', '.mobile-theme{position: absolute; top: 45px; right: 18px;}');
+		// wpjam_admin('style', '.mobile-theme{position: absolute; top: 45px; right: 18px;}');
 	}
 
 	public static function add_hooks(){

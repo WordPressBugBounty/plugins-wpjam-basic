@@ -558,25 +558,12 @@ function wpjam_add_at($arr, $index, $key, ...$args){
 	}
 
 	if(is_null($key)){
-		if($index == 0){
-			array_unshift($arr, $args[0]);
-		}elseif($index == count($arr)){
-			array_push($arr, $args[0]);
-		}else{
-			array_splice($arr, $index, 0, [$args[0]]);
-		}
-	}else{
-		$value	= is_array($key) ? $key : [$key=>$args[0] ?? ''];
+		array_splice($arr, $index, 0, $args);
 
-		if($index == 0){
-			$arr	= $value + $arr;
-		}else{
-			$args	= $index == count($arr) ? [$arr, $value] : [array_slice($arr, 0, $index, true), $value, array_slice($arr, $index, null, true)];
-			$arr	= array_replace(...$args);
-		}
+		return $arr;
 	}
 
-	return $arr;
+	return array_replace(array_slice($arr, 0, $index, true), (is_array($key) ? $key : [$key=>$args[0] ?? '']))+array_slice($arr, $index, null, true);
 }
 
 function wpjam_find($arr, $callback, $output='value'){
@@ -584,15 +571,13 @@ function wpjam_find($arr, $callback, $output='value'){
 
 	if($output == 'value'){
 		return array_find($arr, $cb);
-	}elseif(in_array($output, ['key', 'index'])){
-		$key	= array_find_key($arr, $cb);
-
-		return ($output == 'key' || is_null($key)) ? $key : array_search($key, array_keys($arr), true);
+	}elseif($output == 'key'){
+		return array_find_key($arr, $cb);
+	}elseif($output == 'index'){
+		return array_search(array_find_key($arr, $cb), array_keys($arr));
 	}elseif($output == 'result'){
 		foreach($arr as $k => $v){
-			$result	= $cb($v, $k);
-
-			if($result){
+			if($result	= $cb($v, $k)){
 				return $result;
 			}
 		}
@@ -614,17 +599,7 @@ function wpjam_group($arr, $field){
 }
 
 function wpjam_pull(&$arr, $key, ...$args){
-	if(is_array($key)){
-		if(wp_is_numeric_array($key)){
-			$value	= wp_array_slice_assoc($arr, $key);
-		}else{
-			$value	= wpjam_map($key, fn($v, $k)=> $arr[$k] ?? $v);
-			$key	= array_keys($key);
-		}
-	}else{
-		$value	= wpjam_get($arr, $key, array_shift($args));
-	}
-
+	$value	= is_array($key) ? wp_array_slice_assoc($arr, $key) : wpjam_get($arr, $key, array_shift($args));
 	$arr	= wpjam_except($arr, $key);
 
 	return $value;
@@ -632,7 +607,7 @@ function wpjam_pull(&$arr, $key, ...$args){
 
 function wpjam_except($arr, $key){
 	if(is_object($arr)){
-		unset($arr[$key]);
+		unset($arr->$key);
 
 		return $arr;
 	}
@@ -648,8 +623,7 @@ function wpjam_except($arr, $key){
 
 	if(wpjam_exists($arr, $key)){
 		unset($arr[$key]);
-	}elseif(str_contains($key, '.')){
-		$key	= explode('.', $key);
+	}elseif($key	= wpjam_parse_keys($key)){
 		$sub	= &$arr;
 
 		while($key){
@@ -705,6 +679,10 @@ function wpjam_slice($arr, $keys){
 }
 
 function wpjam_filter($arr, ...$args){
+	if(!$args || !$args[0]){
+		return $arr;
+	}
+
 	if(wpjam_is_assoc_array($args[0])){
 		return array_filter($arr, fn($v)=> wpjam_match($v, $args[0], $args[1] ?? 'AND')); 
 	}
@@ -739,18 +717,23 @@ function wpjam_sort($arr, ...$args){
 
 	$is_asc	= fn($v)=> is_int($v) ? $v === SORT_ASC : strtolower($v) === 'asc';
 
-	if(is_callable($args[0])){
+	if(wpjam_is_assoc_array($args[0])){
+		$args	= wpjam_reduce($args[0], fn($carry, $v, $k)=>[...$carry, ($column = array_column($arr, $k)), $is_asc($v) ? SORT_ASC : SORT_DESC, is_numeric(current($column)) ? SORT_NUMERIC : SORT_REGULAR], []);
+	}elseif(is_callable($args[0]) || is_string($args[0])){
 		$order	= $args[1] ?? '';
-		$args	= [array_map($args[0], ($order === 'key' ? array_keys($arr) : $arr)), ($is_asc($order) ? SORT_ASC : SORT_DESC), $args[2] ?? SORT_NUMERIC];
-	}elseif(!wp_is_numeric_array($args[0])){
-		$fields	= wpjam_is_assoc_array($args[0]) ? $args[0] : [$args[0] => $args[1] ?? SORT_DESC];
-		$args	= [];
 
-		foreach($fields as $k => $v){
-			$column = array_column($arr, $k);
+		if(is_callable($args[0])){
+			$column	= array_map($args[0], ($order === 'key' ? array_keys($arr) : $arr));
+			$flag	= $args[2] ?? SORT_NUMERIC;
+		}else{
+			$k	= $args[0];
+			$d	= $args[2] ?? 0;
 
-			array_push($args, $column, $is_asc($v) ? SORT_ASC : SORT_DESC, is_numeric(current($column)) ? SORT_NUMERIC : SORT_REGULAR);
+			$column	= array_map(fn($v)=> wpjam_get($v, $k, $d), $arr);
+			$flag	= is_numeric($d) ? SORT_NUMERIC : SORT_REGULAR;
 		}
+
+		$args	= [$column, ($is_asc($order) ? SORT_ASC : SORT_DESC), $flag];
 	}
 
 	array_push($args, range(1, count($arr)), SORT_ASC, SORT_NUMERIC);
@@ -769,6 +752,42 @@ function wpjam_sort($arr, ...$args){
 
 function wpjam_exists($arr, $key){
 	return is_array($arr) ? array_key_exists($key, $arr) : (is_object($arr) ? isset($arr->$key) : false);
+}
+
+function wpjam_parse_keys($key, $type=''){
+	if($type == '[]'){
+		$keys	= [];
+
+		if(str_contains($key, '[') && !str_starts_with($key, '[') && str_ends_with($key, ']')){
+			$parts	= preg_split('/(['.preg_quote('[]', '/').'])/', $key, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+
+			if(count($parts) % 3 != 1) {
+				return [];
+			}
+
+			$keys[]	= array_shift($parts);
+
+			for($i = 0; $i < count($parts); $i += 3){
+				if(in_array($parts[$i+1], ['[', ']'], true) || $parts[$i] !== '[' || $parts[$i+2] !== ']'){
+					return [];
+				}
+
+				$keys[] = $parts[$i+1];
+			}
+		}
+
+		return $keys;
+	}elseif($type == '.'){
+		return str_contains($key, '.') ? explode('.', $key) : [];
+	}else{
+		foreach(['[]', '.'] as $type){
+			if($keys = wpjam_parse_keys($key, $type)){
+				return $keys;
+			}
+		}
+
+		return [];
+	}
 }
 
 function wpjam_get($arr, $key, $default=null){
@@ -790,11 +809,17 @@ function wpjam_get($arr, $key, $default=null){
 			return $arr[$key];
 		}
 
-		if(!str_contains($key, '.')){
-			return $default;
+		if(str_ends_with($key, '[]')){
+			$value	= wpjam_get($arr, substr($key, 0, -2), $default);
+
+			return is_object($value) ? [$value] : (array)$value;
 		}
 
-		$key	= explode('.', $key);
+		$key	= wpjam_parse_keys($key);
+
+		if(!$key){
+			return $default;
+		}
 	}
 
 	return _wp_array_get($arr, $key, $default);
@@ -822,19 +847,32 @@ function wpjam_set(...$args){
 	}
 
 	if(is_null($key)){
-		$arr[]	= $key;
+		$arr[]	= $value;
 
 		return $arr;
 	}
 
 	if(!is_array($key)){
-		if(wpjam_exists($arr, $key) || !str_contains($key, '.')){
+		if(wpjam_exists($arr, $key)){
 			$arr[$key] = $value;
 
 			return $arr;
 		}
 
-		$key	= explode('.', $key);
+		if(str_ends_with($key, '[]')){
+			$current	= wpjam_get($arr, $key);
+			$current[]	= $value;
+
+			return wpjam_set($arr, substr($key, 0, -2), $current);
+		}
+
+		$key	= wpjam_parse_keys($key) ?: $key;
+
+		if(!is_array($key)){
+			$arr[$key] = $value;
+
+			return $arr;
+		}
 	}
 
 	_wp_array_set($arr, $key, $value);
@@ -891,12 +929,6 @@ if(!function_exists('array_find_key')){
 				return $k;
 			}
 		}
-	}
-}
-
-if(!function_exists('filter_deep')){
-	function filter_deep($arr, $data){
-		return wpjam_filter($arr, $callback, true);
 	}
 }
 
@@ -1243,20 +1275,6 @@ function wpjam_var_dump($value){
 		var_dump($value);
 		echo '</pre>'."\n";
 	}
-}
-
-function wpjam_pagenavi($total=0, $echo=true){
-	$result	= '<div class="pagenavi">'.paginate_links(array_filter([
-		'prev_text'	=> '&laquo;',
-		'next_text'	=> '&raquo;',
-		'total'		=> $total
-	])).'</div>';
-
-	return $echo ? wpjam_echo($result) : $result;
-}
-
-function wpjam_localize_script($handle, $name, $l10n ){
-	wp_localize_script($handle, $name, ['l10n_print_after' => $name.' = '.wpjam_json_encode($l10n)]);
 }
 
 function wpjam_is_mobile_number($number){

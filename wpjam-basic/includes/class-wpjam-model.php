@@ -1512,7 +1512,7 @@ class WPJAM_Items extends WPJAM_Args{
 			}
 
 			if(in_array($method, ['add', 'insert'])){
-				$item	= wpjam_filter($item, fn($v)=> !is_null($v));
+				$item	= array_filter($item, fn($v)=> !is_null($v));
 			}
 		}
 

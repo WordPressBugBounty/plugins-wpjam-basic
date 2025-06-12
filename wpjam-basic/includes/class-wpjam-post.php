@@ -755,6 +755,14 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		return $this->args;
 	}
 
+	public function add_field($key, $value){
+		return $this->update_arg('_fields['.$key.']', $value);
+	}
+
+	public function remove_field($key, $value){
+		return $this->delete_arg('_fields['.$key.']');
+	}
+
 	public function get_fields($id=0, $action_key=''){
 		if(in_array($action_key, ['add', 'set'])){
 			if($action_key == 'add'){
@@ -791,7 +799,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 			$fields['video']	= ['title'=>'视频',	'type'=>'url',	'name'=>'meta_input[video]'];
 		}
 
-		foreach($this->get_items('_fields') as $key => $field){
+		foreach($this->get_arg('_fields[]') as $key => $field){
 			if(in_array($action_key, ['add', 'set']) && empty($field['name']) && !property_exists('WP_Post', $key)){
 				$field['name']	= 'meta_input['.$key.']';
 			}
@@ -899,19 +907,17 @@ class WPJAM_Post_Type extends WPJAM_Register{
 				$tag	= '%'.$name.'_id%';
 
 				if(str_contains($struct, $tag)){
-					add_rewrite_tag($tag, '([0-9]+)', 'post_type='.$name.'&p=');
-
 					remove_rewrite_tag('%'.$name.'%');
 
+					add_rewrite_tag($tag, '([0-9]+)', 'post_type='.$name.'&p=');
+
 					add_filter('post_type_link', fn($link, $post)=> get_post_type($post) == $name ? str_replace($tag, $post->ID, $link) : $link, 1, 2);
-				}else{
-					add_permastruct($name, $struct, array_merge($this->rewrite, ['feed'=>$this->rewrite['feeds']]));
 				}
+
+				add_permastruct($name, $struct, array_merge($this->rewrite, ['feed'=>$this->rewrite['feeds']]));
 			}
 
-			if($this->registered_callback){
-				wpjam_call($this->registered_callback, $name, $object);
-			}
+			wpjam_call($this->registered_callback, $name, $object);
 		}, 10, 2);
 
 		wpjam_init(function(){
@@ -1104,9 +1110,7 @@ class WPJAM_Posts{
 			$tt_ids		= [];
 
 			foreach(array_diff($object->taxonomies, ['post_format']) as $tax){
-				$terms	= $object->get_terms($tax);
-
-				if($terms){
+				if($terms = $object->get_terms($tax)){
 					$post_type	= array_merge($post_type, get_taxonomy($tax)->object_type);
 					$tt_ids		= array_merge($tt_ids, array_column($terms, 'term_taxonomy_id'));
 				}
@@ -1124,14 +1128,6 @@ class WPJAM_Posts{
 		}
 
 		return false;
-	}
-
-	public static function get_related_object_ids($tt_ids, $number, $page=1){
-		$tt_ids	= implode(',', array_map('intval', $tt_ids));
-		$key	= 'related_object_ids:'.$tt_ids.':'.$page.':'.$number;
-		$sql	= 'SELECT object_id, count(object_id) as cnt FROM '.$GLOBALS['wpdb']->term_relationships.' WHERE term_taxonomy_id IN ('.$tt_ids.') GROUP BY object_id ORDER BY cnt DESC, object_id DESC LIMIT '.(($page-1)*$number).', '.$number;
-
-		return wpjam_transient($key, fn()=> $GLOBALS['wpdb']->get_col($sql), DAY_IN_SECONDS);
 	}
 
 	public static function parse_query_vars($vars, $parameter=false){
