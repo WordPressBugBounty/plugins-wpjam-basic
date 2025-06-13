@@ -549,8 +549,8 @@ class WPJAM_Register extends WPJAM_Args{
 	public static function get_by(...$args){
 		if($args){
 			if(is_array($args[0])){
-				$args	= $args[0];
 				$output	= $args[1] ?? null;
+				$args	= $args[0];
 			}else{
 				$args	= [$args[0]=> $args[1]];
 			}
@@ -931,7 +931,11 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 
 		foreach($items as $i => $item){
 			if($args['calc']){
-				$item	= $this->calc($item);
+				if(is_array($args['calc']) && !empty($args['key']) && isset($args['calc'][$item[$args['key']]])){
+					$item	= array_merge($item, $args['calc'][$item[$args['key']]]);
+				}else{
+					$item	= $this->calc($item);
+				}
 			}
 
 			if($args['filter'] && !wpjam_match($item, $args['filter'], 'AND')){
@@ -1062,10 +1066,14 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 		return [];
 	}
 
-	public function accumulate($results, $items, $group=''){
+	public function accumulate($results, $items, $args=[]){
+		$field	= wpjam_pull($args, 'field');
+		$calc	= wpjam_pull($args, 'calc');
+		$items	= wp_is_numeric_array($items ) ? $items : [$items];
+
 		foreach($items as $item){
-			$item	= $this->calc($item);
-			$value	= $group ? ($item[$group] ?? '') : '__';
+			$item	= $calc ? $this->calc($item) : $item;
+			$value	= $field ? ($item[$field] ?? '') : '__';
 			$keys	= $this->sumable ? array_keys(array_filter($this->sumable, fn($v)=> $v == 1)) : [];
 
 			$results[$value]	??= array_merge($item, array_fill_keys($keys, 0));
@@ -1077,7 +1085,7 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 			}
 		}
 
-		return $group ? $results : $results[$value];
+		return $field ? $results : $results[$value];
 	}
 
 	public function format($item){
