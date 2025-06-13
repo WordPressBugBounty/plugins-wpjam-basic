@@ -547,9 +547,16 @@ class WPJAM_Register extends WPJAM_Args{
 	}
 
 	public static function get_by(...$args){
-		$args	= $args ? (is_array($args[0]) ? $args[0] : [$args[0]=> $args[1]]) : [];
+		if($args){
+			if(is_array($args[0])){
+				$args	= $args[0];
+				$output	= $args[1] ?? null;
+			}else{
+				$args	= [$args[0]=> $args[1]];
+			}
+		}
 
-		return self::get_registereds($args);
+		return self::get_registereds($args, $output ?? 'objects');
 	}
 
 	public static function get($name, $by='', $top=''){
@@ -852,28 +859,28 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 		foreach($formula as $t){
 			if(is_numeric($t)){
 				if(str_ends_with($t, '.')){
-					return $invaild('无效数字「'.$t.'」');
+					return $invalid('无效数字「'.$t.'」');
 				}
 			}elseif(str_starts_with($t, '$')){
 				if(!in_array(substr($t, 1), array_keys($this->fields))){
-					return $invaild('「'.$t.'」未定义');
+					return $invalid('「'.$t.'」未定义');
 				}
 			}elseif($t == '('){
 				$depth++;
 			}elseif($t == ')'){
 				if(!$depth){
-					return $invaild('括号不匹配');
+					return $invalid('括号不匹配');
 				}
 
 				$depth--;
 			}else{
 				if(!in_array($t, $signs) && !in_array(strtolower($t), $methods)){
-					return $invaild('无效的「'.$t.'」');
+					return $invalid('无效的「'.$t.'」');
 				}
 			}
 		}
 
-		return $depth ? $invaild('括号不匹配') : $formula;
+		return $depth ? $invalid('括号不匹配') : $formula;
 	}
 
 	protected function render_formular($formula, $key){

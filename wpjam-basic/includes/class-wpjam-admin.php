@@ -25,7 +25,7 @@ class WPJAM_Admin extends WPJAM_Args{
 			$value	= $parent ? ['subs'=>[$slug=>$value]] : $value+['subs'=>[]];
 			$slug	= $parent ?: $slug;
 			$key	= 'pages['.$slug.']';
-			$value	= array_merge($this->get_arg($key, []), $value, ['subs'=>array_merge($this->get_arg($key.'.subs', []), $value['subs'])]);
+			$value	= array_merge($this->get_arg($key, []), $value, ['subs'=>array_merge($this->get_arg($key.'[subs]', []), $value['subs'])]);
 		}elseif($key == 'query_data'){
 			$value	= wpjam_map($value, fn($v)=> is_null($v) ? $v : (is_array($v) ? wp_die('query_data 不能为数组') : sanitize_textarea_field($v)));
 			$value	= array_merge($this->get_arg($key, []), $value);

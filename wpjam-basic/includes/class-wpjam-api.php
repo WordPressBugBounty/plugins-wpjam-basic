@@ -360,11 +360,11 @@ class WPJAM_Platform extends WPJAM_Register{
 	}
 
 	public function __call($method, $args){
-		if(str_ends_with($method, '_by_page_type')){
+		if(try_remove_suffix($method, '_by_page_type')){
 			$item	= $this->get_item(array_shift($args));
 			$object	= wpjam_get_data_type_object(wpjam_pull($item, 'page_type'), $item);
 
-			return $object ? [$object, substr($method, 0, -13)](...$args) : null;
+			return $object ? [$object, $method](...$args) : null;
 		}
 
 		return $this->call_dynamic_method($method, ...$args);
@@ -385,22 +385,17 @@ class WPJAM_Platform extends WPJAM_Register{
 	}
 
 	public function get_page($page_key=''){
-		if(!$page_key){
-			return wpjam_array($this->get_paths(), fn($k)=> ($v = $this->get_page($k)) ? [$k, $v] : null);
+		if($page_key){
+			return ($path = $this->get_item($page_key.'.path')) ? explode('?', $path)[0] : '';
 		}
 
-		return ($path = $this->get_item($page_key.'.path')) ? explode('?', $path)[0] : '';
+		return wpjam_array($this->get_paths(), fn($k)=> ($v = $this->get_page($k)) ? [$k, $v] : null);
 	}
 
 	public function get_fields($page_key){
-		$item	= $this->get_item($page_key);
-
-		if(!$item){
-			return [];
-		}
-
+		$item	= $this->get_item($page_key) ?: [];
 		$fields	= $item['fields'] ?? [];
-		$fields	= $fields ? maybe_callback($fields, $item, $page_key) : $this->get_path_fields_by_page_type($page_key, $item);
+		$fields	= $fields ? maybe_callback($fields, $item, $page_key) : ($item ? $this->get_path_fields_by_page_type($page_key, $item) : []);
 
 		return $fields ?: [];
 	}
@@ -414,15 +409,9 @@ class WPJAM_Platform extends WPJAM_Register{
 	}
 
 	public function has_path($page_key, $strict=false){
-		if($item	= $this->get_item($page_key)){
-			if($strict && isset($item['path']) && $item['path'] === false){
-				return false;
-			}else{
-				return isset($item['path']) || isset($item['callback']);
-			}
-		}
+		$item	= $this->get_item($page_key);
 
-		return false;
+		return (!$item || ($strict && wpjam_get($item, 'path') === false)) ? false : (isset($item['path']) || isset($item['callback']));
 	}
 
 	public function get_path($page_key, $args=[]){
@@ -435,16 +424,12 @@ class WPJAM_Platform extends WPJAM_Register{
 			$args	= is_array($args) ? array_filter($args, fn($v)=> !is_null($v))+$item : $args;
 
 			if($cb){
-				if(is_callable($cb)){
-					return $cb(...[$args, ...(is_array($args) ? [] : [$item]), $page_key]) ?: '';
-				}
+				$path	= is_callable($cb) ? ($cb(...[$args, ...(is_array($args) ? [] : [$item]), $page_key]) ?: '') : null;
 			}else{
-				if($path	= $this->get_path_by_page_type($page_key, $args, $item)){
-					return $path;
-				}
+				$path	= $this->get_path_by_page_type($page_key, $args, $item) ?: null;
 			}
 
-			return isset($item['path']) ? (string)$item['path'] : null;
+			return isset($path) ? $path : (isset($item['path']) ? (string)$item['path'] : null);
 		}	
 	}
 

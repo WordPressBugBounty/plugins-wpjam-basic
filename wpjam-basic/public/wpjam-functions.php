@@ -76,9 +76,7 @@ function wpjam_get_current_platform($args=[], $output='name'){
 }
 
 function wpjam_get_current_platforms($output='names'){
-	$objects	= WPJAM_Platform::get_by(['path'=>true]);
-
-	return $output == 'names' ? array_keys($objects) : $objects;
+	return WPJAM_Platform::get_by(['path'=>true], $output);
 }
 
 function wpjam_get_platform_options($output='bit'){
