@@ -292,6 +292,18 @@ function wpjam_parse_options($options){
 	return $parsed;
 }
 
+function wpjam_get_items($group){
+	return wpjam($group);
+}
+
+function wpjam_get_item($group, $key){
+	return wpjam($group, $key);
+}
+
+function wpjam_add_item($group, $key, ...$args){
+	return wpjam($group.'[]', $key, ...$args);
+}
+
 function wpjam_get_current_var($name){
 	return wpjam_var($name);
 }

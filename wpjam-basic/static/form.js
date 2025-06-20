@@ -255,7 +255,7 @@ jQuery(function($){
 			}
 
 			if(!this.attr('cols')){
-				this.attr('cols', (this.closest('#TB_window')[0] ? 52 : 68));
+				this.css('max-width', '100%').attr('cols', (this.closest('#TB_window')[0] ? 52 : 68));
 			}
 		}
 	};

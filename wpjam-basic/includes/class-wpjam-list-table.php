@@ -244,7 +244,7 @@ class WPJAM_List_Table extends WP_List_Table{
 			}
 		}
 
-		return $this->objects[$type] = [$class, 'get_registereds']($args);
+		return $this->objects[$type] = [$class, 'get_registereds'](wpjam_map($args, fn($v)=> ['value'=>$v, 'if_null'=>true, 'callable'=>true]));
 	}
 
 	protected function get_object($name, $type='action'){
@@ -656,33 +656,35 @@ class WPJAM_List_Table extends WP_List_Table{
 	}
 }
 
-class WPJAM_List_Table_Component extends WPJAM_Args{
-	public static function __callStatic($method, $args){
-		$type	= strtolower(wpjam_at(explode('_', get_called_class(), 2), -1));
+class WPJAM_List_Table_Component extends WPJAM_Register{
+	public static function removed(){
+		return static::call_group('get_arg', 'removed[]');
+	}
 
-		if($method == 'removed'){
-			return wpjam_admin('removed['.$type.'][]', ...$args);
-		}elseif($method == 'get_registereds'){
-			return wpjam_sort(wpjam_filter(wpjam_admin($type.'[]'), wpjam_map($args[0], fn($v)=> ['value'=>$v, 'if_null'=>true, 'callable'=>true])), 'order', 'DESC',  10);
-		}elseif($method == 'get'){
-			return $args && $args[0] ? wpjam_admin($type.'['.$args[0].']') : null;
-		}elseif(in_array($method, ['register', 'unregister'])){
-			$name	= $args[0];
-			$args	= $args[1];
-			$key	= $type.'['.$name.WPJAM_Data_Type::prepare($args, 'key').']';
+	public static function call_group($method, ...$args){
+		$group	= static::get_group(['name'=>strtolower(get_called_class()), 'config'=>['orderby'=>'order']]);
 
-			if($method == 'register'){
-				if($type == 'action' && !empty($args['overall']) && $args['overall'] !== true){
-					static::$method($name.'_all', array_merge($args, ['overall'=>true, 'title'=>$args['overall']]));
+		if(in_array($method, ['add_object', 'remove_object'])){
+			$name		= $args[0];
+			$args[0]	= $name.WPJAM_Data_Type::prepare($args[1], 'key');
 
-					unset($args['overall']);
+			if($method == 'add_object'){
+				if($group->name == 'wpjam_list_table_action' && !empty($args[1]['overall']) && $args[1]['overall'] !== true){
+					static::call_group($method, $name.'_all', array_merge($args[1], ['overall'=>true, 'title'=>$args[1]['overall']]));
+
+					unset($args[1]['overall']);
 				}
 
-				return wpjam_admin($key, new static(['name'=>$name]+$args));
+				$args[1]	= new static($name, $args[1]);
 			}else{
-				return wpjam_admin($key) ? wpjam_admin($key, null) : static::removed($name);
+				if(!static::get($args[0])){
+					$method	= 'update_arg';
+					$args	= ['removed[]', $name];
+				}
 			}
 		}
+
+		return [$group, $method](...$args);
 	}
 }
 
@@ -785,8 +787,14 @@ class WPJAM_List_Table_Action extends WPJAM_List_Table_Component{
 					return wpjam_try($cb, ...$cb_args) ?? true ;
 				}
 
-				if($this->overall || ($this->response == 'add' && !is_null($args['data']) && wpjam_verify_callback($cb, fn($params)=> count($params) == 1 || $params[0]->name == 'data'))){
+				if($this->overall){
 					array_shift($cb_args);
+				}elseif($this->response == 'add' && !is_null($args['data'])){
+					$params	= wpjam_get_reflection($cb)->getParameters();
+
+					if(count($params) == 1 || $params[0]->name == 'data'){
+						array_shift($cb_args);
+					}
 				}
 			}else{
 				if(!$cb){

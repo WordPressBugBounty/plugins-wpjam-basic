@@ -108,7 +108,7 @@ class WPJAM_Cron extends WPJAM_Args{
 
 			return $items;
 		}else{
-			return wpjam_map(wpjam_cron_job(), fn($item)=> $item+[
+			return wpjam_map(wpjam('cron_job'), fn($item)=> $item+[
 				'job_id'	=> wpjam_build_callback_unique_id($item['callback']),
 				'function'	=> wpjam_render_callback($item['callback'])
 			]);
@@ -188,24 +188,17 @@ function wpjam_register_job($name, $args=[]){
 	if(!wpjam_get_cron('wpjam_scheduled')){
 		wpjam_register_cron('wpjam_scheduled', [
 			'recurrence'	=> 'five_minutes',
-			'jobs'			=> fn()=> wpjam_cron_job(),
+			'jobs'			=> fn()=> wpjam('cron_job'),
 			'weight'		=> true
 		]);
 	}
 
 	$args	= is_array($args) ? $args : (is_numeric($args) ? ['weight'=>$args] : []);
+	$args	= array_merge($args, is_callable($name) ? ['callback'=>$name] : []);
 
-	if(is_callable($name)){
-		$args['callback']	= $name;
-	}elseif(empty($args['callback']) || !is_callable($args['callback'])){
-		return;
+	if(!empty($args['callback']) && is_callable($args['callback'])){
+		return wpjam('cron_job[]', wp_parse_args($args, ['weight'=>1, 'day'=>-1]));
 	}
-
-	return wpjam_cron_job(wp_parse_args($args, ['weight'=>1, 'day'=>-1]));
-}
-
-function wpjam_cron_job(...$args){
-	return wpjam(($args ? 'add' : 'get'), 'cron_job', ...$args);
 }
 
 function wpjam_get_cron($hook){

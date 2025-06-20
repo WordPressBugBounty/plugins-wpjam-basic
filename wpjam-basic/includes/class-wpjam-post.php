@@ -99,7 +99,23 @@ class WPJAM_Post{
 			return wp_strip_all_tags($this->excerpt, true);
 		}
 
-		$excerpt	= is_serialized($this->content) ? '' : $this->get_content();
+		if(is_serialized($this->content)){
+			$excerpt	= '';
+		}else{
+			$filter_image_removed	= remove_filter('the_content', 'wp_filter_content_tags', 12);
+			$filter_block_removed	= remove_filter('the_content', 'do_blocks', 9);
+
+			$excerpt	= $this->get_content();
+
+			if($filter_block_removed){
+				add_filter('the_content', 'do_blocks', 9);
+			}
+
+			if($filter_image_removed){
+				add_filter('the_content', 'wp_filter_content_tags', 12);
+			}
+		}
+
 		$excerpt	= wp_strip_all_tags(excerpt_remove_blocks(strip_shortcodes($excerpt)), true);
 		$length		= $length ?: apply_filters('excerpt_length', 200);
 		$more		??= apply_filters('excerpt_more', ' &hellip;');
@@ -755,14 +771,6 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		return $this->args;
 	}
 
-	public function add_field($key, $value){
-		return $this->update_arg('_fields['.$key.']', $value);
-	}
-
-	public function remove_field($key, $value){
-		return $this->delete_arg('_fields['.$key.']');
-	}
-
 	public function get_fields($id=0, $action_key=''){
 		if(in_array($action_key, ['add', 'set'])){
 			if($action_key == 'add'){
@@ -782,15 +790,13 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		}
 
 		if($this->supports('images')){
-			$size	= $this->images_sizes ? $this->images_sizes[0] : '';
-
 			$fields['images']	= [
 				'title'			=> '头图',
 				'name'			=> 'meta_input[images]',
 				'type'			=> 'mu-img',
 				'item_type'		=> 'url',
 				'show_in_rest'	=> false,
-				'size'			=> $size,
+				'size'			=> ($this->images_sizes ? $this->images_sizes[0] : ''),
 				'max_items'		=> $this->images_max_items
 			];
 		}
@@ -799,34 +805,30 @@ class WPJAM_Post_Type extends WPJAM_Register{
 			$fields['video']	= ['title'=>'视频',	'type'=>'url',	'name'=>'meta_input[video]'];
 		}
 
-		foreach($this->get_arg('_fields[]') as $key => $field){
-			if(in_array($action_key, ['add', 'set']) && empty($field['name']) && !property_exists('WP_Post', $key)){
-				$field['name']	= 'meta_input['.$key.']';
-			}
+		$parsed	= $this->parse_fields($id, $action_key);
 
-			$fields[$key]	= $field;
+		if(is_wp_error($parsed)){
+			return $parsed;
 		}
 
-		return $fields ?? [];
+		if($parsed && in_array($action_key, ['add', 'set'])){
+			$parsed	= wpjam_map($parsed, fn($field, $key)=> array_merge($field, (empty($field['name']) && !property_exists('WP_Post', $key)) ? ['name'=>'meta_input['.$key.']'] : []));
+		}
+
+		return array_merge($fields ?? [], $parsed);
 	}
 
 	public function register_option($list_table=false){
-		if(!wpjam_get_post_option($this->name.'_base')){
-			$fields	= $list_table ? [$this, 'get_fields'] : $this->get_fields();
-
-			if($fields){
-				wpjam_register_post_option($this->name.'_base', [
-					'post_type'		=> $this->name,
-					'title'			=> '基础信息',
-					'page_title'	=> '设置'.$this->title,
-					'fields'		=> $fields,
-					'list_table'	=> $this->show_ui,
-					'action_name'	=> 'set',
-					'row_action'	=> false,
-					'order'			=> 99,
-				]);
-			}
-		}
+		return wpjam_get_post_option($this->name.'_base') ?: wpjam_register_post_option($this->name.'_base', [
+			'post_type'		=> $this->name,
+			'title'			=> '基础信息',
+			'page_title'	=> '设置'.$this->title,
+			'fields'		=> [$this, 'get_fields'],
+			'list_table'	=> $this->show_ui,
+			'action_name'	=> 'set',
+			'row_action'	=> false,
+			'order'			=> 99,
+		]);
 	}
 
 	public function get_support($feature){

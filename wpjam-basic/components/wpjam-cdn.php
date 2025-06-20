@@ -6,13 +6,9 @@ Description: CDN 加速使用云存储对博客的静态资源进行 CDN 加速�
 Version: 2.0
 */
 class WPJAM_CDN extends WPJAM_Option_Model{
-	public static function __callStatic($method, $args){
-		return wpjam($method, 'cdn', ...$args);
-	}
-
 	public static function get_sections(){
 		$cdn_fields	= [
-			'cdn_name'	=> ['title'=>'云存储',	'type'=>'select', 'options'=>[''=>'请选择']+self::get()],
+			'cdn_name'	=> ['title'=>'云存储',	'type'=>'select', 'options'=>[''=>'请选择']+wpjam('cdn')],
 			'host'		=> ['title'=>'CDN 域名',	'show_if'=>['cdn_name', '!=', ''],	'type'=>'url',	'description'=>'设置为在CDN云存储绑定的域名。'],
 			'disabled'	=> ['title'=>'切回本站',	'show_if'=>['cdn_name', '=', ''],	'label'=>'使用 CDN 之后切换回使用本站图片，请勾选该选项，并将原 CDN 域名填回「本地设置」的「额外域名」中。'],
 			'image'		=> ['title'=>'图片处理',	'show_if'=>['cdn_name', 'IN', ['aliyun_oss', 'volc_imagex', 'qcloud_cos', 'qiniu']],	'class'=>'switch',	'value'=>1,	'label'=>'开启云存储图片处理功能，使用云存储进行裁图、添加水印等操作。<br />&emsp;<strong>*</strong> 注意：开启之后，文章和媒体库中的所有图片都会镜像到云存储。'],
@@ -305,7 +301,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 					self::update_setting('wm_size', ['width'=>self::get_setting('wm_width', 0), 'height'=>self::get_setting('wm_height', 0)]);
 				}
 
-				if($args = self::get(CDN_NAME)){
+				if($args = wpjam('cdn', CDN_NAME)){
 					$file	= wpjam_get($args, 'file') ?: dirname(__DIR__).'/cdn/'.CDN_NAME.'.php';
 
 					if(file_exists($file)){
@@ -382,18 +378,18 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 			],
 			'ucloud'		=> ['title'=>'UCloud'],
 			'qiniu'			=> ['title'=>'七牛云存储']
-		], fn($v, $k)=> self::add($k, $v));
+		], fn($v, $k)=> wpjam('cdn', $k, $v));
 
 		add_action('plugins_loaded', [self::class, 'on_plugins_loaded'], 99);
 	}
 }
 
 function wpjam_register_cdn($name, $args){
-	return WPJAM_CDN::add($name, $args);
+	return wpjam('cdn', $name, $args);
 }
 
 function wpjam_unregister_cdn($name){
-	return WPJAM_CDN::delete($name);
+	return wpjam('cdn[]', $name, null);
 }
 
 function wpjam_cdn_get_setting($name, ...$args){

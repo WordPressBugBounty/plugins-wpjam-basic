@@ -124,7 +124,8 @@ div.mu-text > .mu-item,
 div.mu-image > .mu-item,
 div.mu-file > .mu-item{display:flex; align-items:center;}
 
-div.mu-text.max-reached > .mu-item:last-child input{display:none;}
+div.mu-text.max-reached > .mu-item:last-child input,
+div.mu-text.max-reached > .mu-item:last-child select{display:none;}
 div.mu-text.max-reached > .mu-item:last-child .button{margin-left:0px;}
 
 div.mu-text.direction-row{gap:8px 4px; min-width:400px; max-width:700px;}

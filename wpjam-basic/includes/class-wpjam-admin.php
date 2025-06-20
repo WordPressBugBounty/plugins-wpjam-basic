@@ -770,11 +770,11 @@ class WPJAM_Builtin_Page{
 	public static function on_edit_form($post){
 		$meta_boxes	= $GLOBALS['wp_meta_boxes'][$post->post_type]['wpjam'] ?? [];
 
-		foreach(wp_array_slice_assoc($meta_boxes, ['high', 'core', 'default', 'low']) as $_meta_boxes){
-			foreach((array)$_meta_boxes as $meta_box){
-				if(!empty($meta_box['id']) && !empty($meta_box['title'])){
-					$title[]	= ['a', ['class'=>'nav-tab', 'href'=>'#tab_'.$meta_box['id']], $meta_box['title']];
-					$content[]	= ['div', ['id'=>'tab_'.$meta_box['id']], wpjam_ob_get_contents($meta_box['callback'], $post, $meta_box)];
+		foreach(wp_array_slice_assoc($meta_boxes, ['high', 'core', 'default', 'low']) as $boxes){
+			foreach((array)$boxes as $box){
+				if(!empty($box['id']) && !empty($box['title'])){
+					$title[]	= ['a', ['class'=>'nav-tab', 'href'=>'#tab_'.$box['id']], $box['title']];
+					$content[]	= ['div', ['id'=>'tab_'.$box['id']], wpjam_ob_get_contents($box['callback'], $post, $box)];
 				}
 			}
 		}
@@ -791,54 +791,53 @@ class WPJAM_Builtin_Page{
 	}
 
 	public static function call_post_options($method, ...$args){
-		$post_type	= get_screen_option('post_type');
-		$options	= wpjam_get_post_options($post_type, ['list_table'=>false]);
-
 		if($method == 'callback'){	// 只有 POST 方法提交才处理，自动草稿、自动保存和预览情况下不处理
 			if($_SERVER['REQUEST_METHOD'] != 'POST'
-				|| get_post_status($args[0]) == 'auto-draft'
-				|| get_post_type($args[0]) != $post_type
+				|| get_post_status($post_id) == 'auto-draft'
 				|| (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE)
 				|| (!empty($_POST['wp-preview']) && $_POST['wp-preview'] == 'dopreview')
 			){
 				return;
 			}
 
-			wpjam_map($options, fn($object)=> wpjam_if_error(wpjam_catch([$object, 'callback'], $args[0]), 'die'));
+			$post_id	= $args[0];
+			$post_type	= get_post_type($post_id);
 		}else{
-			if($args[0] != $post_type){
-				return;
-			}
-
+			$post_type	= $args[0];
+			$post_id	= get_post($args[1])->ID;
 			$context	= use_block_editor_for_post_type($post_type) ? 'normal' : 'wpjam';
+		}
 
-			wpjam_map($options, fn($object)=> add_meta_box($object->name, $object->title, [$object, 'render'], $post_type, ($object->context ?: $context), $object->priority));
+		foreach(wpjam_get_post_options($post_type, ['list_table'=>false]) as $object){
+			if($object->meta_box_cb || ($object->fields	= $object->get_fields($post_id, ''))){
+				if($method == 'callback'){
+					wpjam_if_error(wpjam_catch([$object, 'callback'], $post_id), 'die');
+				}else{
+					add_meta_box($object->name, $object->title, [$object, 'render'], $post_type, ($object->context ?: $context), $object->priority);
+				}
+			}
 		}
 	}
 
 	public static function call_term_options($method, ...$args){
-		$taxonomy	= get_screen_option('taxonomy');
-
 		if($method == 'render'){
-			$term	= array_shift($args);
+			$term	= $args[0];
+			$tax	= $args[1];
 			$action	= $term ? 'edit' : 'add';
 			$args	= [($term ? $term->term_id : false), ['fields_type'=>($term ? 'tr' : 'div'), 'wrap_class'=>'form-field']];
 		}elseif($method == 'validate'){
 			$action	= 'add';
-			$term	= array_shift($args);
-
-			if(array_shift($args) != $taxonomy){
-				return;
-			}
+			$term	= $args[0];
+			$tax	= $args[1];
+			$args	= [];
 		}elseif($method == 'callback'){
 			$action	= $_POST['action'] == 'add-tag' ? 'add' : 'edit';
-
-			if(get_term_taxonomy($args[0]) != $taxonomy){
-				return;
-			}
+			$tax	= get_term_taxonomy($args[0]);
 		}
 
-		wpjam_map(wpjam_get_term_options($taxonomy, ['action'=>$action, 'list_table'=>false]), fn($object)=> wpjam_if_error(wpjam_catch([$object, $method], ...$args), 'die'));
+		foreach(wpjam_get_term_options($tax, ['action'=>$action, 'list_table'=>false]) as $object){
+			wpjam_if_error(wpjam_catch([$object, $method], ...$args), 'die');
+		}
 
 		if($method == 'validate'){
 			return $term;
@@ -890,7 +889,7 @@ class WPJAM_Builtin_Page{
 
 			add_action(($typenow == 'page' ? 'edit_page_form' : 'edit_form_advanced'),	[self::class, 'on_edit_form'], 99);
 
-			add_action('add_meta_boxes',		fn($post_type)=> self::call_post_options('render', $post_type));
+			add_action('add_meta_boxes',		fn($post_type, $post)=> self::call_post_options('render', $post_type, $post), 10, 2);
 			add_action('wp_after_insert_post',	fn($post_id)=> self::call_post_options('callback', $post_id), 999, 2);
 		}elseif(in_array($base, ['term', 'edit-tags'])){
 			$object	= wpjam_admin('tax_object');
@@ -914,7 +913,7 @@ class WPJAM_Builtin_Page{
 						add_action('edited_term',		fn($term_id)=> self::call_term_options('callback', $term_id));
 					}
 				}else{
-					add_action($taxnow.'_add_form_fields',	fn()=> self::call_term_options('render'));
+					add_action($taxnow.'_add_form_fields',	fn($taxonomy)=> self::call_term_options('render', null, $taxonomy));
 				}
 
 				WPJAM_Builtin_List_Table::load([
@@ -932,7 +931,7 @@ class WPJAM_Builtin_Page{
 					'post_type'		=> $typenow,
 				]);
 			}else{
-				add_action($taxnow.'_edit_form_fields',	fn($term)=> self::call_term_options('render', $term));
+				add_action($taxnow.'_edit_form_fields',	fn($term, $taxonomy)=> self::call_term_options('render', $term, $taxonomy), 10, 2);
 			}
 		}elseif($base == 'users'){
 			WPJAM_Builtin_List_Table::load([

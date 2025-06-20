@@ -1287,15 +1287,18 @@ class WPJAM_Fields extends WPJAM_Attr{
 			$fields	= array_merge(...array_map(fn($g)=> ($g[0] && count($g[1]) > 1) ? [wpjam_tag('div', ['field-group'], implode("\n", $g[1]))] : $g[1], [...$groups, [$group, $fields]]));
 		}
 
-		$fields	= wpjam_wrap(implode($sep, array_filter($fields)));
+		$fields	= array_filter($fields);
+		$wrap	= wpjam_wrap(implode($sep, $fields));
 
-		if($type == 'table'){
-			$fields->wrap('tbody')->wrap('table', ['cellspacing'=>0, 'class'=>'form-table']);
-		}elseif($type == 'list'){
-			$fields->wrap('ul');
+		if($fields){
+			if($type == 'table'){
+				$wrap->wrap('tbody')->wrap('table', ['cellspacing'=>0, 'class'=>'form-table']);
+			}elseif($type == 'list'){
+				$wrap->wrap('ul');
+			}
 		}
 
-		return $fields;
+		return $wrap;
 	}
 
 	public function get_parameter($method='POST', $merge=true){

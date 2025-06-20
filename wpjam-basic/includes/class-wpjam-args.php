@@ -359,6 +359,44 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 		return wpjam_pull($this->args, $key, ...$args);
 	}
 
+	public function add_field($key, ...$args){
+		if(is_array($key)){
+			return wpjam_reduce($key, fn($carry, $v, $k)=> $carry->add_field($k, $v), $this);
+		}
+
+		if(is_callable($key) && !$args){
+			[$args, $key]	= [[$key], ''];
+		}
+
+		return $args ? $this->update_arg('_fields['.$key.']', ...$args) : $this;
+	}
+
+	public function remove_field($key){
+		return $this->delete_arg('_fields['.$key.']');
+	}
+
+	public function parse_fields(...$args){
+		$fields	= [];
+
+		foreach($this->get_arg('_fields[]') as $key => $field){
+			if(is_callable($field)){
+				$result	= wpjam_call($field, ...$args);
+
+				if(is_wp_error($result)){
+					return $result;
+				}elseif(is_numeric($key)){
+					$fields	= array_merge($fields, $result);
+				}else{
+					$fields[$key]	= $result;
+				}
+			}elseif(wpjam_is_assoc_array($field)){
+				$fields[$key]	= $field;
+			}
+		}
+
+		return $fields;
+	}
+
 	public function to_array(){
 		return $this->get_args();
 	}
@@ -425,8 +463,8 @@ class WPJAM_Register extends WPJAM_Args{
 			return $args;
 		}
 
-		$config	= wpjam_get_annotation(static::get_called(), 'config')+['model'=>true];
-		$model	= $config['model'] ? wpjam_get($args, 'model') : null;
+		$config	= get_class($this) == self::class ? [] : static::call_group('get_config');
+		$model	= empty($config['model']) ? null : wpjam_get($args, 'model');
 
 		if($model || !empty($args['hooks']) || !empty($args['init'])){
 			$file	= wpjam_pull($args, 'file');
@@ -437,7 +475,7 @@ class WPJAM_Register extends WPJAM_Args{
 		}
 
 		if($model){
-			if(is_subclass_of($model, 'WPJAM_Register')){
+			if(is_subclass_of($model, self::class)){
 				trigger_error('「'.(is_object($model) ? get_class($model) : $model).'」是 WPJAM_Register 子类');
 			}
 
@@ -462,10 +500,11 @@ class WPJAM_Register extends WPJAM_Args{
 	}
 
 	protected function filter_args(){
-		$args	= $this->args;
-		$name	= $args['name'];
+		if(get_class($this) != self::class){
+			$this->args = static::call_group('filter', $this->args);
+		}
 
-		return $this->call_group('filtered', $name) === false ? apply_filters($this->call_group('get_arg', 'name').'_args', $args, $name) : $args;
+		return $this->args;
 	}
 
 	public function get_arg($key, $default=null, $should_callback=true){
@@ -510,24 +549,24 @@ class WPJAM_Register extends WPJAM_Args{
 		return true;
 	}
 
+	public static function get_group($args=[]){
+		return WPJAM_Register_Group::instance($args);
+	}
+
 	public static function call_group($method, ...$args){
-		[$method, $group]	= explode('_by_', $method)+['', ''];
-
 		$called	= get_called_class();
-		$called	= $called == 'WPJAM_Register' ? '' : $called;
 
-		if($group || $called){
-			$name	= strtolower($group ?: $called);
-			$group	= WPJAM_Register_Group::get_instance($name) ?: WPJAM_Register_Group::get_instance($name, compact('called', 'name')+[
-				'defaults'=> $called && method_exists($called, 'get_defaults') ? static::get_defaults() : []
-			]);
+		if($called != self::class){
+			$group	= static::get_group(['called'=>$called, 'name'=>strtolower($called)]);
 
+			$group->defaults	??= method_exists($called, 'get_defaults') ? static::get_defaults() : [];
+		
 			return [$group, $method](...$args);
 		}
 	}
 
 	public static function register($name, $args=[]){
-		return self::call_group('add_object', $name, $args);
+		return static::call_group('add_object', $name, $args);
 	}
 
 	public static function re_register($name, $args, $merge=true){
@@ -537,30 +576,21 @@ class WPJAM_Register extends WPJAM_Args{
 	}
 
 	public static function unregister($name){
-		self::call_group('remove_object', $name);
+		static::call_group('remove_object', $name);
 	}
 
 	public static function get_registereds($args=[], $output='objects', $operator='and'){
-		$objects	= self::call_group('get_objects', $args, $operator);
+		$objects	= static::call_group('get_objects', $args, $operator);
 
 		return $output == 'names' ? array_keys($objects) : $objects;
 	}
 
 	public static function get_by(...$args){
-		if($args){
-			if(is_array($args[0])){
-				$output	= $args[1] ?? null;
-				$args	= $args[0];
-			}else{
-				$args	= [$args[0]=> $args[1]];
-			}
-		}
-
-		return self::get_registereds($args, $output ?? 'objects');
+		return self::get_registereds(...((!$args || is_array($args[0])) ? $args : [$args[0]=> $args[1]]));
 	}
 
 	public static function get($name, $by='', $top=''){
-		return self::call_group('get_object', $name, $by, $top);
+		return static::call_group('get_object', $name, $by, $top);
 	}
 
 	public static function exists($name){
@@ -568,15 +598,15 @@ class WPJAM_Register extends WPJAM_Args{
 	}
 
 	public static function get_setting_fields($args=[]){
-		return self::call_group('get_fields', $args);
+		return static::call_group('get_fields', $args);
 	}
 
 	public static function get_active($key=null){
-		return self::call_group('get_active', $key);
+		return static::call_group('get_active', $key);
 	}
 
 	public static function call_active($method, ...$args){
-		return self::call_group('call_active', $method, ...$args);
+		return static::call_group('call_active', $method, ...$args);
 	}
 
 	public static function by_active(...$args){
@@ -589,7 +619,9 @@ class WPJAM_Register extends WPJAM_Args{
 
 class WPJAM_Register_Group extends WPJAM_Args{
 	public function get_objects($args=[], $operator='AND'){
-		wpjam_map($this->pull('defaults'), [$this, 'add_object']);
+		if($this->defaults){
+			array_map(fn($name)=> $this->by_default($name), array_keys($this->defaults));
+		}
 
 		$objects	= wpjam_filter($this->get_arg('objects[]'), $args, $operator);
 		$orderby	= $this->get_config('orderby');
@@ -603,9 +635,14 @@ class WPJAM_Register_Group extends WPJAM_Args{
 				return array_find($this->get_objects(), fn($v)=> $v->model && is_string($v->model) && strcasecmp($name, $v->model) === 0) ?: $this->get_object(get_parent_class($name), $by, $top);
 			}
 		}elseif($name){
-			return $this->get_arg('objects['.$name.']') ?: (is_null($default = $this->pull('defaults['.$name.']')) ? null : $this->add_object($name, $default));
-
+			return $this->get_arg('objects['.$name.']') ?: $this->by_default($name);
 		}
+	}
+
+	public function by_default($name){
+		$args = $this->pull('defaults['.$name.']');
+
+		return is_null($args) ? null : $this->add_object($name, $args);
 	}
 
 	public function add_object($name, $object){
@@ -639,7 +676,7 @@ class WPJAM_Register_Group extends WPJAM_Args{
 
 		$this->update_arg('objects['.$name.']', $object);
 
-		if($this->called && ($object->is_active() || $object->active)){
+		if($object->is_active() || $object->active){
 			wpjam_hooks(maybe_callback($object->pull('hooks')));
 			wpjam_init($object->pull('init'));
 
@@ -647,8 +684,8 @@ class WPJAM_Register_Group extends WPJAM_Args{
 				$object->registered();
 			}
 
-			if($count == 0 && method_exists($this->called, 'add_hooks')){
-				wpjam_hooks(wpjam_call([$this->called, 'add_hooks']));
+			if($count == 0 && method_exists($called, 'add_hooks')){
+				wpjam_hooks(wpjam_call([$called, 'add_hooks']));
 			}
 		}
 
@@ -659,20 +696,16 @@ class WPJAM_Register_Group extends WPJAM_Args{
 		return $this->delete_arg('objects['.$name.']');
 	}
 
-	public function get_config($key){
-		if($this->called){
-			return wpjam_get_annotation($this->called, 'config')[$key] ?? null;
-		}
+	public function get_config($key=null){
+		$this->config	??= $this->called ? wpjam_get_annotation($this->called, 'config')+['model'=>true] : [];
+
+		return $this->get_arg('config['.($key ?: '').']');
 	}
 
-	public function filtered($name){
-		$result	= in_array($name, $this->get_arg('filtered[]'));
+	public function filter($args){
+		$name	= $args['name'];
 
-		if(!$result){
-			$this->update_arg('filtered[]', $name);
-		}
-
-		return $result;
+		return in_array($name, $this->get_arg('filtered[]')) ? $args : apply_filters($this->update_arg('filtered[]', $name)->name.'_args', $args, $name);
 	}
 
 	public function get_active($key=null){
@@ -732,7 +765,7 @@ class WPJAM_Register_Group extends WPJAM_Args{
 	}
 
 	public static function __callStatic($method, $args){
-		foreach(self::get_instance() as $group){
+		foreach(self::instance() as $group){
 			if($method == 'register_json'){
 				if($group->get_config($method)){
 					$group->call_active($method, $args[0]);
@@ -745,7 +778,7 @@ class WPJAM_Register_Group extends WPJAM_Args{
 		}
 	}
 
-	public static function get_instance($name='', $args=[]){
+	public static function instance($args=[]){
 		static $groups	= [];
 
 		if(!$groups){
@@ -753,13 +786,17 @@ class WPJAM_Register_Group extends WPJAM_Args{
 			add_action('wpjam_admin_init',	[self::class, 'on_admin_init']);
 		}
 
-		return $name ? ($groups[$name] ?? ($args ? ($groups[$name] = new self($args)) : null)) : $groups;
+		if($args){
+			return !empty($args['name']) ? ($groups[$args['name']] ??= new self($args)) : null;
+		}
+
+		return $groups;
 	}
 }
 
 class WPJAM_AJAX extends WPJAM_Args{
 	public function callback(){
-		wpjam_set_die_handler('ajax');
+		add_filter('wp_die_ajax_handler', fn()=> ['WPJAM_Error', 'wp_die_handler']);
 
 		if(!$this->callback || !is_callable($this->callback)){
 			wp_die('invalid_callback');
@@ -787,7 +824,7 @@ class WPJAM_AJAX extends WPJAM_Args{
 	}
 
 	public static function create($name, $args){
-		if(!is_admin() && !wpjam('get', 'ajax')){
+		if(!is_admin() && !wpjam('ajax')){
 			wpjam_script('wpjam-ajax', [
 				'for'		=> 'wp, login',
 				'src'		=> wpjam_url(dirname(__DIR__).'/static/ajax.js'),
@@ -797,7 +834,7 @@ class WPJAM_AJAX extends WPJAM_Args{
 				'priority'	=> 1
 			]);
 
-			if(is_login()){
+			if(!is_login()){
 				add_filter('script_loader_tag', fn($tag, $handle)=> $handle == 'wpjam-ajax' && current_theme_supports('script', $handle) ? '' : $tag, 10, 2);
 			}
 		}
@@ -816,11 +853,11 @@ class WPJAM_AJAX extends WPJAM_Args{
 			add_action($prefix.$name, [new static(['name'=>$name]+$args), 'callback']);
 		}
 
-		return wpjam('add', 'ajax', $name, $args);
+		return wpjam('ajax', $name, $args);
 	}
 
 	public static function get($name){
-		return wpjam('get', 'ajax', $name);
+		return wpjam('ajax', $name);
 	}
 }
 
@@ -929,7 +966,7 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 		$args	= wp_parse_args($args, ['calc'=>true, 'sum'=>true, 'format'=>false, 'orderby'=>'', 'order'=>'', 'filter'=>'']);
 		$sums	= $args['sum'] ? wpjam_array($this->sumable, fn($k, $v)=> $v == 1 ? [$k, 0] : null) : [];
 
-		foreach($items as $i => $item){
+		foreach($items as $i => &$item){
 			if($args['calc']){
 				if(is_array($args['calc']) && !empty($args['key']) && isset($args['calc'][$item[$args['key']]])){
 					$item	= array_merge($item, $args['calc'][$item[$args['key']]]);
@@ -950,9 +987,9 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 			if($args['format']){
 				$item	= $this->format($item);
 			}
-
-			$items[$i] = $item;
 		}
+
+		unset($item);
 
 		if($args['orderby']){
 			$items	= wpjam_sort($items, $args['orderby'], $args['order']);
@@ -961,7 +998,7 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 		if($args['sum']){
 			$sums	= $this->calc($sums, ['sum'=>true])+(is_array($args['sum']) ? $args['sum'] : []);
 			$sums	= $args['format'] ? $this->format($sums) : $sums;
-			$items	= array_merge([$sums], $items);
+			$items	= wpjam_add_at($items, 0, '__sum', $sums);
 		}
 
 		return $items;
@@ -1059,7 +1096,7 @@ class WPJAM_Data_Processor extends WPJAM_Args{
 			if($field	= wpjam_pull($args, 'field')){
 				return wpjam_map(wpjam_group($items, $field), fn($items, $field)=> array_merge(array_values($items)[0], $this->sum($items, $args)));
 			}else{
-				return $this->calc($this->process($items, $args+['sum'=>true])[0], ['sum'=>true]);
+				return $this->calc(wpjam_at($this->process($items, $args+['sum'=>true]), 0), ['sum'=>true]);
 			}
 		}
 

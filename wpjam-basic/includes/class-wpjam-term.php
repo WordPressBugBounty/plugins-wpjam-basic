@@ -572,17 +572,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		return $this->args;
 	}
 
-	public function add_field($key, $value){
-		return $this->update_arg('_fields['.$key.']', $value);
-	}
-
-	public function remove_field($key, $value){
-		return $this->delete_arg('_fields['.$key.']');
-	}
-
 	public function get_fields($id=0, $action_key=''){
-		$fields	= [];
-
 		if($action_key == 'set'){
 			$fields['name']	= ['title'=>'名称',	'type'=>'text',	'class'=>'',	'required'];
 
@@ -638,22 +628,22 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 			];
 		}
 
-		return array_merge($fields, $this->get_arg('_fields[]'));
+		$parsed	= $this->parse_fields($id, $action_key);
+
+		return is_wp_error($parsed) ? $parsed : array_merge($fields ?? [], $parsed);
 	}
 
 	public function register_option($list_table=false){
-		if(!wpjam_get_term_option($this->name.'_base')){
-			wpjam_register_term_option($this->name.'_base', [
-				'taxonomy'		=> $this->name,
-				'title'			=> '快速编辑',
-				'submit_text'	=> '编辑',
-				'page_title'	=> '编辑'.$this->title,
-				'fields'		=> [$this, 'get_fields'],
-				'list_table'	=> $this->show_ui,
-				'action_name'	=> 'set',
-				'order'			=> 99,
-			]);
-		}
+		wpjam_get_term_option($this->name.'_base') ?: wpjam_register_term_option($this->name.'_base', [
+			'taxonomy'		=> $this->name,
+			'title'			=> '快速编辑',
+			'submit_text'	=> '编辑',
+			'page_title'	=> '编辑'.$this->title,
+			'fields'		=> [$this, 'get_fields'],
+			'list_table'	=> $this->show_ui,
+			'action_name'	=> 'set',
+			'order'			=> 99,
+		]);
 	}
 
 	public function is_object_in($object_type){

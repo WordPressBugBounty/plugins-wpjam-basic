@@ -42,14 +42,10 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 	}
 
 	public static function render(){
-		if(!wpjam('get', 'toc')){
-			return '';
-		}
-
 		$index	= '';
 		$path	= [];
 
-		foreach(wpjam('get', 'toc') as $item){
+		foreach(wpjam('toc') as $item){
 			if($path){
 				if(end($path) < $item['depth']){
 					$index	.= "\n<ul>\n";
@@ -70,10 +66,12 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 			$path[]	= $item['depth'];
 		}
 
-		$index	.= "</li>\n".str_repeat("</li>\n</ul>\n", count($path)-1);
-		$index	= "<ul>\n".$index."</ul>\n";
+		if($path){
+			$index	.= "</li>\n".str_repeat("</li>\n</ul>\n", count($path)-1);
+			$index	= "<ul>\n".$index."</ul>\n";
 
-		return '<div id="toc">'."\n".'<p class="toc-title"><strong>文章目录</strong><span class="toc-controller toc-controller-show">[隐藏]</span></p>'."\n".$index.'</div>'."\n";
+			return '<div id="toc">'."\n".'<p class="toc-title"><strong>文章目录</strong><span class="toc-controller toc-controller-show">[隐藏]</span></p>'."\n".$index.'</div>'."\n";
+		}
 	}
 
 	public static function add_item($m){
@@ -82,9 +80,9 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 
 		if(!$attr['class'] || !str_contains($attr['class'], 'toc-noindex')){
 			$attr['class']	.= ($attr['class'] ? ' ' : '').'toc-index';
-			$attr['id']		= $attr['id'] ?: 'toc_'.(count(wpjam('get', 'toc'))+1);
+			$attr['id']		= $attr['id'] ?: 'toc_'.(count(wpjam('toc'))+1);
 
-			wpjam('add', 'toc', ['text'=>trim(strip_tags($m[3])), 'depth'=>$m[1],	'id'=>$attr['id']]);
+			wpjam('toc[]', ['text'=>trim(strip_tags($m[3])), 'depth'=>$m[1],	'id'=>$attr['id']]);
 		}
 
 		return wpjam_tag('h'.$m[1], $attr, $m[3]);

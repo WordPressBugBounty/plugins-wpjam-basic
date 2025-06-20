@@ -2,50 +2,42 @@
 // register
 function wpjam_register($group, $name, $args=[]){
 	if($group && $name){
-		return WPJAM_Register::call_group('add_object_by_'.$group, $name, $args);
+		return wpjam_register_group($group)->add_object($name, $args);
 	}
 }
 
 function wpjam_unregister($group, $name){
 	if($group && $name){
-		WPJAM_Register::call_group('remove_object_by_'.$group, $name);
+		wpjam_register_group($group)->remove_object($name);
 	}
 }
 
 function wpjam_get_registered($group, $name){
 	if($group && $name){
-		return WPJAM_Register::call_group('get_object_by_'.$group, $name);
+		return wpjam_register_group($group)->get_object($name);
 	}
 }
 
-function wpjam_get_registereds($group){
-	return $group ? WPJAM_Register::call_group('get_objects_by_'.$group) : [];
+function wpjam_get_registereds($group, $args=[]){
+	return $group ? wpjam_register_group($group)->get_objects($args) : [];
+}
+
+function wpjam_register_group($group){
+	return WPJAM_Register::get_group(['name'=>strtolower($group), 'config'=>[]]);
 }
 
 function wpjam_args($args=[]){
 	return new WPJAM_Args($args);
 }
 
-// Items
-function wpjam_get_items($group){
-	return wpjam('get', $group);
-}
-
-function wpjam_get_item($group, $key){
-	return wpjam('get', $group, $key);
-}
-
-function wpjam_add_item($group, $key, ...$args){
-	return wpjam('add', $group, $key, ...$args);
-}
-
+// Instance
 function wpjam_get_instance($group, $id, $cb=null){
-	return wpjam('get', 'instance', $group.'.'.$id) ?? ($cb ? wpjam_add_instance($group, $id, $cb($id)) : null);
+	return wpjam('instance', $group.'.'.$id) ?? ($cb ? wpjam_add_instance($group, $id, $cb($id)) : null);
 }
 
 function wpjam_add_instance($group, $id, $object){
 	if(!is_wp_error($object) && !is_null($object)){
-		wpjam('add', 'instance', $group.'.'.$id, $object);	
+		wpjam('instance', $group.'.'.$id, $object);	
 	}
 
 	return $object;
@@ -246,7 +238,7 @@ function wpjam_register_lazyloader($name, $args){
 }
 
 function wpjam_lazyloader($name, ...$args){
-	return wpjam($args ? 'set' : 'get', 'lazyloader', $name, ...$args);
+	return wpjam('lazyloader', $name, ...$args);
 }
 
 function wpjam_lazyload($name, $ids){
@@ -325,9 +317,7 @@ function wpjam_get_post_type_object($name){
 
 function wpjam_add_post_type_field($post_type, $key, ...$args){
 	if($object = WPJAM_Post_Type::get($post_type)){
-		foreach((is_array($key) ? $key : [$key => $args[0]]) as $k => $v){
-			$object->add_field($k, $v);
-		}
+		$object->add_field($key, ...$args);
 	}
 }
 
@@ -498,9 +488,7 @@ function wpjam_get_taxonomy_object($name){
 
 function wpjam_add_taxonomy_field($taxonomy, $key, ...$args){
 	if($object = WPJAM_Taxonomy::get($taxonomy)){
-		foreach((is_array($key) ? $key : [$key => $args[0]]) as $k => $v){
-			$object->add_field($k, $v);
-		}
+		$object->add_field($key, ...$args);
 	}
 }
 

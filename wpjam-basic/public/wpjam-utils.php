@@ -271,6 +271,80 @@ function wpjam_parse_ip($ip=''){
 	return $default;
 }
 
+function wpjam_ua($name=''){
+	return $name ? wpjam_get(wpjam_ua(), $name) : (wpjam('user_agent') ?: wpjam('user_agent', wpjam_parse_user_agent()));
+}
+
+function wpjam_current_supports($feature){
+	if($feature == 'webp'){
+		return wpjam_ua('browser') == 'chrome' || wpjam_ua('os') == 'Android' || (wpjam_ua('os') == 'iOS' && version_compare(wpjam_ua('os_version'), 14) >= 0);
+	}
+}
+
+function wpjam_get_device(){
+	return wpjam_ua('device');
+}
+
+function wpjam_get_os(){
+	return wpjam_ua('os');
+}
+
+function wpjam_get_app(){
+	return wpjam_ua('app');
+}
+
+function wpjam_get_browser(){
+	return wpjam_ua('browser');
+}
+
+function wpjam_get_version($key){
+	return wpjam_ua($key.'_version');
+}
+
+function is_ipad(){
+	return wpjam_get_device() == 'iPad';
+}
+
+function is_iphone(){
+	return wpjam_get_device() == 'iPone';
+}
+
+function is_ios(){
+	return wpjam_get_os() == 'iOS';
+}
+
+function is_macintosh(){
+	return wpjam_get_os() == 'Macintosh';
+}
+
+function is_android(){
+	return wpjam_get_os() == 'Android';
+}
+
+function is_weixin(){
+	if(isset($_GET['weixin_appid'])){
+		return true;
+	}
+
+	return wpjam_get_app() == 'weixin';
+}
+
+function is_weapp(){
+	if(isset($_GET['appid'])){
+		return true;
+	}
+
+	return wpjam_get_app() == 'weapp';
+}
+
+function is_bytedance(){
+	if(isset($_GET['bytedance_appid'])){
+		return true;
+	}
+
+	return wpjam_get_app() == 'bytedance';
+}
+
 // File
 function wpjam_import($file, $columns=[]){
 	if($file){
