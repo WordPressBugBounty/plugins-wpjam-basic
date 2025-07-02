@@ -977,9 +977,9 @@ class WPJAM_List_Table_Action extends WPJAM_List_Table_Component{
 		$id		= ($args['bulk'] || $object->overall) ? null : $args['id'];
 		$fields	= $object->get_fields($args, false, $type)->render();
 		$args	= ($prev && $id && $type == 'form') ? wpjam_merge($args, ['data'=>$prev->get_data($id, true)]) : $args;
-		$button	= $object->get_submit_button($args)->prepend($prev ? $prev->render(['class'=>['button'], 'title'=>'上一步']+$args) : '');
+		$form	= $fields->wrap('form', ['novalidate', 'id'=>'list_table_action_form', 'data'=>$object->generate_data_attr($args, 'form')]);
 
-		return $fields->after($button)->wrap('form', ['novalidate', 'id'=>'list_table_action_form', 'data'=>$object->generate_data_attr($args, 'form')]);
+		return $form->append($object->get_submit_button($args)->prepend($prev ? $prev->render(['class'=>['button'], 'title'=>'上一步']+$args) : ''));
 	}
 
 	public function get_fields($args, $include_prev=false, $type=''){
@@ -1021,12 +1021,12 @@ class WPJAM_List_Table_Action extends WPJAM_List_Table_Component{
 
 	public function get_submit_button($args, $name=null){
 		if(!$name && $this->next){
-			return get_submit_button('下一步', 'primary', 'next', false);
+			$button	= ['next'=>'下一步'];
+		}else{
+			$button	= maybe_callback($this->submit_text, $this->parse_arg($args), $this->name);
+			$button	??= wp_strip_all_tags($this->title) ?: $this->page_title;
+			$button	= is_array($button) ? $button : [$this->name => $button];
 		}
-
-		$button	= maybe_callback($this->submit_text, $this->parse_arg($args), $this->name);
-		$button	??= wp_strip_all_tags($this->title) ?: $this->page_title;
-		$button	= is_array($button) ? $button : [$this->name => $button];
 
 		return WPJAM_AJAX::parse_submit_button($button, $name);
 	}

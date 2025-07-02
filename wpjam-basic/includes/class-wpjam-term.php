@@ -283,9 +283,9 @@ class WPJAM_Term{
 	}
 
 	public static function get_current_taxonomy(){
-		$object	= WPJAM_Taxonomy::get(get_called_class(), 'model', 'WPJAM_Term');
-
-		return $object ? $object->name : null;
+		if(static::class !== self::class){
+			return wpjam_get_annotation(static::class, 'taxonomy') ?: (($object	= WPJAM_Taxonomy::get(static::class, 'model', self::class)) ? $object->name : null);
+		}
 	}
 
 	public static function get_path($args, $item=[]){

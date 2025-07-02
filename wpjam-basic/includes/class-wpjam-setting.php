@@ -399,7 +399,10 @@ class WPJAM_Option_Model{
 	}
 
 	protected static function get_object(){
-		return WPJAM_Option_Setting::get(get_called_class(), 'model', 'WPJAM_Option_Model');
+		$option	= wpjam_get_annotation(static::class, 'option');
+		$args	= $option ? [$option] : [static::class, 'model', self::class];
+
+		return WPJAM_Option_Setting::get(...$args);
 	}
 
 	public static function get_setting($name='', ...$args){
@@ -546,7 +549,7 @@ class WPJAM_Verify_TXT{
 		$name	= str_replace('.txt', '', $action).'.txt';
 		$txt	= array_find($data, fn($v)=> $v['name'] == $name);
 
-		if($txt	){
+		if($txt){
 			header('Content-Type: text/plain');
 			echo $txt['value'];
 
@@ -669,23 +672,21 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 			return $this->get_data($id);
 		}
 
-		if(is_array($args[0])){
-			$keys	= wpjam_array($args[0], fn($k, $v)=> is_numeric($k) ? [$v, null] : [$k, $v]);
-
-			return ($id && $args[0]) ? wpjam_map($keys, fn($v, $k)=> $this->get_data_with_default($id, $k, $v)) : [];
-		}else{
-			if($id && $args[0]){
-				if($args[0] == 'meta_input'){
-					return array_map([$this, 'parse_value'], $this->get_data($id));
-				}
-
-				if($this->data_exists($id, $args[0])){
-					return $this->get_data($id, $args[0], true);
-				}
+		if($id && $args[0]){
+			if(is_array($args[0])){
+				return wpjam_array($args[0], fn($k, $v)=> [is_numeric($k) ? $v : $k, $this->get_data_with_default($id, ...(is_numeric($k) ? [$v, null] : [$k, $v]))]);
 			}
 
-			return $args[1] ?? null;
+			if($args[0] == 'meta_input'){
+				return array_map([$this, 'parse_value'], $this->get_data($id));
+			}
+
+			if($this->data_exists($id, $args[0])){
+				return $this->get_data($id, $args[0], true);
+			}
 		}
+
+		return is_array($args[0]) ? [] : ($args[1] ?? null);
 	}
 
 	public function get_by_key(...$args){

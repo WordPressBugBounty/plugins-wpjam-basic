@@ -11,7 +11,7 @@ function wpjam_load($hooks, $callback, $priority=10){
 	}elseif(count($hooks) == 1){
 		add_action(reset($hooks), $callback, $priority);
 	}else{
-		array_walk($hooks, fn($hook)=> add_action($hook, fn()=> array_all($hooks, 'did_action') ? $callback() : null, $priority));
+		array_walk($hooks, fn($hook)=> add_action($hook, fn()=> array_all($hooks, 'did_action') && $callback(), $priority));
 	}
 }
 

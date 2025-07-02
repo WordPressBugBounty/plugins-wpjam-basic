@@ -544,9 +544,9 @@ class WPJAM_Post{
 	}
 
 	public static function get_current_post_type(){
-		$object	= WPJAM_Post_Type::get(get_called_class(), 'model', 'WPJAM_Post');
-
-		return $object ? $object->name : null;
+		if(static::class !== self::class){
+			return wpjam_get_annotation(static::class, 'post_type') ?: (($object	= WPJAM_Post_Type::get(static::class, 'model', self::class)) ? $object->name : null);
+		}
 	}
 
 	public static function get_path($args, $item=[]){

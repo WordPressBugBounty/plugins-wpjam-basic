@@ -142,7 +142,7 @@ class WPJAM_Postviews{
 		add_filter('the_content', fn($content)=> $content.(is_feed() ? "\n".'<p><img src="'.home_url('postviews/'.get_the_ID().'.png').'" /></p>'."\n" : ''), 999);
 
 		// 不指定 post_type ，默认查询 post，这样custom post type 的文章页面就会显示 404
-		// add_action('pre_get_posts',	fn($query)=> $query->get('module') == 'postviews' ? $query->set('post_type', 'any') : null);
+		// add_action('pre_get_posts',	fn($query)=> $query->get('module') == 'postviews' && $query->set('post_type', 'any'));
 
 		$begin	= (int)wpjam_basic_get_setting('views_begin');
 		$end	= (int)wpjam_basic_get_setting('views_end');
@@ -150,7 +150,7 @@ class WPJAM_Postviews{
 		if($begin && $end){
 			$views	= rand(min($begin, $end), max($begin, $end));
 		
-			add_action('wp_after_insert_post', fn($post_id, $post, $update)=> (!$update && $post->post_type != 'attachment' && is_post_type_viewable($post->post_type)) ? update_post_meta($post_id, 'views', $views) : null, 999, 3);
+			add_action('wp_after_insert_post', fn($post_id, $post, $update)=> (!$update && $post->post_type != 'attachment' && is_post_type_viewable($post->post_type)) && update_post_meta($post_id, 'views', $views), 999, 3);
 		}	
 	}
 }
@@ -167,5 +167,5 @@ if(!function_exists('the_views')){
 		echo '<span class="view">浏览：'.(wpjam_get_post_views(get_the_ID()) ?: 0).'</span>';
 	}
 
-	add_action('wp_head', fn()=> is_single() && wpjam_get_query_var('module') != 'json' ? wpjam_update_post_views(get_queried_object_id()) : null);
+	add_action('wp_head', fn()=> is_single() && wpjam_get_query_var('module') != 'json' && wpjam_update_post_views(get_queried_object_id()));
 }
