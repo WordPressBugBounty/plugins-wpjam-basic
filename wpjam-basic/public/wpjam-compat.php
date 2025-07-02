@@ -182,6 +182,10 @@ function wpjam_remove_postfix($str, $postfix, &$removed=false){
 	return wpjam_remove_suffix($str, $postfix, $removed);
 }
 
+function wpjam_get_plain_text($text){
+	return $text ? trim(preg_replace('/\s+/', ' ', str_replace(['"', '\'', "\r\n", "\n"], ['', '', ' ', ' '], wp_strip_all_tags($text)))) : $text;
+}
+
 function wpjam_toggle_url_scheme($url){
 	return WPJAM_CDN::scheme_replace($url);
 }

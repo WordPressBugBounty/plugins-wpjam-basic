@@ -770,7 +770,7 @@ class WPJAM_User_Signup extends WPJAM_Register{
 				'callback'	=> fn()=> wpjam_register_list_table_column('openid', [
 					'title'		=> '绑定账号',
 					'order'		=> 20,
-					'callback'	=> fn($user_id)=> implode('<br /><br />', array_filter(wpjam_map($objects, fn($object)=> ($openid = $object->get_openid($user_id)) ? $object->title.'：<br />'.$openid : '')))
+					'callback'	=> fn($user_id)=> implode('<br /><br />', wpjam_array($objects, fn($object)=> ($openid = $object->get_openid($user_id)) ? $object->title.'：<br />'.$openid : null), true)
 				])
 			]);
 		}

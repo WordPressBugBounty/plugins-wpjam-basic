@@ -394,7 +394,7 @@ function wpjam_get_posts($query, $parse=false){
 		$ids	= wp_parse_id_list($query);
 		$posts	= WPJAM_Post::get_by_ids($ids);
 
-		return $parse ? array_values(array_filter(array_map(fn($p)=> wpjam_get_post($p, $args), $ids))) : $posts;
+		return $parse ? wpjam_array($ids, fn($i, $p)=> [null, wpjam_get_post($p, $args)], true) : $posts;
 	}
 
 	return $parse ? wpjam_parse_query($query, $args) : (WPJAM_Posts::query($query))->posts;
@@ -863,14 +863,9 @@ function wpjam_register_ajax($name, $args){
 }
 
 function wpjam_get_ajax_data_attr($name, $data=[], $output=null){
-	if(WPJAM_AJAX::get($name)){
-		$action	= WPJAM_AJAX::parse_nonce_action($name, $data);
-		$attr	= ['action'=>$name, 'data'=>$data, 'nonce'=>($action ? wp_create_nonce($action) : null)];
+	$attr	= WPJAM_AJAX::get_attr($name, $data);
 
-		return $output ? $attr : wpjam_attr($attr, 'data');
-	}
-
-	return $output ? null : [];
+	return $output ? ($attr ?: []) : ($attr ? wpjam_attr($attr, 'data') : null);
 }
 
 // Upgrader

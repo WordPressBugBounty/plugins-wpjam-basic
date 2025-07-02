@@ -8,15 +8,15 @@ Version: 2.0
 class WPJAM_SMTP extends WPJAM_Option_Model{
 	public static function get_fields(){
 		return [
-			'smtp_setting'		=> ['title'=>'SMTP 设置',	'type'=>'fieldset','fields'=>[
-				'host'	=> ['title'=>'地址',		'type'=>'text',		'class'=>'all-options',	'value'=>'smtp.qq.com'],
-				'ssl'	=> ['title'=>'发送协议',	'type'=>'text',		'class'=>'',			'value'=>'ssl'],
-				'port'	=> ['title'=>'SSL端口',	'type'=>'number',	'class'=>'',			'value'=>'465'],
-				'user'	=> ['title'=>'邮箱账号',	'type'=>'email',	'class'=>'all-options'],
-				'pass'	=> ['title'=>'邮箱密码',	'type'=>'password',	'class'=>'all-options'],
+			'smtp_setting'		=> ['title'=>'SMTP 设置',	'type'=>'fieldset',	'fields'=>[
+				'host'	=> ['title'=>'SMTP地址',	'type'=>'text',		'class'=>'',	'value'=>'smtp.qq.com'],
+				'user'	=> ['title'=>'邮箱账号',	'type'=>'email',	'class'=>''],
+				'pass'	=> ['title'=>'邮箱密码',	'type'=>'password',	'class'=>''],
+				'ssl'	=> ['title'=>'发送协议',	'type'=>'text',		'class'=>'',	'value'=>'ssl'],
+				'port'	=> ['title'=>'SSL端口',	'type'=>'number',	'class'=>'',	'value'=>'465'],
 			]],
 			'mail_from_name'	=> ['title'=>'发送者姓名',	'type'=>'text',	'class'=>''],
-			'reply_to_mail'		=> ['title'=>'回复地址',		'type'=>'email','class'=>'all-options',	'description'=>'不填则用户回复使用SMTP设置中的邮箱账号']
+			'reply_to_mail'		=> ['title'=>'回复地址',		'type'=>'email','class'=>'',	'description'=>'不填则用户回复使用SMTP设置中的邮箱账号']
 		];
 	}
 

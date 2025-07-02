@@ -63,7 +63,11 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function get_value($type='title', $output='html'){
+	public static function get_value($type='title'){
+		if($type == 'meta'){
+			return array_filter(wpjam_fill(['description', 'keywords'], fn($k)=> self::get_value($k)));
+		}
+
 		if(is_front_page()){
 			if(get_query_var('paged') < 2){
 				$value	= self::get_setting('home_'.$type);
@@ -87,24 +91,15 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 				if($type == 'description'){
 					$value	= get_the_excerpt();
 				}elseif($type == 'keywords'){
-					$tags	= get_the_tags();
-					$value	= $tags ? implode(',', wp_list_pluck($tags, 'name')) : '';
+					$value	= ($tags = get_the_tags()) ? implode(',', wp_list_pluck($tags, 'name')) : '';
 				}
 			}
 		}
 
 		if(!empty($value)){
-			$value	= wpjam_get_plain_text($value);
+			$value	= wp_strip_all_tags($value, true);
 
-			if($type == 'title'){
-				$value	= esc_textarea($value);
-
-				return $output == 'html' ? '<title>'.$value.'</title>'."\n" : $value;
-			}else{
-				$value	= esc_attr($value);
-
-				return $output == 'html' ? "<meta name='{$type}' content='{$value}' />\n" : $value;
-			}
+			return $type == 'title' ? esc_textarea($value) : "<meta name='{$type}' content='".esc_attr($value)."' />\n";
 		}
 	}
 
@@ -160,30 +155,27 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		exit;
 	}
 
-	public static function on_wp_head(){
+	public static function filter_html($html){
 		$title	= self::get_value('title');
-		$meta	= array_filter(wpjam_fill(['description', 'keywords'], fn($k)=> self::get_value($k)));
+		$title	= $title ? '<title>'.$title.'</title>' : '';
 
-		if(self::get_setting('unique')){
-			if($meta){
-				add_filter('wpjam_html', fn($html)=> wpjam_preg_replace('#<meta\s+name=([\'"])('.implode('|', array_keys($meta)).')\1(.*?)\/>#is', '', $html));
-
-				$title	= ($title ?: '\1')."\n".implode($meta);
-			}
-
-			if($title){
-				add_filter('wpjam_html', fn($html)=> wpjam_preg_replace('#(<title>[^<]*<\/title>)#is', $title, $html));
-			}
-		}else{
-			echo implode($meta);
+		if($meta	= self::get_value('meta')){
+			$title	= ($title ?: '\1')."\n".implode($meta);
+			$html	= wpjam_preg_replace('#<meta\s+name=([\'"])('.implode('|', array_keys($meta)).')\1(.*?)\/>#is', '', $html);
 		}
+
+		return $title ? wpjam_preg_replace('#(<title>[^<]*<\/title>)#is', $title, $html) : $html;
 	}
 
 	public static function add_hooks(){
-		add_action('wp_head', [self::class, 'on_wp_head']);
+		if(self::get_setting('unique')){
+			add_filter('wpjam_html',	[self::class, 'filter_html']);
+		}else{
+			add_action('wp_head',		fn()=> wpjam_echo(implode(self::get_value('meta'))));
+		}
 
 		add_filter('robots_txt',		fn($output, $public)=> $output.($public ? self::get_setting('robots') : ''), 10, 2);
-		add_filter('document_title',	fn($title)=> self::get_value('title', '') ?: $title);
+		add_filter('document_title',	fn($title)=> self::get_value('title') ?: $title);
 
 		if(self::get_setting('sitemap') == 0){
 			wpjam_register_route('sitemap', [
@@ -215,10 +207,9 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 }
 
 wpjam_register_option('wpjam-seo', [
-	'title'					=> 'SEO设置',
-	'model'					=> 'WPJAM_SEO',
-	'flush_rewrite_rules'	=> true,
-	'plugin_page'			=> 'wpjam-seo',
-	'current_tab'			=> 'seo',
-	'menu_page'				=> ['tab_slug'=>'seo', 'order'=>20, 'summary'=>__FILE__]
+	'title'			=> 'SEO设置',
+	'model'			=> 'WPJAM_SEO',
+	'plugin_page'	=> 'wpjam-seo',
+	'current_tab'	=> 'seo',
+	'menu_page'		=> ['tab_slug'=>'seo', 'order'=>20, 'summary'=>__FILE__]
 ]);

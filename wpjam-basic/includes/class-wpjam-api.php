@@ -132,7 +132,7 @@ class WPJAM_API{
 	}
 
 	public static function on_plugins_loaded(){
-		array_map(fn($active)=> $active && count($active) >= 2 ? add_action(...$active) : null, self::activation());
+		array_map(fn($active)=> $active && count($active) >= 2 && add_action(...$active), self::activation());
 		array_map(fn($filter)=> add_filter($filter,	[self::get_instance(), 'filter_'.$filter], 11), ['query_vars', 'request']);
 
 		if(is_admin()){
@@ -406,7 +406,7 @@ class WPJAM_Platform extends WPJAM_Register{
 
 	public function get_tabbar($page_key=''){
 		if(!$page_key){
-			return wpjam_array($this->get_paths(), fn($k)=> ($v = $this->get_tabbar($k)) ? [$k, $v] : null);
+			return wpjam_array($this->get_paths(), fn($k)=> [$k, $this->get_tabbar($k)], true);
 		}
 
 		if($tabbar	= $this->get_item($page_key.'.tabbar')){
@@ -416,10 +416,10 @@ class WPJAM_Platform extends WPJAM_Register{
 
 	public function get_page($page_key=''){
 		if($page_key){
-			return ($path = $this->get_item($page_key.'.path')) ? explode('?', $path)[0] : '';
+			return ($path = $this->get_item($page_key.'.path')) ? explode('?', $path)[0] : null;
 		}
 
-		return wpjam_array($this->get_paths(), fn($k)=> ($v = $this->get_page($k)) ? [$k, $v] : null);
+		return wpjam_array($this->get_paths(), fn($k)=> [$k, $this->get_page($k)], true);
 	}
 
 	public function get_fields($page_key){
@@ -1405,7 +1405,6 @@ class WPJAM_Error{
 				return $args ? $args[0].'不能为纯数字。' : '无效的名称';
 			}else{
 				return [
-					'nonce'		=> '验证失败，请刷新重试。',
 					'code'		=> '验证码错误。',
 					'password'	=> '两次输入的密码不一致。'
 				][$code] ?? '无效的'.$fn([

@@ -238,19 +238,21 @@ function wpjam_timer_hook($value){
 function wpjam_cache($key, ...$args){
 	if(count($args) > 1 || ($args && (is_string($args[0]) || is_bool($args[0])))){
 		$group	= array_shift($args);
+		$cb		= array_shift($args);
+		$arg	= array_shift($args);
 		$fix	= is_bool($group) ? ($group ? 'site_' : '').'transient' : '';
 		$group	= $fix ? '' : ($group ?: 'default');
-		$cb		= array_shift($args);
-		$expire	= array_shift($args) ?: 86400;
+		$args	= is_numeric($arg) ? ['expire'=>$arg] : (array)$arg;
+		$expire	= wpjam_get($args, 'expire') ?: 86400;
 
 		if($expire === -1){
 			return $fix ? ('delete_'.$fix)($key) : wp_cache_delete($key, $group);
 		}
-
-		$force	= array_shift($args);
+		
+		$force	= wpjam_get($args, 'force');
 		$value	= $fix ? ('get_'.$fix)($key) : wp_cache_get($key, $group, ($force === 'get' || $force === true));
 
-		if($cb && ($value === false || ($force === 'set' || $force === true))){
+		if($cb && ($value === false || $force === 'set' || $force === true)){
 			$value	= $cb($value, $key, $group);
 
 			if(!is_wp_error($value) && $value !== false){
@@ -268,36 +270,24 @@ function wpjam_counts($name, $callback){
 	return wpjam_cache($name, 'counts', $callback);
 }
 
-function wpjam_transient($name, $callback, $expire=86400, $global=false, $force=false){
-	return wpjam_cache($name, (bool)$global, $callback, $expire, $force);
+function wpjam_transient($name, $callback, $args=[], $global=false){
+	return wpjam_cache($name, (bool)$global, $callback, $args);
 }
 
 function wpjam_increment($name, $max=0, $expire=86400, $global=false){
-	$cb	= fn($v)=> ($max && (int)$v >= $max ? 0 : (int)$v)+1;
-
-	return wpjam_transient($name, $cb, $expire, $global, 'set')-1;
+	return wpjam_transient($name, fn($v)=> ($max && (int)$v >= $max) ? 1 : (int)$v+1, ['expire'=>$expire, 'force'=>'set'], $global);
 }
 
 function wpjam_lock($name, $expire=10, $group=false){
-	$group	= is_bool($group) ? ($group ? 'site-' : '').'transient' : $group;
-	$locked	= true;
-	$result	= wpjam_cache($name, $group, function($v) use(&$locked){
-		$locked	= $v;
-		return 1;
-	}, $expire, 'get');
+	$group	= is_bool($group) ? ($group ? 'site-' : '').'transient' : ($group ?: 'default');
 
-	return $expire == -1 ? $result : $locked;
+	return $expire == -1 ? wp_cache_delete($name, $group) : (wp_cache_get($name, $group, true) || !wp_cache_add($name, 1, $group, $expire));
 }
 
 function wpjam_is_over($name, $max, $time, $group=false, $action='increment'){
-	$times	= wpjam_cache($name, $group) ?: 0;
-	$result	= $times > $max;
+	$times	= wp_cache_get($name, $group) ?: 0;
 
-	if(!$result && $action == 'increment'){
-		wpjam_cache($name, $group, fn()=> $times+1, ($max == $times && $time > 60) ? $time : 60, 'set');
-	}
-
-	return $result;
+	return ($times > $max) || ($action == 'increment' && wp_cache_set($name, $times+1, $group, ($max == $times && $time > 60) ? $time : 60) && false);
 }
 
 function wpjam_db_transaction($callback, ...$args){
@@ -658,7 +648,7 @@ if(is_admin()){
 	}
 
 	function wpjam_add_admin_ajax($action, $args=[]){
-		wpjam_register_ajax($action, ['admin'=>true]+(wpjam_is_assoc_array($args) ? $args : ['callback'=>$args]));
+		wpjam_register_ajax($action, ['admin'=>true]+$args);
 	}
 
 	function wpjam_add_admin_error($msg='', $type='success'){
@@ -684,22 +674,6 @@ if(is_admin()){
 
 			wpjam_admin($type.'_load[]', $args);
 		}
-	}
-
-	function wpjam_parse_submit_button($button, $name=null){
-		foreach(array_filter($button) as $key => $item){
-			if(!$name || $name == $key){
-				$item	= (is_array($item) ? $item : ['text'=>$item])+['class'=>'primary'];
-
-				if($name){
-					return $item;
-				}
-
-				$parsed[]	= get_submit_button($item['text'], $item['class'], $key, false);
-			}
-		}
-
-		return $name ? wp_die('无效的提交按钮') : implode('', $parsed ?? []);
 	}
 
 	function wpjam_admin_tooltip($text, $tooltip){

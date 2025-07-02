@@ -395,7 +395,7 @@ class WPJAM_DB extends WPJAM_Args{
 		]);
 
 		foreach(['group_cache_key', 'lazyload_key', 'filterable_fields', 'searchable_fields'] as $key){
-			$this->$key	= wpjam_array($this->$key);
+			$this->$key	= (array)$this->$key;
 		}
 
 		if($this->cache_key	== $this->primary_key){
@@ -743,8 +743,7 @@ class WPJAM_DB extends WPJAM_Args{
 
 		if($orderby){
 			if(is_array($orderby)){
-				$parsed		= array_filter(wpjam_map($orderby, fn($v, $k)=> $this->parse_orderby($k, $v)));
-				$orderby	= $parsed ? implode(', ', $parsed) : '';
+				$orderby	= implode(', ', wpjam_array($orderby, fn($k, $v)=> [$k, $this->parse_orderby($k, $v)], true));
 			}elseif(str_contains($orderby, ',') || (str_contains($orderby, '(') && str_contains($orderby, ')'))){
 				$orderby	= $orderby;
 			}else{
@@ -818,7 +817,7 @@ class WPJAM_DB extends WPJAM_Args{
 		}elseif(preg_match('/RAND\(([0-9]+)\)/i', $orderby, $matches)){
 			return sprintf('RAND(%s)', (int)$matches[1]);
 		}elseif(str_ends_with($orderby, '__in')){
-			return '';
+			return null;
 			// $field	= str_replace('__in', '', $orderby);
 		}
 
@@ -845,7 +844,7 @@ class WPJAM_DB extends WPJAM_Args{
 		}
 
 		if($orderby == 'meta_value_num' || $orderby == 'meta_value'){
-			return '';
+			return null;
 		}
 
 		return '`'.$orderby.'` '.$order;
@@ -1372,7 +1371,7 @@ class WPJAM_Items extends WPJAM_Args{
 		$this->args = wp_parse_args($this->args, ['item_type'=>'array', 'primary_title'=>'ID']);
 
 		if($this->item_type == 'array'){
-			$this->lazyload_key	= wpjam_array($this->lazyload_key);
+			$this->lazyload_key	= (array)$this->lazyload_key;
 			$this->primary_key	??= 'id';
 		}else{
 			$this->primary_key	= null;

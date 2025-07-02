@@ -368,11 +368,15 @@ function wpjam_import($file, $columns=[]){
 				}
 
 				if(isset($map)){
-					$data[]		= array_map(fn($i)=> preg_replace('/="([^"]*)"/', '$1', $row[$i]), $map);
+					$data[]	= array_map(fn($i)=> preg_replace('/="([^"]*)"/', '$1', $row[$i]), $map);
 				}else{
-					$row		= array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $row);
-					$columns	= array_flip(array_map('trim', $columns));
-					$map		= wpjam_array($row, fn($k, $v)=> isset($columns[$v]) ? [$columns[$v], $k] : (in_array($v, $columns) ? [$v, $k] : null));
+					if($columns){
+						$row	= array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $row);
+						$columns= array_flip(array_map('trim', $columns));
+						$map	= wpjam_array($row, fn($k, $v)=> isset($columns[$v]) ? [$columns[$v], $k] : (in_array($v, $columns) ? [$v, $k] : null));
+					}else{
+						$map	= array_flip(array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $row));
+					}
 				}
 			}
 
@@ -544,7 +548,7 @@ function wpjam_is_array_accessible($arr){
 	return is_array($arr) || $arr instanceof ArrayAccess;
 }
 
-function wpjam_array($arr=null, $callback=null){
+function wpjam_array($arr=null, $callback=null, $skip_null=false){
 	if(is_object($arr)){
 		if(method_exists($arr, 'to_array')){
 			$data	= $arr->to_array();
@@ -560,18 +564,30 @@ function wpjam_array($arr=null, $callback=null){
 		$data	= (array)$arr;
 	}
 
-	if($callback && is_callable($callback)){
+	if($data && $callback && is_callable($callback)){
 		foreach($data as $k => $v){
 			$result	= $callback($k, $v);
 
-			if(!is_null($result)){
-				[$k, $v]	= is_array($result) ? $result : [$result, $v];
-
-				if(is_null($k)){
-					$new[]		= $v;
-				}else{
-					$new[$k]	= $v;
+			if(is_array($result)){
+				if(count($result) != 2){
+					continue;
 				}
+
+				[$k, $v]	= $result;
+
+				if($skip_null && is_null($v)){
+					continue;
+				}
+			}elseif(is_scalar($result)){
+				$k 	= $result;
+			}else{
+				continue;	// null、对象等非标量均跳过
+			}
+
+			if(is_null($k)){
+				$new[]		= $v;
+			}else{
+				$new[$k]	= $v;
 			}
 		}
 
@@ -792,19 +808,23 @@ function wpjam_sort($arr, ...$args){
 	$is_asc	= fn($v)=> is_int($v) ? $v === SORT_ASC : strtolower($v) === 'asc';
 
 	if(wpjam_is_assoc_array($args[0])){
-		$args	= wpjam_reduce($args[0], fn($carry, $v, $k)=>[...$carry, ($column = array_column($arr, $k)), $is_asc($v) ? SORT_ASC : SORT_DESC, is_numeric(current($column)) ? SORT_NUMERIC : SORT_REGULAR], []);
+		$args	= wpjam_reduce($args[0], fn($carry, $order, $field)=>[
+			...$carry,
+			($column = array_column($arr, $field)),
+			$is_asc($order) ? SORT_ASC : SORT_DESC,
+			is_numeric(current($column)) ? SORT_NUMERIC : SORT_REGULAR
+		], []);
 	}elseif(is_callable($args[0]) || is_string($args[0])){
+		$field	= $args[0];
 		$order	= $args[1] ?? '';
 
-		if(is_callable($args[0])){
-			$column	= array_map($args[0], ($order === 'key' ? array_keys($arr) : $arr));
+		if(is_callable($field)){
+			$column	= array_map($field, ($order === 'key' ? array_keys($arr) : $arr));
 			$flag	= $args[2] ?? SORT_NUMERIC;
 		}else{
-			$k	= $args[0];
-			$d	= $args[2] ?? 0;
-
-			$column	= array_map(fn($v)=> wpjam_get($v, $k, $d), $arr);
-			$flag	= is_numeric($d) ? SORT_NUMERIC : SORT_REGULAR;
+			$default= $args[2] ?? 0;
+			$column	= array_map(fn($item)=> wpjam_get($item, $field, $default), $arr);
+			$flag	= is_numeric($default) ? SORT_NUMERIC : SORT_REGULAR;
 		}
 
 		$args	= [$column, ($is_asc($order) ? SORT_ASC : SORT_DESC), $flag];
@@ -933,7 +953,11 @@ function wpjam_set(...$args){
 			return $arr;
 		}
 
-		if(str_ends_with($key, '[]')){
+		if($key === '[]'){
+			$arr[]	= $value;
+
+			return $arr;
+		}elseif(str_ends_with($key, '[]')){
 			$current	= wpjam_get($arr, $key);
 			$current[]	= $value;
 
@@ -1167,11 +1191,6 @@ function wpjam_strip_4_byte_chars($text){
 function wpjam_strip_control_chars($text){
 	return $text ? preg_replace('/[\x00-\x09\x0B\x0C\x0E-\x1F]/u', '', $text) : '';
 	// return preg_replace('/[\x00-\x09\x0B\x0C\x0E-\x1F\x80-\x9F]/u', '', $text);
-}
-
-//获取纯文本
-function wpjam_get_plain_text($text){
-	return $text ? trim(preg_replace('/\s+/', ' ', str_replace(['"', '\'', "\r\n", "\n"], ['', '', ' ', ' '], wp_strip_all_tags($text)))) : $text;
 }
 
 //获取第一段

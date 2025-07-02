@@ -11,9 +11,9 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 			'custom'	=> ['title'=>'前台定制',	'fields'=>[
 				'head'		=> ['title'=>'前台 Head 代码',	'type'=>'textarea'],
 				'footer'	=> ['title'=>'前台 Footer 代码',	'type'=>'textarea'],
-				'custom'	=> ['title'=>'文章页代码',	'type'=>'fieldset',	'fields'=>[
-					'custom_post'	=> ['label'=>'开启单独设置每篇文章 head 和 Footer 代码。'],
-					'list_table'	=> ['show_if'=>['custom_post', 1], 'after'=>'在文章列表页设置', 'options'=>[0=>'不支持', 1=>'支持', 'only'=>'只允许']]
+				'custom'	=> ['title'=>'文章页代码',	'type'=>'fields',	'fields'=>[
+					'custom_post'	=> ['label'=>'每篇文章单独设置 head 和 Footer 代码。'],
+					'list_table'	=> ['show_if'=>['custom_post', 1], 'after'=>'在文章列表页设置。', 'options'=>[0=>'不支持', 1=>'支持', 'only'=>'只允许']]
 				]]
 			]],
 			'admin'		=> ['title'=>'后台定制',	'fields'=>[
@@ -114,5 +114,5 @@ wpjam_register_option('wpjam-custom', [
 	'title'			=> '样式定制',
 	'model'			=> 'WPJAM_Custom',
 	'site_default'	=> true,
-	'menu_page'		=> ['parent'=>'wpjam-basic', 'menu_slug'=>'wpjam-custom', 'position'=>1, 'function'=>'option', 'summary'=>__FILE__]
+	'menu_page'		=> ['parent'=>'wpjam-basic', 'position'=>1, 'function'=>'option', 'summary'=>__FILE__]
 ]);

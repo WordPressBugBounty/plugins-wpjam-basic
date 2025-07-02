@@ -490,7 +490,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		$value	= parent::__get($key);
 
 		if($key == 'model'){
-			if(!$value || !class_exists($value) || !is_subclass_of($value, 'WPJAM_Term')){
+			if(!$value || !class_exists($value)){
 				return 'WPJAM_Term';
 			}
 		}elseif($key == 'permastruct'){
@@ -964,8 +964,7 @@ class WPJAM_Terms{
 			wp_die('invalid_taxonomy');
 		}
 
-		$mapping	= wpjam_pull($args, 'mapping');
-		$mapping	= $mapping ? array_filter(array_map('wpjam_get_parameter', wp_parse_args($mapping)), fn($v)=> isset($v)) : [];
+		$mapping	= wpjam_array(wp_parse_args(wpjam_pull($args, 'mapping') ?: []), fn($k, $v)=> [$k, wpjam_get_parameter($v)], true);
 		$args		= array_merge($args, $mapping);
 		$number		= (int)wpjam_pull($args, 'number');
 		$output		= wpjam_pull($args, 'output');

@@ -8,39 +8,33 @@ Version: 2.0
 class WPJAM_Mobile_Stylesheet{
 	public static function get_sections(){
 		$options	= array_map(fn($v)=> $v->get('Name'), wp_get_themes(['allowed'=>true]));
-		$options	= wp_array_slice_assoc($options, [get_stylesheet()])+$options;
+		$options	= wpjam_pick($options, [get_stylesheet()])+$options;
 
-		return ['enhance'=>['fields'=>['mobile_stylesheet'=>['title'=>'移动主题', 'options'=>$options]]]];
+		return wpjam_set('enhance.fields.mobile_stylesheet', ['title'=>'移动主题', 'options'=>$options]);
 	}
 
 	public static function builtin_page_load(){
-		$object	= wpjam_register_page_action('set_mobile_stylesheet', [
+		$mobile	= wpjam_basic_get_setting('mobile_stylesheet');
+		$button	= wpjam_register_page_action('set_mobile_stylesheet', [
 			'button_text'	=> '移动主题',
 			'class'			=> 'mobile-theme button',
 			'direct'		=> true,
 			'confirm'		=> true,
 			'response'		=> 'redirect',
 			'callback'		=> fn()=> WPJAM_Basic::update_setting('mobile_stylesheet', wpjam_get_data_parameter('stylesheet'))
-		]);
+		])->get_button(['data'=>['stylesheet'=>'slug']]);
 
-		wpjam_admin('script', <<<'EOD'
+		wpjam_admin('script', sprintf(<<<'EOD'
 		if(wp && wp.Backbone && wp.themes && wp.themes.view.Theme){
-			let original_render	= wp.themes.view.Theme.prototype.render;
-			let mobile	= ".wpjam_json_encode(wpjam_basic_get_setting('mobile_stylesheet')).";
-			let action	= ".wpjam_json_encode($object->get_button()).";
+			let render	= wp.themes.view.Theme.prototype.render;
+
 			wp.themes.view.Theme.prototype.render = function(){
-				original_render.apply(this, arguments);
+				render.apply(this, arguments);
 
-				let stylesheet	= this.$el.data('slug');
-
-				if(stylesheet == mobile){
-					this.$el.find('.theme-actions').append('<span class="mobile-theme button button-primary">移动主题</span>');
-				}else{
-					this.$el.find('.theme-actions').append(action.replace('data-nonce=', 'data-data="stylesheet='+stylesheet+'" data-nonce='));
-				}
+				this.$el.find('.theme-actions').append(this.$el.data('slug') == %s ? '<span class="mobile-theme button button-primary">移动主题</span>' : (%s).replace('slug', this.$el.data('slug')));
 			};
 		}
-		EOD);
+		EOD, wpjam_json_encode($mobile), wpjam_json_encode($button)));
 
 		// wpjam_admin('style', '.mobile-theme{position: absolute; top: 45px; right: 18px;}');
 	}

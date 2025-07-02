@@ -255,7 +255,7 @@ jQuery(function($){
 			}
 
 			if(!this.attr('cols')){
-				this.css('max-width', '100%').attr('cols', (this.closest('#TB_window')[0] ? 52 : 68));
+				this.css('max-width', '100%').attr('cols', (this.closest('#TB_window')[0] ? 52 : 72));
 			}
 		}
 	};
@@ -402,7 +402,7 @@ jQuery(function($){
 					if(this.is('input')){
 						this.trigger('query_label');
 					}else if(this.is('select')){
-						this.addClass('hidden').empty().wpjam_select().wpjam_data_type('query', items => (items.length ? this.append(items.map(item => '<option value="'+item.value+'">'+item.label+'</option>')).removeClass('hidden') : this).trigger('change.wpjam'));
+						this.addClass('hidden').empty().wpjam_select().wpjam_data_type('query', items => (items.length ? this.append(items.map(item => '<option value="'+(_.isObject(item) ? item.value : item)+'">'+(_.isObject(item) ? item.label : item)+'</option>')).removeClass('hidden') : this).trigger('change.wpjam'));
 					}
 				}
 			}else{

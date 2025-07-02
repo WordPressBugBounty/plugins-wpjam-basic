@@ -53,6 +53,12 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
+= 6.8.1 =
+* wpjam_set 支持 [] 模式新增元素
+* 全面优化 WPJAM_AJAX class，整合后台的 AJAX 操作
+* 优化 wpjam_sort 排序函数
+* 其他优化和bug修复
+
 = 6.8 =
 * 全面优化 wpjam_try / wpjam_catch 等高阶函数
 * 全面优化 wpjam_cache 以及其他缓存相关的高阶函数
@@ -68,7 +74,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 新增函数 wpjam_toggle
 * 新增函数 wpjam_reduce
 * 新增函数 wpjam_bettwen
-* 其他优化和bug修复
 
 = 6.6 =
 * 新增函数 wpjam_include - 加载文件

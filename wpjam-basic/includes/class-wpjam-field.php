@@ -469,7 +469,7 @@ class WPJAM_Field extends WPJAM_Attr{
 				];
 			}
 
-			$schema	+= wpjam_array($map ?? [], fn($k, $v)=> isset($this->$v) ? [$k, $this->$v] : null);
+			$schema	+= wpjam_array($map ?? [], fn($k, $v)=> [$k, $this->$v], true);
 			$rest	= $this->show_in_rest;
 
 			if($rest && is_array($rest)){
@@ -1099,7 +1099,7 @@ class WPJAM_Field extends WPJAM_Attr{
 				if($this->is('img')){
 					$type	= 'hidden';
 					$size	= wpjam_parse_size($this->size ?: '600x0', [600, 600]);
-					$data	= ['thumb_args'=> wpjam_get_thumbnail_args($size), 'size'=>array_filter(wpjam_map($size, fn($v)=> (int)($v/2)))];
+					$data	= ['thumb_args'=> wpjam_get_thumbnail_args($size), 'size'=>wpjam_array($size, fn($k, $v)=> [$k, (int)($v/2) ?: null], true)];
 				}
 
 				return $this->input(['type'=>$type])->wrap('div', ['wpjam-'.$this->type])->data(($data ?? [])+[
@@ -1150,14 +1150,6 @@ class WPJAM_Field extends WPJAM_Attr{
 		}
 
 		return new WPJAM_Field($field);
-	}
-
-	public static function ajax_upload($data){
-		if(!check_ajax_referer('upload-'.$data['name'], false, false)){
-			wp_die('invalid_nonce');
-		}
-
-		return wpjam_upload($data['name'], ['mimes'=>$data['mimes']]);
 	}
 }
 

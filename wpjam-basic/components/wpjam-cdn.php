@@ -97,7 +97,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		$value	= parent::get_setting($name, ...$args);
 
 		if(in_array($name, ['exts', 'dirs'])){
-			$value	= $value ? array_filter(array_map('trim', $value)) : [];
+			$value	= array_filter(array_map('trim', $value ?: []));
 
 			if($name == 'exts'){
 				$value	= is_login() ? array_diff($value, ['js','css']) : $value;

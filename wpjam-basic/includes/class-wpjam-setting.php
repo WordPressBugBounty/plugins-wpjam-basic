@@ -305,19 +305,15 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 
 	public function page_load(){
 		if(wp_doing_ajax()){
-			wpjam_add_admin_ajax('wpjam-option-action',	[$this, 'ajax_response']);
+			wpjam_add_admin_ajax('wpjam-option-action',	[
+				'callback'		=> [$this, 'ajax_response'],
+				'nonce_action'	=> fn()=> $this->option_group,
+				'allow'			=> fn()=> current_user_can($this->capability)
+			]);
 		}
 	}
 
 	public function ajax_response(){
-		if(!check_ajax_referer($this->option_group, false, false)){
-			wp_die('invalid_nonce');
-		}
-
-		if(!current_user_can($this->capability)){
-			wp_die('access_denied');
-		}
-
 		flush_rewrite_rules();
 
 		$name	= wpjam_get_post_parameter('submit_name');
@@ -373,41 +369,33 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			'ajax'			=> true,
 		];
 
-		$sub	= self::generate_sub_name($args);
-		$rest	= $sub ? wpjam_except($args, ['model', 'menu_page', 'admin_load', 'plugin_page', 'current_tab']) : [];
-		$object	= self::get($name);
+		if($sub	= self::generate_sub_name($args)){
+			$rest	= wpjam_except($args, ['model', 'menu_page', 'admin_load', 'plugin_page', 'current_tab']);
+		}else{
+			$args	= ['primary'=>true]+$args;
+		}
 
-		if($object){
-			if($sub){
-				return $object->update_args(wpjam_except($rest, 'title'))->register_sub($sub, $args);
+		if($object	= self::get($name)){
+			if($sub || is_null($object->primary)){
+				$object->update_args($sub ? wpjam_except($rest, 'title') : $args);
+			}else{
+				trigger_error('option_setting'.'「'.$name.'」已经注册。'.var_export($args, true));
 			}
-
-			if(is_null($object->primary)){
-				return self::re_register($name, array_merge($object->to_array(), $args, ['primary'=>true]));
-			}
-
-			trigger_error('option_setting'.'「'.$name.'」已经注册。'.var_export($args, true));
-
-			return $object;
 		}else{
 			if($args['option_type'] == 'array' && !doing_filter('sanitize_option_'.$name) && is_null(get_option($name, null))){
 				add_option($name, []);
 			}
 
-			if($sub){
-				return (self::register($name, $rest))->register_sub($sub, $args);
-			}
-
-			return self::register($name, array_merge($args, ['primary'=>true]));
+			$object	= self::register($name, $sub ? $rest : $args);
 		}
+
+		return $sub ? $object->register_sub($sub, $args) : $object;
 	}
 }
 
 class WPJAM_Option_Model{
 	protected static function call_method($method, ...$args){
-		$object	= self::get_object();
-
-		return $object ? $object->$method(...$args) : null;
+		return ($object	= self::get_object()) ? $object->$method(...$args) : null;
 	}
 
 	protected static function get_object(){
@@ -513,7 +501,7 @@ class WPJAM_Extend extends WPJAM_Args{
 	}
 
 	public function sanitize_callback($data){
-		return wpjam_array(array_filter($data), fn($k)=> $this->handle($k, 'parse'));
+		return wpjam_array($data, fn($k, $v)=> $v ? $this->handle($k, 'parse') : null);
 	}
 
 	public static function get_file_data($file){

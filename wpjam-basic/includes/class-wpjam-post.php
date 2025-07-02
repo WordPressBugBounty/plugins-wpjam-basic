@@ -474,7 +474,7 @@ class WPJAM_Post{
 	}
 
 	protected static function sanitize_data($data, $post_id=0){
-		$data	+= wpjam_array(get_class_vars('WP_Post'), fn($k, $v)=> try_remove_prefix($k, 'post_') && isset($data[$k]) ? ['post_'.$k, $data[$k]] : null);
+		$data	+= wpjam_array(get_class_vars('WP_Post'), fn($k, $v)=> try_remove_prefix($k, 'post_') ? ['post_'.$k, $data[$k] ?? null] : null, true);
 
 		if(isset($data['post_content']) && is_array($data['post_content'])){
 			$data['post_content']	= serialize($data['post_content']);
@@ -679,7 +679,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		$value	= parent::__get($key);
 
 		if($key == 'model'){
-			if(!$value || !class_exists($value) || !is_subclass_of($value, 'WPJAM_Post')){
+			if(!$value || !class_exists($value)){
 				return 'WPJAM_Post';
 			}
 		}elseif($key == 'permastruct'){
@@ -1508,6 +1508,7 @@ class WPJAM_Posts{
 				$meta_key			= $orderby == 'comment_type' ? $wp_query->get('comment_count') : 'views';
 				$clauses['join']	.= "LEFT JOIN {$wpdb->postmeta} jam_pm ON {$wpdb->posts}.ID = jam_pm.post_id AND jam_pm.meta_key = '{$meta_key}' ";
 				$clauses['orderby']	= "(COALESCE(jam_pm.meta_value, 0)+0) {$order}, " . $clauses['orderby'];
+				$clauses['groupby']	= "{$wpdb->posts}.ID";
 			}elseif(in_array($orderby, ['', 'date', 'post_date'])){
 				$clauses['orderby']	.= ", {$wpdb->posts}.ID {$order}";
 			}
