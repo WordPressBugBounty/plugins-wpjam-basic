@@ -138,19 +138,12 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 			}
 		}
 
-		if(!empty($number)){
-			$wp_query->set('posts_per_page', $number);
-		}
-
-		if($required && !empty($post_types)){
-			$wp_query->set('post_type', (is_array($post_types) && count($post_types) == 1) ? reset($post_types) : $post_types);
-		}
+		!empty($number) && $wp_query->set('posts_per_page', $number);
+		!empty($post_types) && $wp_query->set('post_type', (is_array($post_types) && count($post_types) == 1) ? reset($post_types) : $post_types);
 	}
 
 	public static function add_hooks(){
-		if(!is_admin() || wp_doing_ajax()){
-			add_action('pre_get_posts',  [self::class, 'on_pre_get_posts']);
-		}
+		(!is_admin() || wp_doing_ajax()) && add_action('pre_get_posts',  [self::class, 'on_pre_get_posts']);
 	}
 }
 

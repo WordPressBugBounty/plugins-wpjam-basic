@@ -43,40 +43,26 @@ class WPJAM_Redirect extends WPJAM_Model{
 		$url	= wpjam_get_current_page_url();
 
 		if(is_404()){
-			if(str_contains($url, 'feed/atom/')){
-				wp_redirect(str_replace('feed/atom/', '', $url), 301);
-				exit;
+			$rules	= [
+				['feed/atom/',	fn($url)=> str_replace('feed/atom/', '', $url)],
+				['page/',		fn($url)=> wpjam_preg_replace('/page\/(.*)\//', '',  $url)]
+			];
+
+			if(!get_option('page_comments')){
+				$rules[]	= ['comment-page-',	fn($url)=> wpjam_preg_replace('/comment-page-(.*)\//', '',  $url)];
 			}
 
-			if(!get_option('page_comments') && str_contains($url, 'comment-page-')){
-				wp_redirect(wpjam_preg_replace('/comment-page-(.*)\//', '',  $url), 301);
-				exit;
-			}
-
-			if(str_contains($url, 'page/')){
-				wp_redirect(wpjam_preg_replace('/page\/(.*)\//', '',  $url), 301);
-				exit;
-			}
+			$rule	= array_find($rules, fn($rule)=> str_contains($url, $rule[0]));
+			$rule && wp_redirect(wpjam_call($rule[1], $url)) && exit;
 		}
 
 		if(is_404() || self::get_setting('redirect_all')){
 			foreach(self::parse_items() as $redirect){
 				if(!empty($redirect['request']) && !empty($redirect['destination'])){
-					$request	= set_url_scheme($redirect['request']);
+					$request		= set_url_scheme($redirect['request']);
+					$destination	= !empty($redirect['type']) ? preg_replace('#'.$request.'#', $redirect['destination'], $url) : ($request == $url ? $redirect['destination'] : '');
 
-					if(!empty($redirect['type'])){
-						$replaced	= preg_replace('#'.$request.'#', $redirect['destination'], $url);
-
-						if($replaced && $replaced != $url){
-							wp_redirect($replaced, 301);
-							exit;
-						}
-					}else{
-						if($request == $url){
-							wp_redirect($redirect['destination'], 301);
-							exit;
-						}
-					}
+					$destination && $destination != $url && wp_redirect($destination, 301) && exit;
 				}
 			}
 		}

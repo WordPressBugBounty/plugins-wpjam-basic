@@ -67,9 +67,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 			'meta'  => ['title'=> get_bloginfo('name')]
 		]);
 
-		if(is_admin() && self::get_setting('admin_info', 1)){
-			add_filter('update_footer',	fn($text)=> wpjam_join(' | ', [size_format(memory_get_usage()).'内存使用', get_num_queries().'次SQL查询', $text]));
-		}
+		is_admin() && self::get_setting('admin_info', 1) && add_filter('update_footer', fn($text)=> wpjam_join(' | ', [size_format(memory_get_usage()).'内存使用', get_num_queries().'次SQL查询', $text]));
 	}
 
 	public static function init(){
@@ -87,26 +85,22 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 			add_action('login_footer',		fn()=> self::echo('login_footer'));
 			add_filter('login_redirect',	fn($to, $requested)=> $requested ? $to : (self::get_setting('login_redirect') ?: $to), 10, 2);
 
-			if(self::get_setting('disable_language_switcher')){
-				add_filter('login_display_language_dropdown',	'__return_false');
-			}
+			self::get_setting('disable_language_switcher') && add_filter('login_display_language_dropdown',	'__return_false');
 		}else{
 			add_action('wp_head',	fn()=> self::echo('head'), 1);
 			add_action('wp_footer', fn()=> self::echo('footer'), 99);
 		}
 
-		if(self::get_setting('custom_post')){
-			wpjam_register_post_option('custom-post', [
-				'title'			=> '文章页代码',
-				'post_type'		=> fn($post_type)=> is_post_type_viewable($post_type) && post_type_supports($post_type, 'editor'),
-				'summary'		=> '自定义文章代码可以让你在当前文章插入独有的 JS，CSS，iFrame 等类型的代码，让你可以对具体一篇文章设置不同样式和功能，展示不同的内容。',
-				'list_table'	=> self::get_setting('list_table'),
-				'fields'		=> [
-					'custom_head'	=>['title'=>'头部代码',	'type'=>'textarea'],
-					'custom_footer'	=>['title'=>'底部代码',	'type'=>'textarea']
-				]
-			]);
-		}
+		self::get_setting('custom_post') && wpjam_register_post_option('custom-post', [
+			'title'			=> '文章页代码',
+			'post_type'		=> fn($post_type)=> is_post_type_viewable($post_type) && post_type_supports($post_type, 'editor'),
+			'summary'		=> '自定义文章代码可以让你在当前文章插入独有的 JS，CSS，iFrame 等类型的代码，让你可以对具体一篇文章设置不同样式和功能，展示不同的内容。',
+			'list_table'	=> self::get_setting('list_table'),
+			'fields'		=> [
+				'custom_head'	=>['title'=>'头部代码',	'type'=>'textarea'],
+				'custom_footer'	=>['title'=>'底部代码',	'type'=>'textarea']
+			]
+		]);
 	}
 }
 

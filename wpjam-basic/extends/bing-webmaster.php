@@ -97,23 +97,17 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 
 					$urls[]	= get_permalink($post_id);
 				}else{
-					if($wp_error){
-						wp_die('一小时内已经提交过了');
-					}
+					$wp_error && wp_die('一小时内已经提交过了');
 				}
 			}else{
-				if($wp_error){
-					wp_die('未发布的文章不能同步到 Bing');
-				}
+				$wp_error && wp_die('未发布的文章不能同步到 Bing');
 			}
 		}
 
 		if(!$urls){
-			if($wp_error){
-				wp_die('没有需要提交到 Bing 的链接');
-			}else{
-				return true;
-			}
+			$wp_error && wp_die('没有需要提交到 Bing 的链接');
+
+			return true;
 		}
 
 		return self::submit($urls);
@@ -215,9 +209,7 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 				]);
 			}
 		}elseif($screen->base == 'post'){
-			if(is_post_type_viewable($screen->post_type)){
-				add_action('wp_after_insert_post',	[self::class, 'on_after_insert_post'], 10, 4);
-			}
+			is_post_type_viewable($screen->post_type) &&add_action('wp_after_insert_post',	[self::class, 'on_after_insert_post'], 10, 4);
 		}
 	}
 

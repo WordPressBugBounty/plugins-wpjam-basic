@@ -87,16 +87,12 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 		foreach($post_ids as $post_id){
 			if(get_post_status($post_id) == 'publish'){
 				if(wpjam_lock('baidu_zz_notified:'.$post_id)){
-					if($wp_error){
-						wp_die('一小时内已经提交过了');
-					}
+					$wp_error && wp_die('一小时内已经提交过了');
 				}
 
 				$urls[]	= get_permalink($post_id);
 			}else{
-				if($wp_error){
-					wp_die('未发布的文章不能同步到百度站长');
-				}
+				$wp_error && wp_die('未发布的文章不能同步到百度站长');
 			}
 		}
 

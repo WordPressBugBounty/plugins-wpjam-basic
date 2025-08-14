@@ -11,7 +11,7 @@ class WPJAM_Cron extends WPJAM_Args{
 			return;
 		}
 
-		$jobs	= array_values(maybe_callback($this->jobs));
+		$jobs	= $this->get_jobs();
 
 		if($this->weight){
 			$queue	= $jobs;
@@ -29,9 +29,11 @@ class WPJAM_Cron extends WPJAM_Args{
 		$index		= $count % count($jobs);
 		$callback	= $jobs[$index]['callback'];
 
-		if(is_callable($callback)){
-			$callback();
-		}
+		is_callable($callback) && $callback();
+	}
+
+	public function get_jobs(){
+		return array_values(maybe_callback($this->jobs));
 	}
 
 	public function get_count($increment=false){
@@ -72,9 +74,7 @@ class WPJAM_Cron extends WPJAM_Args{
 	}
 
 	public static function insert($data){
-		if(!has_filter($data['hook'])){
-			wp_die('无效的 Hook');
-		}
+		!has_filter($data['hook']) && wp_die('无效的 Hook');
 
 		return wpjam_schedule($data['hook'], $data);
 	}
@@ -108,7 +108,7 @@ class WPJAM_Cron extends WPJAM_Args{
 
 			return $items;
 		}else{
-			return wpjam_map(wpjam('cron_job'), fn($item)=> $item+[
+			return wpjam_map(wpjam_get_cron('wpjam_scheduled')->get_jobs(), fn($item)=> $item+[
 				'job_id'	=> wpjam_build_callback_unique_id($item['callback']),
 				'function'	=> wpjam_render_callback($item['callback'])
 			]);
@@ -177,27 +177,22 @@ function wpjam_register_cron($hook, $args=[]){
 
 	add_action($hook, $args['callback'] ?: [$object, 'callback']);
 
-	if(!wpjam_is_scheduled_event($hook)){
-		wpjam_schedule_event($hook, $args);
-	}
+	wpjam_is_scheduled_event($hook) || wpjam_schedule_event($hook, $args);
 
 	return $object;
 }
 
 function wpjam_register_job($name, $args=[]){
-	if(!wpjam_get_cron('wpjam_scheduled')){
-		wpjam_register_cron('wpjam_scheduled', [
-			'recurrence'	=> 'five_minutes',
-			'jobs'			=> fn()=> wpjam('cron_job'),
-			'weight'		=> true
-		]);
-	}
+	$object	= wpjam_get_cron('wpjam_scheduled') ?: wpjam_register_cron('wpjam_scheduled', [
+		'recurrence'	=> 'five_minutes',
+		'weight'		=> true
+	]);
 
 	$args	= is_array($args) ? $args : (is_numeric($args) ? ['weight'=>$args] : []);
 	$args	= array_merge($args, is_callable($name) ? ['callback'=>$name] : []);
 
 	if(!empty($args['callback']) && is_callable($args['callback'])){
-		return wpjam('cron_job[]', wp_parse_args($args, ['weight'=>1, 'day'=>-1]));
+		return $object->update_arg('jobs[]', wp_parse_args($args, ['weight'=>1, 'day'=>-1]));
 	}
 }
 

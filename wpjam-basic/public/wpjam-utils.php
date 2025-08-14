@@ -435,6 +435,11 @@ function wpjam_compare($value, $compare, ...$args){
 	}else{
 		$value2	= $args[0];
 		$strict	= $args[1] ?? false;
+	
+		if(in_array($compare, ['!==', '==='])){
+			$strict		= true;
+			$compare	= ['!=='=>'!=', '==='=>'='][$compare];
+		}
 	}
 
 	$antonyms	= ['!='=>'=', '<='=>'>', '>='=>'<', 'NOT IN'=>'IN', 'NOT BETWEEN'=>'BETWEEN'];
@@ -442,6 +447,10 @@ function wpjam_compare($value, $compare, ...$args){
 
 	if(isset($antonyms[$compare])){
 		return !wpjam_compare($value, $antonyms[$compare], $value2, $strict);
+	}
+
+	if($compare == '=='){
+		$compare	= '=';
 	}
 
 	if(!in_array($compare, $antonyms)){
@@ -611,19 +620,65 @@ function wpjam_reduce($arr, $callback, $initial=null, $options=[], $depth=0){
 	if($options){
 		$options	= is_array($options) ? $options+['key'=>true] : ['key'=> $options];
 		$key		= $options['key'];
-		$recursive	= empty($options['max_depth']) || $options['max_depth'] > $depth+1;
+		$should_recurse	= empty($options['max_depth']) || $options['max_depth'] > $depth+1;
 	}
 
 	foreach($arr as $k => $v){
 		$carry	= $callback($carry, $v, $k, $depth);
 
-		if($options && $recursive && is_array($v)){
+		if($options && $should_recurse && is_array($v)){
 			$sub	= $key === true ? $v : (is_array(wpjam_get($v, $key)) ? $v[$key] : []);
 			$carry	= wpjam_reduce($sub, $callback, $carry, $key, $depth+1);
 		}
 	}
 
 	return $carry;
+}
+
+function wpjam_nest($items, $options=[]){
+	if(!$items){
+		return [];
+	}
+
+	$options	= wp_parse_args($options, ['max_depth'=>0, 'item_callback'=>null, 'format'=>'tree', 'fields'=>[]]);
+	$fields		= wp_parse_args($options['fields'], ['id'=>'id', 'parent'=>'parent', 'name'=>'name', 'children'=>'children']);
+
+	$parser	= function($items, $depth=0, $parent=0) use(&$parser, $options, $fields){
+		$parsed	= [];
+
+		$should_recurse	= !$options['max_depth'] || $options['max_depth'] > $depth+1;
+
+		foreach(wpjam_pull($items, $parent) ?: [] as $item){
+			$children	= $should_recurse ? $parser($items, $depth+1, wpjam_get($item, $fields['id'])) : [];
+			$item		= $options['item_callback'] ? wpjam_call($options['item_callback'], $item) : $item;
+
+			if($options['format'] == 'flat'){
+				$parsed[]	= wpjam_set($item, $fields['name'], str_repeat('&emsp;', $depth).wpjam_get($item, $fields['name']));
+				$parsed		= array_merge($parsed, $children);
+			}else{
+				$parsed[]	= wpjam_set($item, $fields['children'], $children);
+			}
+		}
+
+		return $parsed;
+	};
+
+	foreach($items as $v){
+		$p	= wpjam_get($v, $fields['parent']) ?: 0;
+
+		$group[$p][]	= $v;
+	}
+
+	if(!empty($options['top'])){
+		$group[0]	= [$options['top']];
+	}
+
+	if(empty($group[0])){
+		$parent		= wpjam_get(wpjam_at($items, 0), $fields['parent']);
+		$group[0]	= array_filter($items, fn($v)=> wpjam_get($v, $fields['parent']) == $parent);
+	}
+
+	return $parser($group);
 }
 
 function wpjam_map($arr, $callback, $deep=false){

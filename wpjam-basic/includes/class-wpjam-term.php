@@ -20,9 +20,9 @@ class WPJAM_Term{
 		}elseif($key == 'object_type'){
 			return $this->get_tax_setting($key) ?: [];
 		}elseif($key == 'level'){
-			return $this->parent ? count($this->ancestors) : 0;
+			return get_term_level($this->id);
 		}elseif($key == 'depth'){
-			return $this->children ? array_reduce($this->children, fn($max, $child)=> max($max, count(get_ancestors($child, $this->taxonomy, 'taxonomy'))), 0) - $this->level : 0;
+			return get_term_depth($this->id);
 		}elseif($key == 'link'){
 			return get_term_link($this->term);
 		}elseif($key == 'term'){
@@ -43,11 +43,7 @@ class WPJAM_Term{
 	public function update_callback($data, $defaults){
 		$result	= $this->save(self::pick($data, true));
 
-		if(!is_wp_error($result) && $data){
-			return $this->meta_input($data, $defaults);
-		}
-
-		return $result;
+		return (!is_wp_error($result) && $data) ? $this->meta_input($data, $defaults) : $result;
 	}
 
 	public function get_tax_setting($key){
@@ -83,15 +79,7 @@ class WPJAM_Term{
 	}
 
 	public function get_thumbnail_url($size='full', $crop=1){
-		$thumbnail	= $this->thumbnail ?: apply_filters('wpjam_term_thumbnail_url', '', $this->term);
-
-		if($thumbnail){
-			$size	= $size ?: ($this->get_tax_setting('thumbnail_size') ?: 'thumbnail');
-
-			return wpjam_get_thumbnail($thumbnail, $size, $crop);
-		}
-
-		return '';
+		return wpjam_get_term_thumbnail_url($this->term, $size, $crop);
 	}
 
 	public function parse_for_json($args=[]){
@@ -101,17 +89,9 @@ class WPJAM_Term{
 		$json['count']			= (int)$this->count;
 		$json['description']	= $this->description;
 
-		if(is_taxonomy_viewable($this->taxonomy)){
-			$json['slug']	= $this->slug;
-		}
-
-		if(is_taxonomy_hierarchical($this->taxonomy)){
-			$json['parent']	= $this->parent;
-		}
-
-		foreach(wpjam_get_term_options($this->taxonomy) as $option){
-			$json	= array_merge($json, $option->prepare($this->id));
-		}
+		$json	+= is_taxonomy_viewable($this->taxonomy) ? ['slug'=>$this->slug] : [];
+		$json	+= is_taxonomy_hierarchical($this->taxonomy) ? ['parent'=>$this->parent] : [];
+		$json	= array_reduce(wpjam_get_term_options($this->taxonomy), fn($carry, $option)=> array_merge($json, $option->prepare($this->id)), $json);
 
 		return apply_filters('wpjam_term_json', $json, $this->id);
 	}
@@ -125,9 +105,7 @@ class WPJAM_Term{
 	}
 
 	public function meta_input(...$args){
-		if($args){
-			return wpjam_update_metadata('term', $this->id, ...$args);
-		}
+		return $args ? wpjam_update_metadata('term', $this->id, ...$args) : null;
 	}
 
 	public static function get_instance($term, $taxonomy=null, $wp_error=false){
@@ -137,9 +115,8 @@ class WPJAM_Term{
 			return $wp_error ? $term : null;
 		}
 
-		$model	= wpjam_get_taxonomy_setting($term->taxonomy, 'model') ?: 'WPJAM_Term';
-
-		return self::instance($term->term_id, fn($id)=> new $model($id));
+		return self::instance($term->term_id, fn($id)=> [wpjam_get_taxonomy_setting(get_term_taxonomy($id), 'model') ?: 'WPJAM_Term', 'create_instance']($id));
+	
 	}
 
 	public static function get($term){
@@ -155,64 +132,41 @@ class WPJAM_Term{
 	}
 
 	public static function insert($data){
-		$result	= static::validate_data($data);
+		try{
+			$data	= static::prepare_data($data);
+			$tax	= $data['taxonomy'] ?? self::get_current_taxonomy();
 
-		if(is_wp_error($result)){
-			return $result;
+			taxonomy_exists($tax) || wpjam_throw('invalid_taxonomy');
+
+			$meta	= wpjam_pull($data, 'meta_input');
+			$name	= wpjam_pull($data, 'name');
+			$result	= wpjam_try('wp_insert_term', wp_slash($name), $tax, wp_slash(self::pick($data)));
+			$id		= $result['term_id'];
+
+			$meta && wpjam_update_metadata('term', $id, $meta);
+
+			return $id;
+		}catch(Exception $e){
+			return wpjam_catch($e);
 		}
-
-		if(isset($data['taxonomy'])){
-			$tax	= $data['taxonomy'];
-
-			if(!taxonomy_exists($tax)){
-				return new WP_Error('invalid_taxonomy');
-			}
-		}else{
-			$tax	= self::get_current_taxonomy();
-		}
-
-		$data	= static::sanitize_data($data);
-		$meta	= wpjam_pull($data, 'meta_input');
-		$name	= wpjam_pull($data, 'name');
-		$result	= wp_insert_term(wp_slash($name), $tax, wp_slash(self::pick($data)));
-
-		if(!is_wp_error($result)){
-			if($meta){
-				wpjam_update_metadata('term', $result['term_id'], $meta);
-			}
-
-			return $result['term_id'];
-		}
-
-		return $result;
 	}
 
 	public static function update($term_id, $data, $validate=true){
-		if($validate){
-			$term	= self::validate($term_id);
+		try{
+			$validate && wpjam_try([static::class, 'validate'], $term_id);
 
-			if(is_wp_error($term)){
-				return $term;
-			}
-		}
+			$data	= static::prepare_data($data, $post_id);
+			$tax	= $data['taxonomy'] ?? get_term_field('taxonomy', $term_id);
+			$meta	= wpjam_pull($data, 'meta_input');
+			$args	= self::pick($data);
+			$result	= $args ? wpjam_try('wp_update_term', $term_id, $tax, wp_slash($args)) : true;
 
-		$result	= static::validate_data($data, $term_id);
+			$meta && wpjam_update_metadata('term', $term_id, $meta);
 
-		if(is_wp_error($result)){
 			return $result;
+		}catch(Exception $e){
+			return wpjam_catch($e);
 		}
-
-		$tax	= $data['taxonomy'] ?? get_term_field('taxonomy', $term_id);
-		$data	= static::sanitize_data($data);
-		$meta	= wpjam_pull($data, 'meta_input');
-		$args	= self::pick($data);
-		$result	= $args ? wp_update_term($term_id, $tax, wp_slash($args)) : true;
-
-		if(!is_wp_error($result) && $meta){
-			wpjam_update_metadata('term', $term_id, $meta);
-		}
-
-		return $result;
 	}
 
 	public static function delete($term_id){
@@ -289,7 +243,7 @@ class WPJAM_Term{
 	}
 
 	public static function get_path($args, $item=[]){
-		$id	= is_array($args) ? (int)array_get($args, wpjam_get_taxonomy_setting($item['taxonomy'], 'query_key')) : $args;
+		$id	= is_array($args) ? (int)wpjam_get($args, wpjam_get_taxonomy_setting($item['taxonomy'], 'query_key')) : $args;
 
 		if(!$id){
 			return new WP_Error('invalid_id', [wpjam_get_taxonomy_setting($item['taxonomy'], 'title')]);
@@ -352,7 +306,7 @@ class WPJAM_Term{
 			if($type == 'select' || $type == 'mu-select'){
 				return array_merge($args, self::parse_option_args($args), [
 					'type'		=> $type,
-					'options'	=> fn()=> array_column(wpjam_get_terms(['taxonomy'=>$this->taxonomy, 'hide_empty'=>0, 'format'=>'flat', 'parse'=>false]), 'name', 'term_id')
+					'options'	=> fn()=> $object->get_options()
 				]);
 			}
 		}
@@ -452,14 +406,11 @@ class WPJAM_Term{
 	public static function filter_fields($fields, $id){
 		if($id && !is_array($id)){
 			$object	= self::get_instance($id);
-
-			if($object && $object->tax_object){
-				$fields	= array_merge(['name'=>[
-					'title'	=> $object->tax_object->title,
-					'type'	=> 'view',
-					'value'	=> $object->name
-				]], $fields);
-			}
+			$fields	= array_merge(($object && $object->tax_object) ? ['name'=>[
+				'title'	=> $object->tax_object->title,
+				'type'	=> 'view',
+				'value'	=> $object->name
+			]] : [], $fields);
 		}
 
 		return $fields;
@@ -475,14 +426,9 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		if($key == 'title'){
 			return $this->labels ? $this->labels->singular_name : $this->label;
 		}elseif($key == 'selectable'){
-			$args	= ['taxonomy'=>$this->name, 'hide_empty'=>false];
-			$args	+= $this->levels > 1 ? ['parent'=>0] : [];
-
-			return wp_count_terms($args) <= 30;
+			return wp_count_terms(['taxonomy'=>$this->name, 'hide_empty'=>false]+($this->levels > 1 ? ['parent'=>0] : [])) <= 30;
 		}elseif($key != 'name' && property_exists('WP_Taxonomy', $key)){
-			$object	= get_taxonomy($this->name);
-
-			if($object){
+			if($object	= get_taxonomy($this->name)){
 				return $object->$key;
 			}
 		}
@@ -503,14 +449,16 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 
 	public function __set($key, $value){
 		if($key != 'name' && property_exists('WP_Taxonomy', $key)){
-			$object	= get_taxonomy($this->name);
-
-			if($object){
+			if($object	= get_taxonomy($this->name)){
 				$object->$key = $value;
 			}
 		}
 
 		parent::__set($key, $value);
+	}
+
+	public function __call($method, $args){
+		return $this->call_dynamic_method($method, ...$args);
 	}
 
 	protected function preprocess_args($args){
@@ -546,6 +494,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		$this->filter_args();
 
 		if($this->permastruct){
+			$this->rewrite		= $this->rewrite ?: true;
 			$this->permastruct	= str_replace('%term_id%', '%'.$this->query_key.'%', $this->permastruct);
 
 			if(strpos($this->permastruct, '%'.$this->query_key.'%')){
@@ -553,16 +502,12 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 
 				$this->query_var	??= false;
 			}
-
-			$this->rewrite	= $this->rewrite ?: true;
 		}
 
 		if($this->levels == 1){
 			$this->remove_support('parent');
 		}else{
-			if(!$this->supports('parent')){
-				$this->add_support('parent');
-			}
+			$this->add_support('parent');
 		}
 
 		if($this->rewrite && $this->_jam){
@@ -570,80 +515,6 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		}
 
 		return $this->args;
-	}
-
-	public function get_fields($id=0, $action_key=''){
-		if($action_key == 'set'){
-			$fields['name']	= ['title'=>'名称',	'type'=>'text',	'class'=>'',	'required'];
-
-			if($this->supports('slug')){
-				$fields['slug']	= ['title'=>'别名',	'type'=>'text',	'class'=>'',	'required'];
-			}
-
-			if($this->hierarchical && $this->levels !== 1 && $this->supports('parent')){
-				$args	= ['taxonomy'=>$this->name, 'hide_empty'=>0, 'format'=>'flat'];
-				$depth	= null;
-
-				if($this->levels > 1){
-					$depth	= $this->levels - 1 - wpjam_term($id)->depth;
-
-					if(!$depth){
-						$args['parent']	= -1;
-						$depth			= null;
-					}
-				}
-
-				$terms		= wpjam_get_terms($args, $depth);
-				$options	= $terms ? array_column($terms, 'name', 'id') : [];
-
-				$fields['parent']	= ['title'=>'父级',	'type'=>'select',	'options'=> ['-1'=>'无']+$options];
-			}
-
-			if($this->supports('description')){
-				$fields['description']	= ['title'=>'描述',	'type'=>'textarea'];
-			}
-		}
-
-		if($this->supports('thumbnail')){
-			$fields['thumbnail']	= [
-				'title'		=> '缩略图',
-				'type'		=> $this->thumbnail_type == 'image' ? 'image' : 'img',
-				'item_type'	=> $this->thumbnail_type == 'image' ? 'image' : 'url',
-				'size'		=> $this->thumbnail_size
-			];
-		}
-
-		if($this->supports('banner')){
-			$fields['banner']	= [
-				'title'			=> '大图',
-				'type'			=> 'img',
-				'item_type'		=> 'url',
-				'size'			=> $this->banner_size,
-				'description'	=> $this->banner_size ? '尺寸：'.$this->banner_size : '',
-				'show_if'		=> [
-					'key'		=> 'parent',
-					'value'		=> -1,
-					'external'	=> $action_key != 'set'
-				],
-			];
-		}
-
-		$parsed	= $this->parse_fields($id, $action_key);
-
-		return is_wp_error($parsed) ? $parsed : array_merge($fields ?? [], $parsed);
-	}
-
-	public function register_option($list_table=false){
-		wpjam_get_term_option($this->name.'_base') ?: wpjam_register_term_option($this->name.'_base', [
-			'taxonomy'		=> $this->name,
-			'title'			=> '快速编辑',
-			'submit_text'	=> '编辑',
-			'page_title'	=> '编辑'.$this->title,
-			'fields'		=> [$this, 'get_fields'],
-			'list_table'	=> $this->show_ui,
-			'action_name'	=> 'set',
-			'order'			=> 99,
-		]);
 	}
 
 	public function is_object_in($object_type){
@@ -655,15 +526,58 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 	}
 
 	public function add_support($feature, $value=true){
-		return $this->update_arg('supports.'.$feature, $value);
+		return $this->update_arg('supports['.$feature.']', $value);
 	}
 
 	public function remove_support($feature){
-		return $this->delete_arg('supports.'.$feature);
+		return $this->delete_arg('supports['.$feature.']');
 	}
 
 	public function supports($feature){
-		return (bool)$this->get_arg('supports.'.$feature);
+		return (bool)$this->get_arg('supports['.$feature.']');
+	}
+
+	public function get_fields($id=0, $action_key=''){
+		if($action_key == 'set'){
+			$fields['name']	= ['title'=>'名称',	'type'=>'text',	'class'=>'',	'required'];
+
+			if($this->supports('slug')){
+				$fields['slug']	= ['title'=>'别名',	'type'=>'text',	'class'=>'',	'required'];
+			}
+
+			if($this->hierarchical && $this->levels !== 1 && $this->supports('parent')){
+				$fields['parent']	= ['title'=>'父级',	'options'=>['-1'=>'无']+$this->get_options(apply_filters('taxonomy_parent_dropdown_args', ['exclude_tree'=>$id], $this->name, 'edit'))];
+			}
+
+			if($this->supports('description')){
+				$fields['description']	= ['title'=>'描述',	'type'=>'textarea'];
+			}
+		}
+
+		if($this->supports('thumbnail')){
+			$fields['thumbnail']	= [
+				'title'		=> '缩略图',
+				'size'		=> $this->thumbnail_size,
+				'type'		=> $this->thumbnail_type == 'image' ? 'image' : 'img',
+				'item_type'	=> $this->thumbnail_type == 'image' ? 'image' : 'url',
+			];
+		}
+
+		if($this->supports('banner')){
+			$fields['banner']	= [
+				'title'		=> '大图',
+				'size'		=> $this->banner_size,
+				'type'		=> 'img',
+				'item_type'	=> 'url',
+				'show_if'	=> ['parent', -1],
+			];
+		}
+
+		return array_merge($fields ?? [], wpjam_if_error($this->parse_fields($id, $action_key), 'throw'));
+	}
+
+	public function get_options($args=[]){
+		return array_column(wpjam_get_terms($args+['taxonomy'=>$this->name, 'hide_empty'=>0, 'format'=>'flat', 'parse'=>false]), 'name', 'term_id');
 	}
 
 	public function get_mapping($post_id){
@@ -740,6 +654,19 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		}
 	}
 
+	public function register_option(){
+		return wpjam_get_term_option($this->name.'_base') ?: wpjam_register_term_option($this->name.'_base', [
+			'taxonomy'		=> $this->name,
+			'title'			=> '快速编辑',
+			'submit_text'	=> '编辑',
+			'page_title'	=> '编辑'.$this->title,
+			'fields'		=> [$this, 'get_fields'],
+			'list_table'	=> $this->show_ui,
+			'action_name'	=> 'set',
+			'order'			=> 99,
+		]);
+	}
+
 	public function filter_labels($labels){
 		$labels	= (array)$labels;
 		$name	= $labels['name'];
@@ -760,9 +687,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 			$struct	= $this->permastruct;
 
 			if($struct == '%'.$name.'%'){
-				if(!is_admin()){
-					add_filter('request',	[self::class, 'filter_request']);
-				}
+				!is_admin() && add_filter('request', [self::class, 'filter_request']);
 
 				add_filter('pre_term_link',	fn($link, $term)=> $term->taxonomy == $name ? $struct : $link, 1, 2);
 			}elseif($struct){
@@ -774,9 +699,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 					add_filter('pre_term_link',	fn($link, $term)=> $term->taxonomy == $name ? str_replace($tag, $term->term_id, $link) : $link, 1, 2);
 				}
 
-				if(!str_contains($struct, '%'.$name.'%')){
-					remove_rewrite_tag('%'.$name.'%');
-				}
+				str_contains($struct, '%'.$name.'%') || remove_rewrite_tag('%'.$name.'%');
 
 				add_permastruct($name, $struct, $args['rewrite']);
 			}
@@ -786,10 +709,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 
 		wpjam_init(function(){
 			if($this->_jam){
-
-				if(is_admin() && $this->show_ui){
-					add_filter('taxonomy_labels_'.$this->name,	[$this, 'filter_labels']);
-				}
+				is_admin() && $this->show_ui && add_filter('taxonomy_labels_'.$this->name,	[$this, 'filter_labels']);
 
 				register_taxonomy($this->name, $this->object_type, $this->get_args());
 
@@ -870,99 +790,53 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 
 class WPJAM_Terms{
 	public static function parse($args){
-		$format		= wpjam_pull($args, 'format');
-		$parse		= wpjam_pull($args, 'parse', true);
-		$max_depth	= wpjam_pull($args, 'max_depth');
+		$format	= wpjam_pull($args, 'format');
+		$parse	= wpjam_pull($args, 'parse', true);
+		$depth	= wpjam_pull($args, 'depth') ?? wpjam_pull($args, 'max_depth');
 
-		if($max_depth != -1){
-			$object	= (isset($args['taxonomy']) && is_string($args['taxonomy'])) ? wpjam_get_taxonomy_object($args['taxonomy']) : null;
+		if($depth != -1){
+			$tax	= $args['taxonomy'] ?? null;
+			$tax	= is_string($tax) ? $tax : null;
+			$object	= wpjam_get_taxonomy_object($tax);
 
 			if($object && $object->hierarchical){
-				$max_depth	??= (int)$object->levels;
-				$parent		= (int)wpjam_pull($args, 'parent');
+				$depth	??= (int)$object->levels;
+				$parent	= (int)wpjam_pull($args, 'parent');
 
-				if(!get_term($parent)){
+				if($parent && !get_term($parent)){
 					return [];
 				}
-			}else{
-				$max_depth	= -1;
-			}
-		}
 
-		$terms	= get_terms($args+['hide_empty'=>false]) ?: [];
-
-		if(is_wp_error($terms) || empty($terms)){
-			return $terms;
-		}
-
-		if($max_depth != -1){
-			$terms	= wpjam_group($terms, 'parent');
-
-			if($parent){
-				$terms[0]	= [get_term($parent)];
-			}
-
-			return self::parse_hierarchical($terms, 0, 0, compact('parse', 'max_depth', 'format'));
-		}else{
-			return $parse ? array_map('wpjam_get_term', $terms) : $terms;
-		}
-	}
-
-	public static function cleanup(){	// term_relationships 的 object_id 可能不是 post_id 如果要清理，需要具体业务逻辑的时候，进行清理。
-		$wpdb	= $GLOBALS['wpdb'];
-		$sql	= "SELECT tr.* FROM {$wpdb->term_relationships} tr LEFT JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id WHERE tt.term_taxonomy_id is NULL;";
-
-		if($results	= $wpdb->get_results($sql)){
-			$wpdb->query(str_replace("SELECT tr.* ", "DELETE tr ", $sql));
-		}
-
-		return $results;
-	}
-
-	protected static function parse_hierarchical(&$hierarchical, $parent, $depth, $args){
-		$terms	= wpjam_pull($hierarchical, $parent) ?: [];
-		$parsed	= [];
-
-		foreach($terms as $term){
-			$term	= $args['parse'] ? wpjam_get_term($term) : $term;
-
-			if(!$args['max_depth'] || $args['max_depth'] > $depth+1){
-				$parent 	= $args['parse'] ? $term['id'] : $term->term_id;
-				$children	= self::parse_hierarchical($hierarchical, $parent, $depth+1, $args);
-			}else{
-				$children	= [];
-			}
-
-			if($args['format'] == 'flat'){
-				$space	= str_repeat('&emsp;', $depth);
-
-				if($args['parse']){
-					$term['name']	= $space.$term['name'];
-				}else{
-					$term->name		= $space.$term->name;
+				if(!empty($args['terms'])){
+					$parents		= array_reduce($args['terms'], fn($c, $v)=> array_merge($c, get_ancestors($v->term_id, $tax, 'taxonomy')), []);
+					$args['terms']	= array_merge($args['terms'], $parents ? WPJAM_Term::get_by_ids($parents) : []);
 				}
-
-				$parsed		= array_merge($parsed, [$term], $children);
 			}else{
-				if($args['parse']){
-					$term	= array_merge($term, ['children'=>$children]);
-				}else{
-					$term->children	= $children;
-				}
-
-				$parsed[]	= $term;
+				$depth	= -1;
 			}
 		}
 
-		return $parsed;
+		$terms	= $args['terms'] ?? (get_terms($args+['hide_empty'=>false]) ?: []);
+
+		if($terms && !is_wp_error($terms)){
+			if($depth != -1){
+				$options	= ['max_depth'=>$depth, 'format'=>$format, 'fields'=>['id'=>'term_id']];
+				$options	+= $parse ? ['item_callback'=>'wpjam_get_term'] : [];
+				$options	+= $parent ? ['top'=>get_term($parent)] : [];
+
+				return wpjam_nest($terms, $options);
+			}elseif($parse){
+				return array_values(array_map('wpjam_get_term', $terms));
+			}
+		}
+
+		return $terms;
 	}
 
 	public static function parse_json_module($args){
-		$tax_object	= wpjam_get_taxonomy_object(array_get($args, 'taxonomy'));
+		$tax_object	= wpjam_get_taxonomy_object(wpjam_get($args, 'taxonomy'));
 
-		if(!$tax_object){
-			wp_die('invalid_taxonomy');
-		}
+		!$tax_object && wp_die('invalid_taxonomy');
 
 		$mapping	= wpjam_array(wp_parse_args(wpjam_pull($args, 'mapping') ?: []), fn($k, $v)=> [$k, wpjam_get_parameter($v)], true);
 		$args		= array_merge($args, $mapping);
@@ -983,5 +857,16 @@ class WPJAM_Terms{
 		$terms	= $terms ? array_values($terms) : [];
 
 		return [$output	=> $terms];
+	}
+
+	public static function cleanup(){	// term_relationships 的 object_id 可能不是 post_id 如果要清理，需要具体业务逻辑的时候，进行清理。
+		$wpdb	= $GLOBALS['wpdb'];
+		$sql	= "SELECT tr.* FROM {$wpdb->term_relationships} tr LEFT JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id WHERE tt.term_taxonomy_id is NULL;";
+
+		$results	= $wpdb->get_results($sql);
+
+		$results && $wpdb->query(str_replace("SELECT tr.* ", "DELETE tr ", $sql));
+
+		return $results;
 	}
 }

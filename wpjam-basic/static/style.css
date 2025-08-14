@@ -1,5 +1,4 @@
 .abscenter{left:50%; top:50%; transform:translate(-50%, -50%);}
-.hidden{display:none !important;}
 .ui-autocomplete{z-index:1000000 !important;} /*要超过 TB z-index 才行，不然弹窗不行*/
 
 .green{font-size:larger; font-weight:500; color:green;}
@@ -8,8 +7,10 @@
 .wrap .wp-heading-inline{display:inline-block; margin-right:5px;}
 
 [data-tooltip],[data-description]{color:#555; cursor:pointer; vertical-align:text-bottom;}
-#tooltip{position:absolute; z-index:10000; color:#555; max-width:min(80vw, 300px); background-color:#ddd; padding:5px 10px; border-radius:6px; --arrow-left:10px;}
+#tooltip{position:absolute; z-index:1000000; color:#555; max-width:min(80vw, 300px); background-color:#ddd; padding:5px 10px; border-radius:6px; --arrow-left:10px;}
 #tooltip:before{content:" "; position:absolute; left:var(--arrow-left); bottom:100%; border-width:5px; border-style:solid; border-color:transparent transparent #ddd transparent;}
+#tooltip:has(img){max-width:none; padding:0;}
+#tooltip:has(img):before{display:none;}
 
 .notice p a{text-decoration:none;}
 .notice p a .dashicons{height:16px; font-size:16px; line-height:18px;}
@@ -35,6 +36,8 @@ span.tiny-text{width:35px;}
 input:placeholder{font-size:13px;}
 input.medium-text{width:105px;}
 input.compact-text{width:85px;}
+input[type=checkbox]:indeterminate{position:relative;}
+input[type=checkbox]:indeterminate:before{content:''; border-top:2px solid grey; width: 65%; height: 2px; position: absolute; top: calc(50% + 1px); left: 50%; transform: translate(-50%, -50%);}
 input[type=number]{padding-right:0;}
 input[type=text],
 input[type=date],
@@ -57,7 +60,7 @@ summary + .sub-field{margin-top:20px;}
 
 fieldset > .field-group,
 fieldset > .inline{display:inline-flex; margin:0 0 .5em !important;}
-fieldset > .field-group:has(> label) > *{margin:.35em 0 .5em!important;}
+fieldset > .field-group:has(> label) > *{margin:.35em 0 .5em !important;}
 fieldset > .field-group > label,
 fieldset.mu-item.field-group > label{line-height:30px !important;}
 fieldset.mu-item.field-group > *{margin:0 !important;}
@@ -108,7 +111,7 @@ div.plupload div.progress div.bar{z-index:9; width:0; height:100%; margin-top:-2
 div.plupload:has(div.progress) input.button{display:none;}
 
 .direction-column{display:inline-flex; flex-direction:column; gap:6px;}
-.direction-row{display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px 10px; line-height:30px;}
+.direction-row{display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px 10px;}
 
 .sortable > .mu-item > .move-item{font-weight:100; opacity:0.2; width:30px; height:30px; font-size:30px; cursor:move;}
 .sortable > .mu-item:hover > .move-item{opacity:0.8 !important;}
@@ -139,7 +142,7 @@ div.mu-text.tag-input:hover{border-color:#2271b1; box-shadow:0 0 0 1px #2271b1; 
 div.mu-text.tag-input input,
 div.mu-text.tag-input input:focus{border:0; box-shadow:none; height:20px; min-height:20px; padding:0; outline:0;}
 
-div.mu-fields.direction-column > .mu-item{margin-bottom:4px; padding-bottom:4px;}
+div.mu-fields.direction-column > .mu-item{padding-bottom:6px;}
 div.mu-fields.direction-column > .mu-item:not(.field-group){border-bottom:1px solid #E5E5E5;}
 div.mu-fields.direction-column > .mu-item:last-child{margin-bottom:0; border-bottom:none; padding-bottom:6px;}
 div.mu-fields > .mu-item > .button{margin-left:80px;}
@@ -243,10 +246,9 @@ div#poststuff div.postbox .nav-tab-wrapper a.nav-tab-active{background:#fff; bor
 div#poststuff div.postbox.closed .nav-tab-wrapper a.nav-tab-active{background:#fff; border-color:#ddd;}
 
 .tablenav.top:has(.actions){height:auto; margin:0;}
-.tablenav:has(.tablenav-pages.no-pages){clear:right;}
-.tablenav > div:nth-last-child(1 of div.actions){float:none;}
-.tablenav .actions > *{float:left; margin:0 6px 8px 0 !important;}
-.tablenav .actions > .overall-action{margin:0 6px 8px 4px !important;}
+.tablenav .actions > *{float:left; margin:0 6px 8px 0;}
+.tablenav .actions > .overall-action{margin:0 10px 8px 0px;}
+.tablenav .actions:not(.alignleft) > #filter_action{margin-right:16px;}
 .tablenav .actions .direction-row{gap:6px;}
 .tablenav .actions .direction-row select{float:none; margin-right:0;}
 .tablenav .prev-day,
@@ -413,6 +415,12 @@ div.news-items div.small span.item-thumb img{position:relative; left :50%; top :
 li.ui-tabs-active > a{border-bottom:1px solid #f0f0f1; box-shadow:none;margin-bottom:-1px; background:none !important; color:#000;}
 div#poststuff div.postbox .nav-tab-wrapper li.ui-tabs-active > a{border-bottom:1px solid #ffffff;}
 li.ui-state-hover > a{background-color:#fff; color:#3c434a;}
+
+
+.hidden,
+fieldset > .inline.hidden,
+div.mu-select-wrap.hidden,
+.form-table td fieldset label.hidden{display:none;}
 
 @media screen and (max-width:782px){
 	#TB_window #TB_title #TB_closeWindowButton{right:0; top:-30px;}

@@ -52,9 +52,7 @@ class WPJAM_Role{
 	}
 
 	public static function delete($role){
-		if($role == 'administrator'){
-			wp_die('不能删除超级管理员角色。');
-		}
+		$role == 'administrator' && wp_die('不能删除超级管理员角色。');
 
 		return remove_role($role);
 	}
@@ -106,34 +104,23 @@ class WPJAM_Role{
 	}
 
 	public static function get_additional($user, $output=''){
-		$user		= is_object($user) ? $user : get_userdata($user);
+		$user	= is_object($user) ? $user : get_userdata($user);
+		$caps	= array_keys(wpjam_filter($user->caps, fn($v, $k)=> $v && !$GLOBALS['wp_roles']->is_role($k)));
 
-		foreach($user->caps as $cap => $value){
-			if($value && !$GLOBALS['wp_roles']->is_role($cap)){
-				$caps[]	= $cap;
-			}
-		}
-
-		$caps	??= [];
-
-		if($output == 'fields'){
-			return wpjam_fields(['capabilities'=> [
-				'title'	=> '权限',
-				'type'	=> 'mu-text',
-				'value'	=> $caps
-			]]);
-		}
-
-		return $caps;
+		return $output == 'fields' ? wpjam_fields(['capabilities'=> [
+			'title'	=> '权限',
+			'type'	=> 'mu-text',
+			'value'	=> $caps
+		]]) : $caps;
 	}
 
 	public static function set_additional($user, $caps){
-		$user		= is_object($user) ? $user : get_userdata($user);
-		$current	= self::get_additional($user);
-		$caps		= array_diff($caps, ['manage_sites', 'manage_options']);
+		$user	= is_object($user) ? $user : get_userdata($user);
+		$exists	= self::get_additional($user);
+		$caps	= array_diff($caps, ['manage_sites', 'manage_options']);
 
-		wpjam_map(array_diff($current, $caps), fn($cap)=> $user->remove_cap($cap));
-		wpjam_map(array_diff($caps, $current), fn($cap)=> $user->add_cap($cap));
+		wpjam_map(array_diff($exists, $caps), fn($cap)=> $user->remove_cap($cap));
+		wpjam_map(array_diff($caps, $exists), fn($cap)=> $user->add_cap($cap));
 	}
 
 	public static function builtin_page_load($screen_base){

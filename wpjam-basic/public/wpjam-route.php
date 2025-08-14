@@ -102,7 +102,7 @@ function wpjam_value_callback($args, $name, $id=null){
 	foreach([
 		'data'				=> fn($v)=> wpjam_get($v, $name),
 		'value_callback'	=> fn($v)=> wpjam_if_error(wpjam_catch($v, $name, $id), null),
-		'meta_type'			=> fn($v)=> wpjam_get_metadata($v, $id, $name),
+		'meta_type'			=> fn($v)=> $id ? wpjam_get_metadata($v, $id, $name) : null,
 	] as $k => $cb){
 		$value	= isset($args[$k]) ? $cb($args[$k]) : null;
 
@@ -128,9 +128,7 @@ function wpjam_call_for_blog($blog_id, $callback, ...$args){
 
 		return $callback(...$args);
 	}finally{
-		if($switched){
-			restore_current_blog();
-		}
+		$switched && restore_current_blog();
 	}
 }
 
@@ -138,7 +136,7 @@ function wpjam_build_callback_unique_id($callback){
 	return _wp_filter_build_unique_id(null, $callback, null);
 }
 
-function wpjam_get_reflection($callback, $type=''){
+function wpjam_get_reflection($callback){
 	$class	= (is_array($callback) && !is_object($callback[0])) ? $callback[0] : '';
 
 	return (WPJAM_Invoker::create($class))->get_reflection($class ? $callback[1] : $callback);
@@ -295,10 +293,9 @@ function wpjam_db_transaction($callback, ...$args){
 
 	try{
 		$result	= $callback(...$args);
+		$error	= $GLOBALS['wpdb']->last_error;
 
-		if($GLOBALS['wpdb']->last_error){
-			wpjam_throw('error', $GLOBALS['wpdb']->last_error);
-		}
+		$error && wpjam_throw('error', $error);
 
 		$GLOBALS['wpdb']->query("COMMIT;");
 
@@ -389,10 +386,7 @@ function wpjam_get_data_parameter($name='', $args=[]){
 
 function wpjam_method_allow($method){
 	$m	= $_SERVER['REQUEST_METHOD'];
-
-	if($m != strtoupper($method)){
-		wp_die('method_not_allow', '接口不支持 '.$m.' 方法，请使用 '.$method.' 方法！');
-	}
+	$m	== strtoupper($method) || wp_die('method_not_allow', '接口不支持 '.$m.' 方法，请使用 '.$method.' 方法！');
 
 	return true;
 }
@@ -527,13 +521,9 @@ function wpjam_asset($type, $handle, $args, $load=false){
 			$src	= maybe_closure($args['src'], $handle);
 			$data	= $args['data'] ?? '';
 
-			if($src || !$data){
-				wpjam_call('wp_'.$method.'_'.$type, $handle, $src, $args['deps'], $args['ver'], ($type == 'script' ? wpjam_pick($args, ['in_footer', 'strategy']) : $args['media']));
-			}
+			($src || !$data) && wpjam_call('wp_'.$method.'_'.$type, $handle, $src, $args['deps'], $args['ver'], ($type == 'script' ? wpjam_pick($args, ['in_footer', 'strategy']) : $args['media']));
 
-			if($data){
-				wpjam_call('wp_add_inline_'.$type, $handle, $data, $args['position']);
-			}	
+			$data && wpjam_call('wp_add_inline_'.$type, $handle, $data, $args['position']);
 		}
 	}else{
 		$parts	= is_admin() ? ['admin', 'wp'] : (is_login() ? ['login'] : ['wp']);
@@ -554,7 +544,8 @@ function wpjam_style($handle, $args=[]){
 // Capability
 function wpjam_map_meta_cap($cap, $map){
 	if($cap && $map && (is_callable($map) || wp_is_numeric_array($map))){
-		wpjam('map_meta_cap[]', $cap, $map);
+		wpjam('map_meta_cap') || add_filter('map_meta_cap', [wpjam(), 'map_meta_cap'], 10, 4);
+		wpjam('map_meta_cap', $cap.'[]', $map);
 	}
 }
 
@@ -605,23 +596,18 @@ function wpjam_add_menu_page(...$args){
 
 	$model	= $args['model'] ?? '';
 	$cap	= $args['capability'] ?? '';
+	$map	= wpjam_pull($args, 'map_meta_cap');
+
+	$cap && $map && wpjam_map_meta_cap($cap, $map);
 
 	if($model){
 		wpjam_hooks(wpjam_call([$model, 'add_hooks']));
 		wpjam_init([$model, 'init']);
 
-		if($cap && method_exists($model, 'map_meta_cap')){
-			$args['map_meta_cap']	= [$model, 'map_meta_cap'];
-		}
+		$cap && method_exists($model, 'map_meta_cap') && wpjam_map_meta_cap($cap, [$model, 'map_meta_cap']);
 	}
 
-	if($cap && !empty($args['map_meta_cap'])){
-		wpjam_map_meta_cap($cap, wpjam_pull($args, 'map_meta_cap'));
-	}
-
-	if(is_admin()){
-		wpjam_admin($type.'[]', $args);
-	}
+	is_admin() && wpjam_admin($type.'[]', $args);
 }
 
 if(is_admin()){
@@ -648,7 +634,7 @@ if(is_admin()){
 	}
 
 	function wpjam_add_admin_ajax($action, $args=[]){
-		wpjam_register_ajax($action, ['admin'=>true]+$args);
+		wp_doing_ajax() && wpjam_register_ajax($action, ['admin'=>true]+$args);
 	}
 
 	function wpjam_add_admin_error($msg='', $type='success'){
@@ -657,9 +643,7 @@ if(is_admin()){
 			$type	= 'error';
 		}
 
-		if($msg && $type){
-			add_action('all_admin_notices',	fn()=> wpjam_echo(wpjam_tag('div', ['is-dismissible', 'notice', 'notice-'.$type], ['p', [], $msg])));
-		}
+		$msg && $type && wpjam_admin('error[]', compact('msg', 'type'));
 	}
 
 	function wpjam_add_admin_load($args){
@@ -668,11 +652,7 @@ if(is_admin()){
 		}else{
 			$type	= wpjam_pull($args, 'type') ?: array_find(['base'=>'builtin_page', 'plugin_page'=>'plugin_page'], fn($v, $k)=> isset($args[$k])) ?: '';
 
-			if(!in_array($type, ['builtin_page', 'plugin_page'])){
-				return;
-			}
-
-			wpjam_admin($type.'_load[]', $args);
+			in_array($type, ['builtin_page', 'plugin_page']) && wpjam_admin($type.'_load[]', $args);
 		}
 	}
 

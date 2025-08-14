@@ -24,17 +24,13 @@ jQuery(function($){
 			let top	= this.offset().top;
 			let dis	= $(window).height() * 0.4;
 
-			if(Math.abs(top - $(window).scrollTop()) > dis){
-				$('html, body').animate({scrollTop: top - dis}, 400);
-			}
+			(Math.abs(top - $(window).scrollTop()) > dis) && $('html, body').animate({scrollTop: top - dis}, 400);
 
 			return this;
 		},
 
 		wpjam_row: function(color){
-			if(color !== false){
-				this.hide().css('backgroundColor', color || (this.prevAll().length % 2 ? '#ffffeecc' : '#ffffddcc')).fadeIn(1000);
-			}
+			color !== false && this.hide().css('backgroundColor', color || (this.prevAll().length % 2 ? '#ffffeecc' : '#ffffddcc')).fadeIn(1000);
 
 			if(!this.is('td')){
 				this.wpjam_each(list_table.columns, ($el, data)=> $el.wpjam_cell(data));
@@ -46,13 +42,8 @@ jQuery(function($){
 		},
 
 		wpjam_cell: function(data){
-			if(data.sticky){
-				this.addClass('sticky-column').css('left', data.left);
-			}
-
-			if(data.nowrap){
-				this.addClass('nowrap-text');
-			}
+			data.sticky && this.addClass('sticky-column').css('left', data.left);
+			data.nowrap && this.addClass('nowrap-text');
 
 			if(data.check){
 				if(this.find('input').length){
@@ -60,9 +51,7 @@ jQuery(function($){
 					// 	this.append('<br /><span class="dashicons dashicons-menu"></span>');
 					// }
 				}else{
-					if(!this.find('span').length){
-						this.append('<span class="dashicons dashicons-minus"></span>');
-					}
+					!this.find('span').length && this.append('<span class="dashicons dashicons-minus"></span>');
 				}
 			}else{
 				let value	= this.text();
@@ -95,9 +84,7 @@ jQuery(function($){
 		},
 
 		wpjam_items: function(){
-			if(this.hasClass('sortable')){
-				this.wpjam_sortable({items: '> div.item'});
-			}
+			this.hasClass('sortable') && this.wpjam_sortable({items: '> div.item'});
 
 			let width	= this.data('width');
 			let height	= this.data('height');
@@ -116,9 +103,7 @@ jQuery(function($){
 					}
 				}
 
-				if(per_row && (i+1) % per_row === 0){
-					$el.after('<div style="width: 100%;"></div>');
-				}
+				per_row && ((i+1) % per_row === 0) && $el.after('<div style="width: 100%;"></div>');
 			});
 		},
 
@@ -183,6 +168,7 @@ jQuery(function($){
 					$el	= $el.is(':submit') ? $el : this.find(':submit').first().focus();
 
 					args.data			= this.serialize();
+					args.indeterminate	= this.find('input[type="checkbox"]').filter((i, cb) => cb.indeterminate).map((i, cb) => `${encodeURIComponent(cb.name)}=${encodeURIComponent(cb.value)}`).get().join('&');
 					args.submit_name	= $el.attr('name');
 					args.page_title		= $el.val();
 				}else{
@@ -224,9 +210,7 @@ jQuery(function($){
 
 			if(type	== 'list-table'){
 				if(args.action_type == 'form'){
-					if(!args.bulk){
-						_.extend(wpjam.params, _.pick(args, ['list_action', 'id', 'data']));
-					}
+					args.bulk || _.extend(wpjam.params, _.pick(args, ['list_action', 'id', 'data']));
 				}else{
 					if(args.bulk && args.bulk == 2 && !args.id){
 						tb_remove();
@@ -236,20 +220,18 @@ jQuery(function($){
 						return this.wpjam_action(args).then(()=> {
 							delete args.id;
 
-							if(args.ids.length){
-								setTimeout(()=> this.wpjam_action(args), args.list_action == 'delete' ? 400 : 100);
-							}
+							args.ids.length && setTimeout(()=> this.wpjam_action(args), args.list_action == 'delete' ? 400 : 100);
 						});
 					}
+				
+					args.params	= _.omit(wpjam.params, ['list_action', 'id', 'data']);
 				}
 
 				if(list_table.$tbody.find('.check-column').length){
 					_.reduce(((args.bulk && args.bulk != 2) ? args.ids : (args.id ? [args.id] : [])), ($r, i)=> $r.add(list_table.get_row(i)), $()).find('.check-column input').before(spinner);
 				}
 			}else if(type == 'page'){
-				if(args.action_type == 'form'){
-					_.extend(wpjam.params, _.pick(args, ['page_action', 'data']));
-				}
+				args.action_type == 'form' && _.extend(wpjam.params, _.pick(args, ['page_action', 'data']));
 			}else if(type == 'option'){
 				if(args.submit_name == 'reset' && !confirm('确定要'+args.page_title+'吗?')){
 					return false;
@@ -257,13 +239,9 @@ jQuery(function($){
 			}
 
 			if(args.action_type == 'submit'){
-				if(!$el.is('body')){
-					$el.prop('disabled', true).after(spinner);
-				}
+				$el.is('body') || $el.prop('disabled', true).after(spinner);
 			}else if(args.action_type){
-				if($('.spinner.is-active').length == 0){
-					$('<div id="TB_load"><img src="'+imgLoader.src+'" width="208" /></div>').appendTo('body').show();
-				}
+				$('.spinner.is-active').length || $('<div id="TB_load"><img src="'+imgLoader.src+'" width="208" /></div>').appendTo('body').show();
 			}
 
 			return wpjam.post(args, (data)=> {
@@ -278,9 +256,7 @@ jQuery(function($){
 				if(data.errcode != 0){
 					wpjam.add_notice((args.page_title ? args.page_title+'失败：' : '')+(data.errmsg || ''), 'error');
 				}else{
-					if(data.params){
-						_.extend(wpjam.params, data.params);
-					}
+					data.params && _.extend(wpjam.params, data.params);
 
 					let $modal	= $('#TB_ajaxContent');
 
@@ -317,33 +293,23 @@ jQuery(function($){
 							}
 						}
 
-						if($modal.length && data.dismiss){
-							tb_remove();
-						}
+						$modal.length && data.dismiss && tb_remove();
 					}
 
 					if(type == 'option'){
-						if(data.type == 'save'){
-							wpjam.add_notice(data.errmsg, 'success');
-						}
+						data.type == 'save' && wpjam.add_notice(data.errmsg, 'success');
 
 						$('body').wpjam_form().trigger('option_action_success', data);
 					}else if(type == 'page'){
 						if(!['form', 'append', 'redirect'].includes(data.type)){
-							if(data.done == 0){
-								setTimeout(()=> this.wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
-							}
+							data.done || setTimeout(()=> this.wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
 
-							if(args.action_type == 'submit' && $('#wpjam_form').length && data.form){
-								$('#wpjam_form').html(data.form);
-							}
+							args.action_type == 'submit' && $('#wpjam_form').length && data.form && $('#wpjam_form').html(data.form);
 
 							wpjam.add_notice(data.errmsg || args.page_title+'成功', data.notice_type || 'success');
 						}
 
-						if(data.type != 'form' || !data.modal_id || data.modal_id == 'tb_modal'){
-							wpjam.state();
-						}
+						(data.type != 'form' || !data.modal_id || data.modal_id == 'tb_modal') && wpjam.state();
 
 						data.page_action	= args.page_action;
 						data.action_type	= data.page_action_type	= args.action_type;
@@ -353,9 +319,7 @@ jQuery(function($){
 						if(args.bulk){
 							list_table.$form.find('td.check-column input').prop('checked', false);
 
-							if(args.bulk == 2){
-								list_table.get_row(args.id).wpjam_scroll();
-							}	
+							args.bulk == 2 && args.id && list_table.get_row(args.id).wpjam_scroll();
 						}else if(!args.bulk){
 							list_table.$tbody.find('tr').not(args.id ? list_table.get_row(args.id) : '').css('background-color', '');
 						}
@@ -369,9 +333,7 @@ jQuery(function($){
 								$item.insertAfter($item.next());
 							}
 						}else if(!['form', 'append', 'redirect'].includes(data.type)){
-							if(data.type == 'list' && data.list_action == 'delete'){
-								list_table.delete_row(args.id);
-							}
+							data.type == 'list' && data.list_action == 'delete' && list_table.delete_row(args.id);
 
 							list_table.load(data);
 
@@ -382,9 +344,7 @@ jQuery(function($){
 							}
 						}
 
-						if(data.next){
-							_.extend(wpjam.params, {list_action: data.next}, _.pick(args, ['id', 'data']));
-						}
+						data.next && _.extend(wpjam.params, {list_action: data.next}, _.pick(args, ['id', 'data']));
 
 						wpjam.state();
 
@@ -423,9 +383,7 @@ jQuery(function($){
 			}else{
 				this.params	= this.parse_params(window.location.search, true);
 
-				if($('#notice_modal').length){
-					this.add_modal('notice_modal');
-				}
+				$('#notice_modal').length && this.add_modal('notice_modal');
 
 				if(this.page_title_action){
 					$('a.page-title-action').remove();
@@ -433,13 +391,9 @@ jQuery(function($){
 					$('.wp-heading-inline').last().after(this.page_title_action || '');
 				}
 
-				if(list_table){
-					list_table.load();
-				}
+				list_table && list_table.load();
 
-				if(this.query_url){
-					_.each(this.query_url, pair => $('a[href="'+pair[0]+'"]').attr('href', pair[1]));
-				}
+				this.query_url && _.each(this.query_url, pair => $('a[href="'+pair[0]+'"]').attr('href', pair[1]));
 			}
 
 			let args	= _.extend({}, this.params, {action_type: 'form'});
@@ -460,9 +414,7 @@ jQuery(function($){
 				}
 			}
 
-			if(this.plugin_page){
-				this.state('replace');
-			}
+			this.plugin_page && this.state('replace');
 		},
 
 		state: function(action='push'){
@@ -516,9 +468,7 @@ jQuery(function($){
 				title	= $model.data('title') || ' ';
 				content	= $model.html();
 
-				if(modal == 'notice_modal'){
-					$('body').one('thickbox:removed', ()=> $model.find('.delete-notice').trigger('click'));
-				}
+				modal == 'notice_modal' && $('body').one('thickbox:removed', ()=> $model.find('.delete-notice').trigger('click'));
 			}
 
 			if(id == 'tb_modal'){
@@ -592,9 +542,7 @@ jQuery(function($){
 			let $tb		= $('#TB_window');
 
 			if($tb.length){
-				if(!$tb.hasClass('abscenter')){
-					$tb.addClass('abscenter');
-				}
+				$tb.addClass('abscenter');
 
 				if(width < 761){
 					style.width	= width - 50;
@@ -690,15 +638,13 @@ jQuery(function($){
 				let type	= args.data ? typeof args.data : 'string';
 				let data	= type == 'object' ? args.data : (args.data ? this.parse_params(args.data) : {});
 
-				if(this.query_data){
-					_.each(this.query_data, (v, k)=> {
-						if(_.has(data, k)){
-							this.query_data[k]	= data[k];
-						}else{
-							data[k]	= v;
-						}
-					});
-				}
+				this.query_data && _.each(this.query_data, (v, k)=> {
+					if(_.has(data, k)){
+						this.query_data[k]	= data[k];
+					}else{
+						data[k]	= v;
+					}
+				});
 
 				if(this.left_key && args.action_type != 'query_items'){
 					data[this.left_key]	= wpjam.params[this.left_key];
@@ -763,37 +709,31 @@ jQuery(function($){
 			let $selector	= $(selector);
 			let events		= $selector.length ? $._data($selector.get(0), 'events') : '';
 
-			if(events){
-				_.each(events, (list, type)=> {
-					 _.each(list, (event)=> {
-						if(event && event.handler){
-							if(event.selector){
-								if(!sub_selector || event.selector == sub_selector){
-									$('body').on(type, selector+' '+event.selector, event.handler);
-									$selector.off(type, event.selector, event.handler);
-								}
-							}else{
-								$('body').on(type, selector, event.handler);
-								$selector.off(type, event.handler);
+			events && _.each(events, (list, type)=> {
+				 _.each(list, (event)=> {
+					if(event && event.handler){
+						if(event.selector){
+							if(!sub_selector || event.selector == sub_selector){
+								$('body').on(type, selector+' '+event.selector, event.handler);
+								$selector.off(type, event.selector, event.handler);
 							}
+						}else{
+							$('body').on(type, selector, event.handler);
+							$selector.off(type, event.handler);
 						}
-					});
+					}
 				});
-			}
+			});
 		},
 
 		add_extra_logic: function(obj, func, extra_logic, position){
 			const back	= obj[func];
 			obj[func]	= function(){
-				if(position == 'before'){
-					extra_logic.apply(this, arguments);
-				}
+				position == 'before' && extra_logic.apply(this, arguments);
 
 				let result	= back.call(this, ...arguments);
 
-				if(position != 'before'){
-					extra_logic.apply(this, arguments);
-				}
+				position != 'before' && extra_logic.apply(this, arguments);
 
 				return result;
 			};
@@ -815,9 +755,7 @@ jQuery(function($){
 	}, 'before');
 
 	window.onpopstate = event => {
-		if(event.state && event.state.params){
-			wpjam.load(event.state.params);
-		}
+		event.state && event.state.params && wpjam.load(event.state.params);
 	};
 
 	let list_table	= null;
@@ -836,20 +774,14 @@ jQuery(function($){
 				};
 
 				if(data){
-					if(data.setting){
-						Object.assign(list_table, data.setting);
-					}
+					data.setting && Object.assign(list_table, data.setting);
 
-					if(data.left){
-						$left.html(data.left);
-					}
+					data.left && $left.removeData('initialized').html(data.left);
 
 					if(data.views){
 						$views.empty().append($(data.views).html());
 
-						if(data.type != 'list'){
-							$views.find('a').removeClass('current').end().find('li.'+this.view+' a').addClass('current');
-						}
+						data.type != 'list' && $views.find('a').removeClass('current').end().find('li.'+this.view+' a').addClass('current');
 					}
 
 					if(data.table || data.tablenav){
@@ -864,9 +796,7 @@ jQuery(function($){
 
 					update	= _.mapObject(update, (v, k)=> data[k] ? v : false);
 
-					if(data.search_box){
-						$('p.search-box').empty().append($(data.search_box).html());
-					}
+					data.search_box && $('p.search-box').empty().append($('<div>').html(data.search_box).find('.search-box').html());
 				}else{
 					$form.attr('novalidate', 'novalidate').on('submit', _.debounce(function(){
 						let $el	= $(document.activeElement);
@@ -925,9 +855,7 @@ jQuery(function($){
 						}else if($(this).is('[name="end_date"]')){
 							let dates	= _.map(['start_date', 'end_date'], k => $('.tablenav [name="'+k+'"]').val());
 
-							if(dates[0] && dates[1] && dates[0] > dates[1]){
-								wpjam.add_notice('开始日期不能大于结束日期', 'error');
-							}
+							dates[0] && dates[1] && dates[0] > dates[1] && wpjam.add_notice('开始日期不能大于结束日期', 'error');
 						}
 					});
 
@@ -1012,9 +940,7 @@ jQuery(function($){
 
 							return false;
 						}, 300, true)).on('change', 'select', _.debounce(function(){
-							if($(this).hasClass('left-filter')){
-								$left_paged.val(1);
-							}
+							$(this).hasClass('left-filter') && $left_paged.val(1);
 
 							$left.trigger('submit');
 						}, 300, true));
@@ -1033,9 +959,7 @@ jQuery(function($){
 					.before(this.subtitle ? '<span class="subtitle">'+this.subtitle+'</span>' : '')
 					.after(this.summary ? '<div class="summary">'+this.summary+'</div>' : '');
 
-					if(this.sortable){
-						$tbody.wpjam_sortable({items: this.sortable.items, axis: 'y'});
-					}
+					this.sortable && $tbody.wpjam_sortable({items: this.sortable.items, axis: 'y'});
 
 					let sticky	= false;
 					let columns	= $table.find('th[id]:not(.hidden) i').map((i, el) => {
@@ -1048,9 +972,7 @@ jQuery(function($){
 							data.left	= $th.prevAll(':not(.hidden)').get().reduce((left, el) => left+$(el).outerWidth(), 0);
 						}
 
-						if(data.description){
-							$i.appendTo($i.closest('a'));
-						}
+						data.description && $i.appendTo($i.closest('a'));
 
 						delete data.description;
 
@@ -1070,9 +992,7 @@ jQuery(function($){
 					if(this.sticky && $table.width() > $table.closest('form').width()){
 						$table.addClass('sticky-columns');
 
-						if($('#col-left').length && $('#col-left table').height() > $(window).height()){
-							$table.css('max-height', $('#col-left table').height());
-						}
+						$('#col-left').length && $('#col-left table').height() > $(window).height() && $table.css('max-height', $('#col-left table').height());
 					}
 
 					$table.wpjam_row(false);
@@ -1091,49 +1011,35 @@ jQuery(function($){
 				}
 
 				if(update.table || update.tablenav){
-					$form.removeData('initialized');
-
-					if($left.length && $('a.page-title-action').length){
-						this.overall_actions.unshift($('a.page-title-action').hide().clone().show().toggleClass('page-title-action button').prop('outerHTML'));
-					}
-
-					let $nav	= $form.find('.tablenav.top').find('.overall-action').remove().end();
-
-					if(!$nav.find('div.actions').length){
-						$nav.append('<div class="actions"></div>');
-					}
-
-					$nav.find('div.actions').last().append(this.overall_actions || '');
-
 					let total	= parseInt($form.find('span.total-pages').first().text());
 
-					if(total > 1){
-						$form.find('.current-page').addClass('expandable').removeAttr('size').attr({type: 'number', 'min':1, 'max': total});
-					}
+					$form.removeData('initialized').find('.overallactions').remove();
+					total && $form.find('.current-page').addClass('expandable').removeAttr('size').attr({type: 'number', 'min':1, 'max': total});
+
+					$left.length && $('a.page-title-action').length && this.overall_actions.unshift($('a.page-title-action').clone().toggleClass('page-title-action button').prop('outerHTML'));
+
+					this.overall_actions && $('<div class="actions overallactions"></div>').append(this.overall_actions).insertBefore('.tablenav.top div.tablenav-pages');
 				}
 
-				if(update.left && $left.length){
-					$left.trigger('init');
+				update.left && $left.length && $left.trigger('init');
+
+				if(document.readyState === 'complete'){
+					$('body').trigger('list_table_load', data);
+				}else{
+					$(window).on('load', () => $('body').trigger('list_table_load', data));
 				}
 			},
 
 			callback: function(data, args){
 				let modal	= $('#TB_window').length;
 
-				if(modal && data.form){
-					wpjam.add_modal(data);
-				}
-
-				if(modal || args.action_type != 'submit'){
-					wpjam.add_notice(data.errmsg, 'success');
-				}
+				(modal && data.form) && wpjam.add_modal(data);
+				(modal || args.action_type != 'submit') && wpjam.add_notice(data.errmsg, 'success');
 
 				if(data.type == 'list'){
 					$('html').scrollTop(0);
 
-					if((data.bulk && data.ids) || data.id){
-						this.update_row(data);
-					}
+					((data.bulk && data.ids) || data.id) && this.update_row(data);
 				}else if(['add', 'duplicate'].includes(data.type)){
 					let pos		= (data.after || data.before);
 					let $pos	= pos ? this.get_row(pos) : this.$tbody.find('tr');
@@ -1196,9 +1102,7 @@ jQuery(function($){
 						if(_.isObject(data)){
 							id	= data.id;
 
-							if(data.data){
-								this.get_row(id).first().before(data.data).end().remove();
-							}
+							data.data && this.get_row(id).first().before(data.data).end().remove();
 						}
 
 						this.get_row(id).wpjam_row(color);
@@ -1246,9 +1150,7 @@ jQuery(function($){
 
 		return false;
 	}, 300, true)).on('click', 'input[type=submit]', function(){	// On Mac, elements that aren't text input elements tend not to get focus assigned to them
-		if(!$(document.activeElement).attr('id')){
-			$(this).focus();
-		}
+		$(document.activeElement).attr('id') || $(this).focus();
 	});
 
 	wpjam.load();

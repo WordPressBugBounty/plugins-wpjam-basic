@@ -16,7 +16,7 @@ class WPJAM_Postviews{
 	}
 
 	public static function redirect(){
-		if(isset($_SERVER['HTTP_ACCEPT_ENCODING']) && substr_count($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')) {
+		if(isset($_SERVER['HTTP_ACCEPT_ENCODING']) && substr_count($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')){
 			ob_start('ob_gzhandler'); 
 		}
 
@@ -53,17 +53,13 @@ class WPJAM_Postviews{
 	}
 
 	public static function update_views($post_id, $data){
-		if(!empty($data['views'])){
-			update_post_meta($post_id, 'views', $data['views']);
-		}
+		!empty($data['views']) && update_post_meta($post_id, 'views', $data['views']);
 
 		return true;
 	}
 
 	public static function add_views($post_id, $data){
-		if(!empty($data['addon'])){
-			wpjam_update_post_views($post_id, $data['addon']);
-		}
+		!empty($data['addon']) && wpjam_update_post_views($post_id, $data['addon']);
 
 		return true;
 	}
@@ -146,12 +142,9 @@ class WPJAM_Postviews{
 
 		$begin	= (int)wpjam_basic_get_setting('views_begin');
 		$end	= (int)wpjam_basic_get_setting('views_end');
-
-		if($begin && $end){
-			$views	= rand(min($begin, $end), max($begin, $end));
+		$views	= ($begin && $end) ? rand(min($begin, $end), max($begin, $end)) : 0;
 		
-			add_action('wp_after_insert_post', fn($post_id, $post, $update)=> (!$update && $post->post_type != 'attachment' && is_post_type_viewable($post->post_type)) && update_post_meta($post_id, 'views', $views), 999, 3);
-		}	
+		$views && add_action('wp_after_insert_post', fn($post_id, $post, $update)=> (!$update && $post->post_type != 'attachment' && is_post_type_viewable($post->post_type)) && update_post_meta($post_id, 'views', $views), 999, 3);
 	}
 }
 

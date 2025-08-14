@@ -53,7 +53,10 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.8.1 =
+= 6.8.2 =
+* 新增函数 get_term_level
+* 新增函数 get_term_depth
+* 后台 JS 新增 list_table_load 事件
 * wpjam_set 支持 [] 模式新增元素
 * 全面优化 WPJAM_AJAX class，整合后台的 AJAX 操作
 * 优化 wpjam_sort 排序函数
@@ -105,7 +108,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 后台 List Table 新增固定列功能
 * WPJAM_Field 新增 render 回调函数
 * 优化 wpjam_lazyload 函数
-* 优化 wpjam_generate_random_string 函数
 * 优化 wpjam_get_posts 和 wpjam_get_terms 函数
 * 优化 WPJAM_DB 的缓存处理，支持 lazyload_key 和 pending_queue
 * 后台弹窗自动自适应大小

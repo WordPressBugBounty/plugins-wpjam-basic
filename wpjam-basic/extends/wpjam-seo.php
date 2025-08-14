@@ -46,17 +46,11 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 				'home_keywords'		=> ['title'=>'关键字：',	'class'=>'regular-text, expandable'],
 			]],
 			'post_set'	=> ['title'=>'文章和分类页',	'type'=>'fieldset',	'group'=>true,	'fields'=>[
-				'individual'	=> ['type'=>'select', 	'options'=>[
-					'0'	=> [
-						'label'			=> '自动获取摘要和关键字',
-						'description'	=> '文章摘要作为页面的 Meta Description，文章的标签作为页面的 Meta Keywords。<br />分类和标签的描述作为页面的 Meta Description，页面没有 Meta Keywords。'
-					],
-					'1'	=> [
-						'label'		=> '单独设置 SEO TDK',
-						'fields'	=> ['list_table'=>['value'=>1, 'options'=>['1'=>'编辑和列表页都可设置', '0'=>'仅可在编辑页设置', 'only'=>'仅可在列表页设置']]]
-					]
-				]],
-			]],
+				'individual'	=> ['type'=>'select', 	'options'=>['0'=>'自动获取摘要和关键字',	'1'=>[
+					'label'		=> '单独设置 SEO TDK',
+					'fields'	=> ['list_table'=>['value'=>1, 'options'=>['1'=>'编辑和列表页都可设置', '0'=>'仅可在编辑页设置', 'only'=>'仅可在列表页设置']]]
+				]]],
+			],	'description'	=> ['文章摘要作为页面的 Meta Description，文章的标签作为页面的 Meta Keywords。<br />分类和标签的描述作为页面的 Meta Description，页面没有 Meta Keywords。',	['show_if'=>['individual', 0]]]],
 			'unique'	=> ['title'=>'确保生成并唯一',	'label'=>'如果当前主题或其他插件也会生成摘要和关键字，或当前主题不标准，可以通过勾选该选项「确保生成并唯一」。'],
 			'robots'	=> ['title'=>'robots.txt']+$robots_field,
 			'sitemap'	=> ['title'=>'Sitemap',		'options'=>[0=>['label'=>'使用 WPJAM 生成的','description'=>$wpjam_sitemap], 'wp'=>['label'=>'使用 WordPress 内置的','description'=>$wp_sitemap]]]

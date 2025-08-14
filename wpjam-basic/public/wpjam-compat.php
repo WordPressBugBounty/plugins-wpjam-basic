@@ -413,6 +413,14 @@ function wpjam_register_plugin_page_load(...$args){
 	return wpjam_add_admin_load(['type'=>'plugin_page']+$args);
 }
 
+function wpjam_page_action_compat($data){
+	$cb		= wpjam_get_filter_name($GLOBALS['plugin_page'], 'ajax_response');
+	$cb		= is_callable($cb) ? $cb : wp_die('invalid_callback');
+	$result	= wpjam_if_error($cb($data['page_action']), 'send');
+
+	wpjam_send_json(is_array($result) ? $result : []);
+}
+
 function wpjam_get_ajax_button($args, $type='button'){
 	if($name = wpjam_pull($args, 'action')){
 		$object	= WPJAM_Page_Action::get($name) ?: wpjam_register_page_action($name, $args);
@@ -514,9 +522,7 @@ function wpjam_validate_term($term_id, $taxonomy=''){
 }
 
 function wpjam_get_term_level($term){
-	$object	= wpjam_term($term);
-
-	return $object ? $object->level : null;
+	return get_term_level($term->term_id);
 }
 
 if(!function_exists('array_pulls')){
@@ -1189,8 +1195,8 @@ class WPJAM_Items_Model extends WPJAM_Model{
 			return $handler;
 		}
 
-		$args	= method_exists(get_called_class(), 'get_items_args') ? static::get_items_args() : [];
-		$args	= array_merge($args, ['items_model'=>get_called_class()]);
+		$args	= method_exists(static::class, 'get_items_args') ? static::get_items_args() : [];
+		$args	= array_merge($args, ['items_model'=>static::class]);
 
 		return self::set_handler(new WPJAM_Items($args));
 	}
@@ -1542,7 +1548,7 @@ trait WPJAM_Register_Trait{
 
 	protected function get_args(){
 		if(!$this->filtered){
-			$filter	= strtolower(get_called_class()).'_args';
+			$filter	= strtolower(static::class).'_args';
 
 			$this->args		= apply_filters($filter, $this->args, $this->name);
 			$this->filtered	= true;

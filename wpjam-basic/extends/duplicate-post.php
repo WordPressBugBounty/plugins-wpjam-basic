@@ -5,16 +5,14 @@ URI: https://mp.weixin.qq.com/s/0W73N71wNJv10kMEjbQMGw
 Description: 在后台文章列表添加一个快速复制按钮，复制一篇草稿用于快速新建。
 Version: 1.0
 */
-if(is_admin()){
-	wpjam_register_list_table_action('quick_duplicate', [
-		'title'		=> '快速复制',
-		'response'	=> 'duplicate',
-		'direct'	=> true,
-		'data_type'	=> 'post_type',
-		'callback'	=> 'wpjam_duplicate_post',
-		'post_type'	=> fn($ptype) => apply_filters('wpjam_post_type_duplicatable', $ptype != 'attachment', $ptype),
-	]);
-}
+is_admin() && wpjam_register_list_table_action('quick_duplicate', [
+	'title'		=> '快速复制',
+	'response'	=> 'duplicate',
+	'direct'	=> true,
+	'data_type'	=> 'post_type',
+	'callback'	=> 'wpjam_duplicate_post',
+	'post_type'	=> fn($ptype) => apply_filters('wpjam_post_type_duplicatable', $ptype != 'attachment', $ptype),
+]);
 
 function wpjam_duplicate_post($post_id){
 	$post_arr	= get_post($post_id, ARRAY_A);

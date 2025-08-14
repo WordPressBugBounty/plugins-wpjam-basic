@@ -58,10 +58,7 @@ class WPJAM_Shortcode{
 
 			$output		= $thead = $tbody = '';
 			$content	= str_replace(["\r\n", "<br />\n", "\n<p>", "</p>\n"], ["\n", "\n", "\n", "\n\n"], $content);
-
-			if($attr['caption']){
-				$output	.= '<caption>'.$attr['caption'].'</caption>';
-			}
+			$output		.= $attr['caption'] ? '<caption>'.$attr['caption'].'</caption>' : '';
 
 			$th		= $attr['th'];
 			$tr_i	= 0;
@@ -163,5 +160,5 @@ wpjam_add_menu_page('wpjam-shortcodes', [
 	'network'		=> false,
 	'summary'		=> __FILE__,
 	'function'		=> 'list',
-	'list_table'	=> ['primary_key'=>'tag']
+	'list_table'	=> ['primary_key'=>'tag', 'numberable'=>'No.']
 ]);

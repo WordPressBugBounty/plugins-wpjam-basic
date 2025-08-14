@@ -51,17 +51,13 @@ class WPJAM_SMTP extends WPJAM_Option_Model{
 
 		$phpmailer->setFrom(self::get_setting('user'), $from_name, false);
 
-		if($reply_to){
-			$phpmailer->AddReplyTo($reply_to, $from_name);
-		}
+		$reply_to && $phpmailer->AddReplyTo($reply_to, $from_name);
 	}
 
 	public static function add_hooks(){
 		add_action('phpmailer_init',	[self::class, 'on_phpmailer_init']);
 
-		if(wp_doing_ajax() || wpjam_is_json_request()){
-			add_action('wp_mail_failed', 'wpjam_send_json');
-		}
+		(wp_doing_ajax() || wpjam_is_json_request()) && add_action('wp_mail_failed', 'wpjam_send_json');
 	}
 }
 

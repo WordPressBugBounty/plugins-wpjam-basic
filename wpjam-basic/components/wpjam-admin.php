@@ -128,9 +128,7 @@ class WPJAM_Basic_Admin{
 
 	public static function builtin_page_load($screen){
 		if(in_array($screen->base, ['dashboard', 'dashboard-network', 'dashboard-user'])){
-			if(is_multisite() && !is_user_member_of_blog()){
-				remove_meta_box('dashboard_quick_press', get_current_screen(), 'side');
-			}
+			is_multisite() && !is_user_member_of_blog() && remove_meta_box('dashboard_quick_press', get_current_screen(), 'side');
 
 			$post_type	= get_post_types(['show_ui'=>true, 'public'=>true, '_builtin'=>false])+['post'];
 

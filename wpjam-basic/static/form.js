@@ -1,13 +1,7 @@
 jQuery(function($){
 	$.fn.wpjam_init	= function(rules){
 		_.each($.fn.wpjam_component.rules, rule => this.wpjam_component(rule));
-
-		_.each(Object.entries($.fn), ([n, f])=> {
-			if(n.startsWith('wpjam_') && _.isFunction(f) && f.rule){
-				this.wpjam_component(f.rule, n);
-			}
-		});
-
+		_.each(Object.entries($.fn), ([n, f])=> n.startsWith('wpjam_') && _.isFunction(f) && f.rule && this.wpjam_component(f.rule, n));
 		_.each(rules, rule => this.wpjam_component(rule));
 
 		return this;
@@ -49,9 +43,7 @@ jQuery(function($){
 				});
 			}
 
-			if(selector){
-				this.wpjam_each(selector, $el => handle ? $el[handle]() : callback($el));
-			}
+			selector && this.wpjam_each(selector, $el => handle ? $el[handle]() : callback($el));
 		}
 	}
 
@@ -68,6 +60,7 @@ jQuery(function($){
 		{name: 'input',		selector: 'input',	events: [
 			{name: 'query_label',	selector: 'input'},
 		]},
+		{name: 'indeterminate',	selector: '[data-indeterminate]'},
 		{name: 'textarea',	selector: 'textarea'},
 		{name: 'select',	selector: 'select'},
 		{name: 'plupload',	selector: '.plupload'},
@@ -102,10 +95,7 @@ jQuery(function($){
 		}else{
 			let data	= this.data('value');
 
-			if(!this.find('.add-media').length){
-				this.append('<a class="add-media button"><span class="dashicons dashicons-admin-media"></span>'+this.data('media_button')+'</a>');
-			}
-
+			this.find('.add-media').length || this.append('<a class="add-media button"><span class="dashicons dashicons-admin-media"></span>'+this.data('media_button')+'</a>');
 			this.find('input').val(data ? data.value : '');
 
 			if(this.is('.wpjam-img')){
@@ -151,9 +141,7 @@ jQuery(function($){
 
 			$el.closest('label').toggleClass('checked', $el.is(':checked'));
 
-			if($field.hasClass('mu-select')){
-				$field.prev('button').text($field.find('label.checked').map((i, el) => $(el).text().trim()).get().join(', ') || $field.data('show_option_all'));
-			}
+			$field.hasClass('mu-select') && $field.prev('button').text($field.find('label.checked').map((i, el) => $(el).text().trim()).get().join(', ') || $field.data('show_option_all'));
 		}else if(action == 'click'){
 			if(this.is('button')){
 				let $field	= this.next('.mu-select').removeAttr('style').toggleClass('hidden').css('max-height', Math.min($(window).height()-100, 300));
@@ -161,25 +149,17 @@ jQuery(function($){
 				if(!$field.hasClass('hidden')){
 					let rest	= $(window).height()+$(window).scrollTop() - $field.offset().top;
 
-					if($field.outerHeight() > rest){
-						$field.css({top: 'auto', bottom: 50-rest});
-					}
+					$field.outerHeight() > rest && $field.css({top: 'auto', bottom: 50-rest});
 				}
 
 				return false;
 			}
 
-			if(!$(e.target).closest('.mu-select-wrap').length){
-				$('.mu-select').addClass('hidden');
-			}
+			$(e.target).closest('.mu-select-wrap').length || $('.mu-select').addClass('hidden');
 		}else{
-			if(this.hasClass('mu-select')){
-				this.before($('<button>', {type:'button', class:'selectable', text: this.data('show_option_all')})).find('label').html((i, v)=> v.replace(/(<input[^>]*type="checkbox"[^>]*>)([\u2003]+)(.*)$/, (match, p1, p2, p3) => p2+p1+p3));
-			}
+			this.hasClass('mu-select') && this.before($('<button>', {type:'button', class:'selectable', text: this.data('show_option_all')})).find('label').html((i, v)=> v.replace(/(<input[^>]*type="checkbox"[^>]*>)([\u2003]+)(.*)$/, (match, p1, p2, p3) => p2+p1+p3));
 
-			if(this.find(':checkbox').length){
-				this.addClass('has-validator');
-			}
+			this.find(':checkbox').length && this.addClass('has-validator');
 
 			this.find([].concat(this.data('value') || []).map(v => `input[value="${v}"]`).join(',')).click();
 		}
@@ -198,9 +178,7 @@ jQuery(function($){
 			}else{
 				let label	= this.data('label') || (this.hasClass('plupload-input') ? this.val().split('/').pop() : this.val());
 
-				if(label){
-					$('<span class="query-label">'+label+'</span>').prepend($('<span class="dashicons"></span>').on('click', ()=> this.trigger('query_label'))).addClass(this.closest('.tag-input').length ? '' : this.data('class')).insertBefore(this);
-				}
+				label && $('<span class="query-label">'+label+'</span>').prepend($('<span class="dashicons"></span>').on('click', ()=> this.trigger('query_label'))).addClass(this.closest('.tag-input').length ? '' : this.data('class')).insertBefore(this);
 			}
 		}else{
 			let type	= this.attr('type');
@@ -226,13 +204,9 @@ jQuery(function($){
 
 				this.attr('type', 'datetime-local');
 			}else if(type == 'checkbox'){
-				if(this.data('value')){
-					this.prop('checked', true);
-				}
+				this.data('value') && this.prop('checked', true);
 			}else{
-				if(this.is('.tiny-text, .small-text')){
-					this.addClass('expandable');
-				}
+				this.is('.tiny-text, .small-text') && this.addClass('expandable');
 			}
 		}
 	};
@@ -250,13 +224,8 @@ jQuery(function($){
 				console.log('请在页面加载 add_action(\'admin_footer\', \'wp_enqueue_editor\');');
 			}
 		}else if(!this.hasClass('wp-editor-area')){
-			if(!this.attr('rows')){
-				this.addClass('expandable').attr('rows', 4);
-			}
-
-			if(!this.attr('cols')){
-				this.css('max-width', '100%').attr('cols', (this.closest('#TB_window')[0] ? 52 : 72));
-			}
+			this.attr('rows') || this.addClass('expandable').attr('rows', 4);
+			this.attr('cols') || this.css('max-width', '100%').attr('cols', (this.closest('#TB_window')[0] ? 52 : 72));
 		}
 	};
 
@@ -267,17 +236,13 @@ jQuery(function($){
 			if(label != null){
 				this.prepend('<option value="'+(this.data('option_'+k+'_value') || '')+'">'+label+'</option>');
 
-				if(this.find('option').is(':selected')){
-					this.find('option').first().prop('selected', true);
-				}
+				this.find('option').is(':selected') && this.find('option').first().prop('selected', true);
 			}
 		});
 
 		let value	= this.data('value');
 
-		if(value != null && this.find(`option[value="${value}"]`).length){
-			this.val(value);
-		}
+		value != null && this.find(`option[value="${value}"]`).length && this.val(value);
 
 		return this;
 	};
@@ -349,9 +314,7 @@ jQuery(function($){
 			(this.is('option, :input') ? this : this.find(':input:not(.disabled)')).prop('disabled', !show);
 
 			if(this.is('option')){
-				if(this.is(':selected')){
-					this.closest('select').prop('selectedIndex', (i, v) => show ? v : 0).trigger('change.wpjam');
-				}
+				this.is(':selected') && this.closest('select').prop('selectedIndex', (i, v) => show ? v : 0).trigger('change.wpjam');
 			}else{
 				(this.is(':input') ? this : this.find('.has-dependents')).trigger('change.wpjam');
 			}
@@ -360,10 +323,12 @@ jQuery(function($){
 
 			let $field	= this.data('key') ? this : this.find('.field-key-'+this.data('for'));
 
-			if(!$field.attr('data-dep')){
-				$field.attr('data-dep', show_if.key);
-			}
+			$field.attr('data-dep') || $field.attr('data-dep', show_if.key);
 		}
+	};
+
+	$.fn.wpjam_indeterminate	= function(){
+		this.prop('indeterminate', true).removeAttr('data-indeterminate');
 	};
 
 	$.fn.wpjam_data_type	= function(action, ...args){
@@ -383,9 +348,7 @@ jQuery(function($){
 
 			return wpjam.post({action: 'wpjam-query', data_type, query_args}, data => {
 				if(data.errcode != 0){
-					if(data.errmsg){
-						alert(data.errmsg);
-					}
+					data.errmsg && alert(data.errmsg);
 				}else{
 					args[0](data.items);
 				}
@@ -406,19 +369,15 @@ jQuery(function($){
 					}
 				}
 			}else{
-				if(!args[1] && this.is('select') && this.find('option').filter((i, opt) => opt.value).length == 0){
-					this.addClass('hidden');
-				}
+				!args[1] && this.is('select') && this.find('option').filter((i, opt) => opt.value).length == 0 && this.addClass('hidden');
 			}
 		}else{
-			if(filter_key && this.data('dep')){
-				this.wpjam_data_type('filter', this.wpjam_depend('add_to', this.data('dep')).wpjam_val(), true);
-			}
+			filter_key && this.data('dep') && this.wpjam_data_type('filter', this.wpjam_depend('add_to', this.data('dep')).wpjam_val(), true);
 
 			if(!this.is('input')){
 				return this;
 			}
-		
+
 			let $hidden	= ($mu[0] || !this.data('filterable')) ? null : $('<input>', {type: 'hidden', 'name': this.attr('name'), 'value': this.val()}).insertAfter(this);
 
 			if($hidden){
@@ -449,9 +408,7 @@ jQuery(function($){
 							ui.item.value	= null;
 						}
 
-						if(!_.isNull(ui.item.value)){
-							this.data('label', ui.item.label).trigger('query_label');
-						}
+						!_.isNull(ui.item.value) && this.data('label', ui.item.label).trigger('query_label');
 					}
 				},
 				change: (e, ui)=> {
@@ -460,9 +417,7 @@ jQuery(function($){
 			}).on('click', (e)=> {
 				this.autocomplete('search');
 			}).on('keydown', (e)=> {
-				if(!this.val() && e.key === 'Backspace'){
-					this.autocomplete('close');
-				}
+				!this.val() && e.key === 'Backspace' && this.autocomplete('close');
 			}).on('input', (e)=>{
 				$hidden.val(this.val());
 			});
@@ -480,9 +435,7 @@ jQuery(function($){
 
 		if(action == 'new_item'){
 			if(max && rest <= 0){
-				if(args !== false){
-					alert('最多支持'+max+'个');
-				}
+				args !== false && alert('最多支持'+max+'个');
 
 				return args ? false : -1;
 			}
@@ -491,9 +444,7 @@ jQuery(function($){
 				let value	= $mu.wpjam_val();
 
 				if(value && _.uniq(value).length !== value.length){
-					if(args !== false){
-						alert('不允许重复');
-					}
+					args !== false && alert('不允许重复');
 
 					return args ? false : -1;
 				}
@@ -515,9 +466,7 @@ jQuery(function($){
 						return false;
 					}
 
-					if(type == 'fields'){
-						$item.wpjam_mu('tag_label');
-					}
+					type == 'fields' && $item.wpjam_mu('tag_label');
 				}
 
 				$mu.wpjam_mu('add_item');
@@ -543,15 +492,11 @@ jQuery(function($){
 					if(_.isObject(args)){
 						$input.val(args.value);
 
-						if(args.label){
-							$input.data('label', args.label);
-						}
+						args.label && $input.data('label', args.label);
 					}else{
 						$input.val(args);
 
-						if(is_tag && !$input.is('[data-data_type]')){
-							$input.trigger('query_label');
-						}
+						is_tag && !$input.is('[data-data_type]') && $input.trigger('query_label');
 					}
 
 					$new.insertBefore($tmpl).wpjam_init();
@@ -566,9 +511,7 @@ jQuery(function($){
 					$input.focus();
 				}
 
-				if(!is_tag && max && rest <= 1){
-					$mu.addClass('max-reached');
-				}
+				!is_tag && max && rest <= 1 && $mu.addClass('max-reached');
 			}else if(type == 'fields'){
 				let i	= $mu.data('i') || $mu.find(' > .mu-item').length-1;
 				let $t	= $new.find('template');
@@ -580,9 +523,7 @@ jQuery(function($){
 			this.closest('.mu-item').fadeOut(300, function(){
 				$(this).remove();
 
-				if(type == 'text' && !is_tag && max && rest <= 0){
-					$mu.removeClass('max-reached');
-				}
+				type == 'text' && !is_tag && max && rest <= 0 && $mu.removeClass('max-reached');
 			});
 
 			return false;
@@ -621,9 +562,7 @@ jQuery(function($){
 						if(rest !== -1){
 							let $items	= this.closest('.mu-text').find('.mu-item:has(input:visible)');
 
-							if($items.length > 1){
-								$items.last().insertAfter(this.closest('.mu-item')).find('input').focus();
-							}
+							$items.length > 1 && $items.last().insertAfter(this.closest('.mu-item')).find('input').focus();
 						}
 
 						if(is_tag){
@@ -647,9 +586,7 @@ jQuery(function($){
 						if($item.is($items.eq(-2))){
 							let result	= $mu.wpjam_mu('new_item');
 
-							if(result && result !== -1){
-								$mu.find('.mu-item:has(:input)').last().find(':input').first().focus();
-							}
+							result && result !== -1 && $mu.find('.mu-item:has(:input)').last().find(':input').first().focus();
 						}else{
 							if(!$item.wpjam_mu('validate')){
 								return false;
@@ -675,49 +612,35 @@ jQuery(function($){
 				$('<span class="tag-label">'+tag_label+'</span>').prependTo(this).append(this.find('.del-item')).on('dblclick', (e)=>$(e.target).remove());
 			}
 		}else{
-			if(type != 'fields'){
-				$mu.wrapInner('<div class="mu-item"></div>');
-			}
+			type != 'fields' && $mu.wrapInner('<div class="mu-item"></div>');
 
 			let value		= $mu.data('value') || [];
 			let sortable	= $mu.is('.sortable') && !$mu.closest('.disabled, .readonly').length;
 
-			if(value){
-				value.forEach(v => $mu.wpjam_mu('add_item', v));
-			}
+			value && value.forEach(v => $mu.wpjam_mu('add_item', v));
 
 			if(is_tag){
 				$mu.addClass('has-validator').on('validate.wpjam', ()=> $mu.find('input:visible').val(''));
 			}else{
 				let btn	= type == 'img' ? '' : ($mu.data('button_text') || null);
 
-				if(btn !== null){
-					$mu.find('> .mu-item:last').append($('<a class="new-item button">'+btn+'</a>'));
-				}
+				btn !== null && $mu.find('> .mu-item:last').append($('<a class="new-item button">'+btn+'</a>'));
 
-				if(type == 'fields' && $mu.data('tag_label')){
-					$mu.addClass('taggable');
-				}
+				type == 'fields' && $mu.data('tag_label') && $mu.addClass('taggable');
 
 				$mu.wpjam_each('> .mu-item', $el => {
 					$el.append([
-						'<a class="del-item '+(is_row ? 'dashicons dashicons-no-alt' : 'button')+'">'+(is_row ? '' : '删除')+'</a>',
+						"\n"+'<a class="del-item '+(is_row ? 'dashicons dashicons-no-alt' : 'button')+'">'+(is_row ? '' : '删除')+'</a>',
 						sortable && type != 'img' ? '<span class="move-item dashicons dashicons-menu"></span>' : ''
 					]);
 
-					if(type == 'fields'){
-						$el.wpjam_mu('tag_label');	
-					}
+					type == 'fields' && $el.wpjam_mu('tag_label');
 				});
 			}
 
-			if(['text', 'fields'].includes(type) && is_row){
-				$mu.wpjam_mu('new_item', false);
-			}
+			['text', 'fields'].includes(type) && is_row && $mu.wpjam_mu('new_item', false);
 
-			if(sortable){
-				$mu.sortable({cursor: 'move', items: '.mu-item:not(:last-child)'});
-			}
+			sortable && $mu.sortable({cursor: 'move', items: '.mu-item:not(:last-child)'});
 		}
 
 		return this;
@@ -727,9 +650,8 @@ jQuery(function($){
 		if(action == 'add_to'){
 			let $dep	= this.closest('form').find('.field-key-'+key);
 
-			if(!$dep.length){
-				$dep	= $('.field-key-'+key);
-			}
+			$dep	= $dep.length ? $dep : $('.field-key-'+key);
+			$dep	= $dep.length ? $dep : $('#'+key);
 
 			if($dep.length){
 				$dep	= $($dep.addClass('has-dependents').closest('.checkable')[0] || $dep[0]);
@@ -746,22 +668,15 @@ jQuery(function($){
 			$('.dep-on-'+$dep.data('dep-id')).each(function(){
 				let $field = $(this);
 
-				if($field.data('show_if')){
-					$field.wpjam_show_if(val);
-				}
-
-				if($field.data('filter_key')){
-					$field.wpjam_data_type('filter', val);
-				}
+				$field.data('show_if') && $field.wpjam_show_if(val);
+				$field.data('filter_key') && $field.wpjam_data_type('filter', val);
 			});
 		}
 	};
 
 	$.fn.wpjam_expend	= function(action){
 		if(this.is('input')){
-			if(this.is(':visible')){
-				this.width('').width(Math.min(522, this.prop('scrollWidth')-(this.innerWidth()-this.width())));
-			}
+			this.is(':visible') && this.width('').width(Math.min(522, this.prop('scrollWidth')-(this.innerWidth()-this.width())));
 		}else if(this.is('textarea')){
 			if(action){
 				this.animate({height: Math.min(320, this.height('').prop('scrollHeight')+5)}, action == 'click' ? 300 : 0);
@@ -775,9 +690,7 @@ jQuery(function($){
 		let type	= this.data('type');
 
 		if(['Line', 'Bar', 'Donut'].includes(type)){
-			if(type == 'Donut'){
-				this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
-			}
+			type == 'Donut' && this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
 
 			Morris[type](_.extend({}, this.data('options'), {element: this.prop('id')}));
 		}
@@ -806,7 +719,7 @@ jQuery(function($){
 			}).attr('src', this.data('preview'));
 		}else{
 			$modal.fadeOut(300, ()=> $modal.remove());
-		}	
+		}
 	};
 
 	$.fn.wpjam_preview.rule	= {events: [
@@ -816,7 +729,12 @@ jQuery(function($){
 
 	$.fn.wpjam_tooltip	= function(action, e){
 		if(['mouseenter', 'mousemove'].includes(action)){
-			let $tooltip	= $($('#tooltip')[0] || $('<div id="tooltip"></div>').html($(this).data('tooltip') || $(this).data('description')).appendTo('body')[0]);
+			let $tooltip	= $('#tooltip');
+
+			if(!$tooltip[0]){
+				let tooltip	= this.is('img') ? '<img src="'+this.attr('src')+'" width="'+this.get(0).naturalWidth/2+'" height="'+this.get(0).naturalHeight/2+'" />' : (this.data('tooltip') || this.data('description'));
+				$tooltip	= $('<div id="tooltip"></div>').html(tooltip).appendTo('body');
+			}
 
 			$tooltip.css({
 				top: e.pageY + 22,
@@ -826,14 +744,12 @@ jQuery(function($){
 		}else if(['mouseleave', 'mouseout'].includes(action)){
 			$('#tooltip').remove();
 		}else{
-			if(this.is('[data-description]')){
-				this.addClass('dashicons dashicons-editor-help');
-			}
+			this.is('[data-description]') && this.addClass('dashicons dashicons-editor-help');
 		}
 	};
 
 	$.fn.wpjam_tooltip.rule	= {
-		selector:	'[data-tooltip], [data-description]', 
+		selector:	'[data-tooltip], [data-description], .image-radio.preview img',
 		events:		['mouseenter', 'mousemove', 'mouseleave', 'mouseout']
 	};
 
@@ -852,9 +768,7 @@ jQuery(function($){
 			if(!$(this).data('initialized')){
 				$(this).data('initialized', true);
 
-				if(init){
-					$(this).wpjam_init();
-				}
+				init && $(this).wpjam_init();
 			}
 		});
 
@@ -862,17 +776,13 @@ jQuery(function($){
 	};
 
 	$.fn.wpjam_validate	= function(){
-		if(this[0].checkValidity()){
-			this.find('.has-validator').trigger('validate.wpjam');
-		}
+		this[0].checkValidity() && this.find('.has-validator').trigger('validate.wpjam');
 
 		if(!this[0].checkValidity()){
 			let $field	= this.find(':invalid').first();
 			let custom	= $field.data('custom_validity');
 
-			if(custom){
-				$field.one('input', ()=> $field[0].setCustomValidity(''))[0].setCustomValidity(custom);
-			}
+			custom && $field.one('input', ()=> $field[0].setCustomValidity(''))[0].setCustomValidity(custom);
 
 			if(!$field.is(':visible')){
 				$field.wpjam_each('.ui-tabs',	$el => $el.tabs('option', 'active', $el.find('.ui-tabs-panel').index($($field.closest('.ui-tabs-panel')))), 'closest');
@@ -937,15 +847,13 @@ jQuery(function($){
 		frame.on('open', function(){
 			frame.$el.addClass('hide-menu');
 
-			if(args.multiple && args.rest){
-				frame.state().get('selection').on('update', function(){
-					if(this.length > args.rest){
-						this.reset(this.first(args.rest));
+			args.multiple && args.rest && frame.state().get('selection').on('update', function(){
+				if(this.length > args.rest){
+					this.reset(this.first(args.rest));
 
-						alert('最多可以选择'+args.rest+'个');
-					}
-				});
-			}
+					alert('最多可以选择'+args.rest+'个');
+				}
+			});
 		}).on((wp.media.view.settings.post.id ? 'insert' : 'select'), function(){
 			frame.state().get('selection').map((attachment)=> {
 				let data	= attachment.toJSON();
