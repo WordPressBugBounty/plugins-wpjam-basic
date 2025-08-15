@@ -288,7 +288,7 @@ class WPJAM_Field extends WPJAM_Attr{
 				return $this->_fields;
 			}
 
-			$args	= wpjam_except($this->get_args(), ['required', 'show_in_rest']);
+			$args	= wpjam_except($this->get_args(), 'required');
 			$type	= $this->is('mu-text') ? $this->item_type : substr($this->type, 3);
 
 			return $this->$key = self::create(array_merge($args, ['type'=>$type]));
@@ -316,28 +316,36 @@ class WPJAM_Field extends WPJAM_Attr{
 				return $carry;
 			}, $value, 'options');
 		}elseif($key == '_schema'){
-			$schema	= ['type'=>'string'];
-
 			if($this->is('mu')){
 				$schema	= $this->schema_by_item();
 				$schema	= ['type'=>'array', 'items'=>($this->is('mu-fields') ? ['type'=>'object', 'properties'=>$schema] : $schema)];
-			}elseif($this->is('email')){
-				$schema	+= ['format'=>'email'];
-			}elseif($this->is('color')){
-				$schema	+= $this->data('alpha-enabled') ? [] : ['format'=>'hex-color'];
-			}elseif($this->is('url, image, file, img')){
-				$schema	= (($this->is('img') && $this->item_type != 'url') ? ['type'=>'integer'] : ['format'=>'uri'])+$schema;
-			}elseif($this->is('number, range')){
-				$step	= $this->step ?: '';
-				$type	= ($step == 'any' || strpos($step, '.')) ? 'number' : 'integer';
-				$schema	= ['type'=>$type]+(($type == 'integer' && $step > 1) ? ['multipleOf'=>$step] : [])+$schema;
-			}elseif($this->is('radio, select, checkbox')){
-				if($this->is('checkbox') && !$this->options){
-					$schema['type']	= 'boolean';
-				}else{
-					$schema	+= $this->_custom ? [] : ['enum'=>array_keys($this->_options)];
-					$schema	= $this->is('checkbox') ? ['type'=>'array', 'items'=>$schema] : $schema;
+			}else{
+				$schema	= wpjam_pick((array)$this->show_in_rest, ['type'])+($this->get_schema_by_data_type() ?: []);
+
+				if($this->is('email')){
+					$schema	+= ['format'=>'email'];
+				}elseif($this->is('color')){
+					$schema	+= $this->data('alpha-enabled') ? [] : ['format'=>'hex-color'];
+				}elseif($this->is('url, image, file, img')){
+					$schema	+= (($this->is('img') && $this->item_type != 'url') ? ['type'=>'integer'] : ['format'=>'uri']);
+				}elseif($this->is('number, range')){
+					$step	= $this->step ?: '';
+					$type	= ($step == 'any' || strpos($step, '.')) ? 'number' : 'integer';
+					$schema	+= ['type'=>$type]+(($type == 'integer' && $step > 1) ? ['multipleOf'=>$step] : []);
+				}elseif($this->is('radio, select, checkbox')){
+					if($this->is('checkbox') && !$this->options){
+						$schema	+= ['type'=>'boolean'];
+					}else{
+						$schema	+= ['type'=>'string']+($this->_custom ? [] : ['enum'=>array_keys($this->_options)]);
+						$schema	= $this->is('checkbox') ? ['type'=>'array', 'items'=>$schema] : $schema;
+					}
 				}
+
+				$schema	+= ['type'=>'string'];
+			}
+
+			if($this->required && !$this->show_if){	// todo 以后可能要改成 callback
+				$schema['required']	= true;
 			}
 
 			if(in_array($schema['type'], ['number', 'integer'])){
@@ -362,15 +370,6 @@ class WPJAM_Field extends WPJAM_Attr{
 
 			$schema	+= wpjam_array($map ?? [], fn($k, $v)=> [$k, $this->$v], true);
 
-			if(is_array($rest = $this->show_in_rest)){
-				$schema	= (isset($rest['schema']) && is_array($rest['schema'])) ? wpjam_merge($schema, $rest['schema']) : $schema;
-				$schema	= !empty($rest['type']) ? wpjam_set($schema, ($schema['type'] == 'array' && $rest['type'] != 'array' ? 'items.type' : 'type'), $rest['type']) : $schema;
-			}
-
-			if($this->required && !$this->show_if){	// todo 以后可能要改成 callback
-				$schema['required']	= true;
-			}
-
 			return $this->$key = $this->schema('parse', $schema);
 		}elseif($key == '_custom'){
 			return ($input	= $this->custom_input) ? ($this->$key = self::create((is_array($input) ? $input : [])+[
@@ -387,60 +386,70 @@ class WPJAM_Field extends WPJAM_Attr{
 	}
 
 	public function __call($method, $args){
-		if(str_contains($method, '_by_')){
-			[$method, $type]	= explode('_by', $method);
+		[$method, $type]	= explode('_by', $method)+['', ''];
 
-			$by		= $this->$type;
-			$value	= $args ? $args[0] : null;
-
-			if($type == '_schema'){
-				if(!$by){
-					return $method == 'validate' ? true : $value;
-				}
-
-				if($method == 'prepare'){
-					return $this->schema($method, $by, $value);
-				}
-
-				$value	= $method == 'sanitize' && $by['type'] == 'string' ? (string)$value : $value;
-
-				return wpjam_try('rest_'.$method.'_value_from_schema', $value, $by, $this->_title);
-			}elseif($type == '_custom'){
-				if(!$by){
-					return $method == 'render' ? '' : $value;
-				}
-
-				$options	= array_map('strval', array_keys($this->_options));
-
-				if($this->is('checkbox')){
-					$value	= array_diff($value ?: [], ['__custom']);
-					$diff	= array_diff($value, $options);
-					$custom = $diff ? reset($diff) : null;
-				}else{
-					$custom = isset($value) && !in_array($value, $options) ? $value : null;
-				}
-
-				$is	= isset($custom);
-				$is && $by->val($custom);
-
-				if($method == 'render'){
-					$this->value	= $is ? ($this->is('checkbox') ? [...$value, '__custom'] : '__custom') : $value;
-					$this->options	+= ['__custom'=>$by->pull('title')];
-
-					return $by->attr('name', $this->name)->wrap();
-				}elseif($method == 'validate'){
-					isset($diff) && count($diff) > 1 && wpjam_throw('too_many_custom_value', $by->_title.'只能传递一个其他选项值');
-
-					$is && $by->schema(wpjam_get($this->schema(), isset($diff) ? 'items' : null))->validate($custom);
-				}
-
-				return $value;
-			}
-
-			return $by ? wpjam_try([$by, $method], ...$args) : $value;
+		if(!$type){
+			return;
 		}
 
-		trigger_error($method);
+		$by		= $this->$type;
+		$value	= $args ? $args[0] : null;
+
+		if($type == '_schema'){
+			if(!$by){
+				return $method == 'validate' ? true : $value;
+			}
+
+			if($method == 'prepare'){
+				return $this->schema($method, $by, $value);
+			}
+
+			$value	= $method == 'sanitize' && $by['type'] == 'string' ? (string)$value : $value;
+
+			return wpjam_try('rest_'.$method.'_value_from_schema', $value, $by, $this->_title);
+		}elseif($type == '_custom'){
+			if(!$by){
+				return $method == 'render' ? '' : $value;
+			}
+
+			$options	= array_map('strval', array_keys($this->_options));
+
+			if($this->is('checkbox')){
+				$value	= array_diff($value ?: [], ['__custom']);
+				$diff	= array_diff($value, $options);
+				$custom = $diff ? reset($diff) : null;
+			}else{
+				$custom = isset($value) && !in_array($value, $options) ? $value : null;
+			}
+
+			$is	= isset($custom);
+			$is && $by->val($custom);
+
+			if($method == 'render'){
+				$this->value	= $is ? ($this->is('checkbox') ? [...$value, '__custom'] : '__custom') : $value;
+				$this->options	+= ['__custom'=>$by->pull('title')];
+
+				return $by->attr('name', $this->name)->wrap();
+			}elseif($method == 'validate'){
+				isset($diff) && count($diff) > 1 && wpjam_throw('too_many_custom_value', $by->_title.'只能传递一个其他选项值');
+
+				$is && $by->schema(wpjam_get($this->schema(), isset($diff) ? 'items' : null))->validate($custom);
+			}
+
+			return $value;
+		}elseif($type == '_data_type'){
+			if(!$by){
+				return $method == 'query_label' ? null : $value;
+			}
+
+			if(is_array($value) && $this->multiple && str_ends_with($method, '_value')){
+				return array_map(fn($v)=> wpjam_try([$by, $method], $v, $this), $value);
+			}
+
+			array_push($args, $this);
+		}
+
+		return $by ? wpjam_try([$by, $method], ...$args) : $value;
 	}
 
 	protected function init($prepend=null){
@@ -523,7 +532,7 @@ class WPJAM_Field extends WPJAM_Attr{
 			$value	= $this->validate_by_custom($value);
 			$value	= $this->is('checkbox') && $this->options ? ($value ?: []) : $value;
 
-			return $this->try('validate_value_by_data_type', $value, $this);
+			return $this->try('validate_value_by_data_type', $value);
 		}
 
 		if($for == 'parameter'){
@@ -584,7 +593,7 @@ class WPJAM_Field extends WPJAM_Attr{
 				return wpjam_get_thumbnail($args, $this->size);
 			}
 
-			return $this->prepare_value_by_data_type($args, $this);
+			return $this->prepare_value_by_data_type($args);
 		}
 
 		return $this->prepare($this->sanitize_by_schema($this->value_callback($args)), 'value');
@@ -712,7 +721,7 @@ class WPJAM_Field extends WPJAM_Attr{
 					if(($this->item_type ??= 'text') == 'text'){
 						$this->direction == 'row' && ($this->class	??= 'medium-text');
 
-						$this->_data_type && array_walk($value, fn(&$v)=> ($l = $this->query_label_by_data_type($v, $this)) && ($v = ['value'=>$v, 'label'=>$l]));
+						array_walk($value, fn(&$v)=> ($l = $this->query_label_by_data_type($v)) && ($v = ['value'=>$v, 'label'=>$l]));
 					}
 
 					$append	= $this->attr_by_item($args)->render();
@@ -796,7 +805,7 @@ class WPJAM_Field extends WPJAM_Attr{
 
 			return $this->tag('textarea')->append(esc_textarea($this->value ?: ''));
 		}else{
-			return $this->input()->data(['class'=>$this->class]+($this->_data_type ? ['label'=>$this->query_label_by_data_type($this->value, $this)] : []));
+			return $this->input()->data(['class'=>$this->class]+array_filter(['label'=>$this->query_label_by_data_type($this->value)]));
 		}
 	}
 
@@ -853,8 +862,7 @@ class WPJAM_Field extends WPJAM_Attr{
 		}elseif(in_array($type, ['fieldset', 'fields'])){
 			$field['propertied']	??= !empty($field['data_type']) ? true : wpjam_pull($field, 'fieldset_type') == 'array';
 		}elseif($type == 'mu-select' || ($type == 'select' && !empty($field['multiple']))){
-			unset($field['multiple'], $field['data_type']);
-
+			$field['multiple']	= true;
 			$field['type']		= 'checkbox';
 			$field['_type']		= 'mu-select';
 		}elseif($type == 'tag-input'){
@@ -1023,17 +1031,10 @@ class WPJAM_Fields extends WPJAM_Attr{
 			$value	= $field->is('fieldset') ? $field->attr('_if', [$if_values, $show])->validate_by_fields($values, $for) : $values;
 
 			if(!$field->is('fieldset') || ($show && $field->propertied)){
-				if($show){
-					$value	= $field->pack($field->validate($field->unpack($value), $for));
-				}else{
-					if($for == 'value'){
-						continue;
-					}
+				$value	= $show ? $field->unpack($value) : null;
+				$value	= is_null($value) && $for == 'value' ? [] : $field->pack($show ? $field->validate($value, $for) : null);
 
-					$value	= $field->pack(null);
-
-					$if_values[$field->key] = null; // 第一次获取的值都是经过 json schema validate 的，可能存在 show_if 的字段在后面
-				}
+				$show || $for == 'value' || ($if_values[$field->key] = null); // 第一次获取的值都是经过 json schema validate 的，可能存在 show_if 的字段在后面
 			}
 
 			$data	= wpjam_merge($data, $value);
@@ -1060,7 +1061,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 		}
 
 		foreach($this->fields as $field){
-			($creator && $field->group != $group) && ([$groups[], $fields, $group]	= [[$group, $fields], [], $field->group]);
+			$creator && $field->group != $group && ([$groups[], $fields, $group]	= [[$group, $fields], [], $field->group]);
 
 			$fields[]	= $field->sandbox(fn()=> $this->wrap($tag, $args));
 		}
@@ -1084,10 +1085,9 @@ class WPJAM_Fields extends WPJAM_Attr{
 	}
 
 	public function get_parameter($method='POST', $merge=true){
-		$data		= wpjam_get_parameter('', [], $method);
-		$validated	= $this->validate($data, 'parameter');
+		$data	= wpjam_get_parameter('', [], $method);
 
-		return array_merge($merge ? $data : [], $validated);
+		return array_merge($merge ? $data : [], $this->validate($data, 'parameter'));
 	}
 
 	public static function create($fields, $args=[]){

@@ -704,6 +704,10 @@ class WPJAM_Data_Type extends WPJAM_Register{
 		return [];
 	}
 
+	public function get_schema(){
+		return $this->get_arg('schema');
+	}
+
 	public function query_label($id, $field=null){
 		if($this->query_label){
 			return $id ? call_user_func($this->query_label, $id, $field) : null;
@@ -722,9 +726,29 @@ class WPJAM_Data_Type extends WPJAM_Register{
 
 	public static function get_defaults(){
 		return [
-			'post_type'	=> ['model'=>'WPJAM_Post',	'meta_type'=>'post',	'label_field'=>'post_title',	'id_field'=>'ID',	'parse_value'=>'wpjam_get_post'],
-			'taxonomy'	=> ['model'=>'WPJAM_Term',	'meta_type'=>'term',	'label_field'=>'name',	'id_field'=>'term_id',	'parse_value'=>'wpjam_get_term'],
-			'author'	=> ['model'=>'WPJAM_User',	'meta_type'=>'user',	'label_field'=>'display_name',	'id_field'=>'ID'],
+			'post_type'	=> [
+				'model'			=> 'WPJAM_Post',
+				'meta_type'		=> 'post',
+				'schema'		=> ['type'=>'integer'],
+				'label_field'	=> 'post_title',
+				'id_field'		=> 'ID',
+				'parse_value'	=> 'wpjam_get_post',
+			],
+			'taxonomy'	=> [
+				'model'			=> 'WPJAM_Term',
+				'meta_type'		=> 'term',
+				'schema'		=> ['type'=>'integer'],
+				'label_field'	=> 'name',
+				'id_field'		=> 'term_id',
+				'parse_value'	=> 'wpjam_get_term'
+			],
+			'author'	=> [
+				'model'			=> 'WPJAM_User',
+				'meta_type'		=> 'user',
+				'schema'		=> ['type'=>'integer'],
+				'label_field'	=> 'display_name',
+				'id_field'		=> 'ID'
+			],
 			'model'		=> [],
 			'video'		=> ['parse_value'=>'wpjam_get_video_mp4'],
 		];

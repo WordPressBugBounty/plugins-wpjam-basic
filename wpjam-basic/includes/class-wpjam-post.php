@@ -465,8 +465,7 @@ class WPJAM_Post{
 			'class'			=> 'all-options',
 			'data_type'		=> 'post_type',
 			'post_type'		=> $post_type,
-			'placeholder'	=> '请输入'.$title.'ID或者输入关键字筛选',
-			'show_in_rest'	=> ['type'=>'integer']
+			'placeholder'	=> '请输入'.$title.'ID或者输入关键字筛选'
 		];
 	}
 

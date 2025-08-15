@@ -145,20 +145,14 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	}
 
 	protected function parse_section($section, $id){
-		return array_merge($section, ['fields'=> maybe_callback($section['fields'] ?? [], $id, $this->name)]);
+		return wpjam_set($section, 'fields', maybe_callback($section['fields'] ?? [], $id, $this->name));
 	}
 
 	protected function get_sections($all=false, $filter=true){
 		$sections	= $this->get_arg('sections');
-
-		if($sections && is_array($sections)){
-			$sections	= array_filter($sections, 'is_array');
-		}else{
-			$fields		= $this->get_arg('fields', null, false);
-			$sections	= is_null($fields) ? [] : [($this->sub_name ?: $this->name)=> ['title'=>$this->title ?: '', 'fields'=>$fields]];
-		}
-
-		$sections	= wpjam_map($sections, fn($v, $k)=> $this->parse_section($v, $k));
+		$sections	= $sections && is_array($sections) ? $sections : [($this->sub_name ?: $this->name)=> ['fields'=>$this->get_arg('fields', null, false)]];
+		$sections	= wpjam_array($sections, fn($k, $v)=> is_array($v) && isset($v['fields']) ? [$k, $this->parse_section($v, $k)] : null);
+		$sections	= count($sections) == 1 ? array_map(fn($s)=> $s+['title'=>$this->title ?: ''], $sections) : $sections;
 		$sections	= array_reduce($all ? $this->get_subs() : [], fn($carry, $v)=> array_merge($carry, $v->get_sections(false, false)), $sections);
 
 		if($filter){

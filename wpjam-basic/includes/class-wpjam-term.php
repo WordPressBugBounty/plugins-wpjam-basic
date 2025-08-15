@@ -155,7 +155,7 @@ class WPJAM_Term{
 		try{
 			$validate && wpjam_try([static::class, 'validate'], $term_id);
 
-			$data	= static::prepare_data($data, $post_id);
+			$data	= static::prepare_data($data, $term_id);
 			$tax	= $data['taxonomy'] ?? get_term_field('taxonomy', $term_id);
 			$meta	= wpjam_pull($data, 'meta_input');
 			$args	= self::pick($data);
@@ -262,7 +262,7 @@ class WPJAM_Term{
 		$object	= isset($args['taxonomy']) && is_string($args['taxonomy']) ? wpjam_get_taxonomy_object($args['taxonomy']) : null;
 		$type	= $args['type'] ?? '';
 		$title	= $args['title'] ??= $object ? $object->title : null;
-		$args	= array_merge($args, ['data_type'=>'taxonomy', 'show_in_rest'=>['type'=>'integer']]);
+		$args	+= ['data_type'=>'taxonomy'];
 
 		if($object && ($object->hierarchical || ($type == 'select' || $type == 'mu-select'))){
 			if(is_admin() && !$type && $object->levels > 1 && $object->selectable){
