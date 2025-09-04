@@ -53,12 +53,21 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.8.2 =
+= 6.8.3 =
 * 新增函数 get_term_level
 * 新增函数 get_term_depth
+* 新增函数 wpjam_lines 处理文本转换成数组
+* 新增函数 wpjam_add_filter，相比原版 add_filter 支持 check 和 nonce 参
+* 新增函数 wpjam_add_action 功能和 wpjam_add_filter 一样。
+* 新增函数 wpjam_get_current_query，支持在循环获取当前 wp_query，即使是嵌套的。
+* 新增函数 wpjam_is，判断 wpjam_get_current_query 是 is_main_query 并且还支持判断在哪些页面
+* WPJAM_Args 新增 pick 方法
+* WPJAM_Field 优化 attr 转换 data 的处理
+* WPJAM_Post 优化 parse_for_json 的处理
+* WPJAM_Taxonomy 和 WPJAM_Meta_Option 新增 show_in_posts_rest 属性。
+* 全面优化 WPJAM_AJAX class，整合后台的 AJAX 操作
 * 后台 JS 新增 list_table_load 事件
 * wpjam_set 支持 [] 模式新增元素
-* 全面优化 WPJAM_AJAX class，整合后台的 AJAX 操作
 * 优化 wpjam_sort 排序函数
 * 其他优化和bug修复
 

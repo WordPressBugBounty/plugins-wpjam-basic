@@ -74,21 +74,26 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 		add_action('admin_bar_menu',	[self::class, 'on_admin_bar_menu'], 1);
 
 		if(is_admin()){
-			add_filter('admin_title', 		fn($title)=> str_replace(' &#8212; WordPress', '', $title));
-			add_action('admin_head',		fn()=> self::echo('admin_head'));
-			add_filter('admin_footer_text',	fn()=> self::get_setting('admin_footer'));
+			wpjam_hooks([
+				['admin_title', 		fn($title)=> str_replace(' &#8212; WordPress', '', $title)],
+				['admin_head',			fn()=> self::echo('admin_head')],
+				['admin_footer_text',	fn()=> self::get_setting('admin_footer')]
+			]);
 		}elseif(is_login()){
-			add_filter('login_headerurl',	fn()=> home_url());
-			add_filter('login_headertext',	fn()=> get_option('blogname'));
+			wpjam_hooks([
+				['login_headerurl',		fn()=> home_url()],
+				['login_headertext',	fn()=> get_option('blogname')],
+				['login_head', 			fn()=> self::echo('login_head')],
+				['login_footer',		fn()=> self::echo('login_footer')],
+				['login_redirect',		fn($to, $requested)=> $requested ? $to : (self::get_setting('login_redirect') ?: $to), 10, 2],
 
-			add_action('login_head', 		fn()=> self::echo('login_head'));
-			add_action('login_footer',		fn()=> self::echo('login_footer'));
-			add_filter('login_redirect',	fn($to, $requested)=> $requested ? $to : (self::get_setting('login_redirect') ?: $to), 10, 2);
-
-			self::get_setting('disable_language_switcher') && add_filter('login_display_language_dropdown',	'__return_false');
+				self::get_setting('disable_language_switcher') ? ['login_display_language_dropdown',	'__return_false'] : []
+			]);
 		}else{
-			add_action('wp_head',	fn()=> self::echo('head'), 1);
-			add_action('wp_footer', fn()=> self::echo('footer'), 99);
+			wpjam_hooks([
+				['wp_head',	fn()=> self::echo('head'), 1],
+				['wp_footer', fn()=> self::echo('footer'), 99]
+			]);
 		}
 
 		self::get_setting('custom_post') && wpjam_register_post_option('custom-post', [

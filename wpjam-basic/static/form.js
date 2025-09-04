@@ -374,7 +374,7 @@ jQuery(function($){
 		}else{
 			filter_key && this.data('dep') && this.wpjam_data_type('filter', this.wpjam_depend('add_to', this.data('dep')).wpjam_val(), true);
 
-			if(!this.is('input')){
+			if(!this.is('input') || this.is(':checkbox, :radio')){
 				return this;
 			}
 
@@ -924,6 +924,8 @@ jQuery(function($){
 		{name: 'tabs',	selector: '.tabs', callback: $el => $el.tabs({activate: (e, ui)=> window.history.replaceState(null, null, ui.newTab.children('a')[0].hash)})},
 		{name: 'form',	selector: 'form'}
 	]);
+
+	$(document).on('widget-updated', ()=> $('.widget.open').wpjam_init());
 });
 
 if(self != top){

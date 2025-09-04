@@ -10,18 +10,11 @@ class WPJAM_Basic_Admin{
 			'wpjam-icons'	=> ['menu_title'=>'图标列表',		'order'=>9,	'tabs'=>['dashicons'=>['title'=>'Dashicons', 'function'=>[self::class, 'dashicons_page']]]],
 		] as $slug => $args){
 			if($args['order'] < 10 || wpjam_filter(wpjam_admin('tabs[]'), fn($v)=> wpjam_get($v, 'plugin_page') == $slug)){
-				wpjam_add_menu_page($slug, $args+[
-					'parent'	=> 'wpjam-basic',
-					'function'	=> 'tab',
-					'network'	=> false
-				]);
+				wpjam_add_menu_page($slug, $args+['parent'=>'wpjam-basic', 'function'=>'tab', 'network'=>false]);
 			}
 		}
 
-		wpjam_add_admin_load([
-			'type'	=> 'builtin_page',
-			'model'	=> self::class
-		]);
+		wpjam_add_admin_load(['type'=>'builtin_page', 'model'=> self::class]);
 
 		add_action('admin_menu', fn()=> $GLOBALS['menu'] += ['58.88'=> ['',	'read',	'separator'.'58.88', '', 'wp-menu-separator']]);
 
@@ -130,20 +123,17 @@ class WPJAM_Basic_Admin{
 		if(in_array($screen->base, ['dashboard', 'dashboard-network', 'dashboard-user'])){
 			is_multisite() && !is_user_member_of_blog() && remove_meta_box('dashboard_quick_press', get_current_screen(), 'side');
 
-			$post_type	= get_post_types(['show_ui'=>true, 'public'=>true, '_builtin'=>false])+['post'];
+			$args	= ['post_type'=>get_post_types(['show_ui'=>true, 'public'=>true, '_builtin'=>false])+['post']];
 
-			array_map(fn($k)=> add_filter($k, fn($query_args)=> array_merge($query_args, ['post_type'=> $post_type, 'cache_results'=>true])), ['dashboard_recent_posts_query_args', 'dashboard_recent_drafts_query_args']);
+			wpjam_map(['posts', 'drafts'], fn($k)=> add_filter('dashboard_recent_'.$k.'_query_args', fn($query_args)=> array_merge($query_args, $args+['cache_results'=>true])));
 
-			add_action('pre_get_comments', fn($query)=> $query->query_vars	= array_merge($query->query_vars, ['post_type'=>$post_type, 'type'=>'comment']));
+			add_action('pre_get_comments', fn($query)=> $query->query_vars	= array_merge($query->query_vars, $args+['type'=>'comment']));
 
-			(new WPJAM_Dashboard([
-				'name'		=> 'dashboard',
-				'widgets'	=> ['wpjam_update'=>[
-					'title'		=> 'WordPress资讯及技巧',
-					'context'	=> 'side',
-					'callback'	=> [self::class, 'update_dashboard_widget']
-				]]
-			]))->page_load();
+			(new WPJAM_Dashboard(['name'=>'dashboard', 'widgets'=>['wpjam_update'=>[
+				'title'		=> 'WordPress资讯及技巧',
+				'context'	=> 'side',
+				'callback'	=> [self::class, 'update_dashboard_widget']
+			]]]))->page_load();
 
 			wpjam_admin('style', [
 				'#dashboard_wpjam .inside{margin:0; padding:0;}',
@@ -153,56 +143,40 @@ class WPJAM_Basic_Admin{
 				'a.jam-post img{display: table-cell; width:40px; height: 40px; margin:4px 12px; }',
 				'a.jam-post span{display: table-cell; height: 40px; vertical-align: middle;}'
 			]);
-		}else{
-			$base	= array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base));
+		}elseif($base	= array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base))){
+			wpjam_admin('script', "
+			$('tr.plugin-update-tr').each(function(){
+				let detail_link	= $(this).find('a.open-plugin-details-modal');
+				let detail_href	= detail_link.attr('href');
 
-			if($base){
-				wpjam_admin('script', "
-				$('tr.plugin-update-tr').each(function(){
-					let detail_link	= $(this).find('a.open-plugin-details-modal');
-					let detail_href	= detail_link.attr('href');
+				if(detail_href.indexOf('https://blog.wpjam.com/') === 0 || detail_href.indexOf('https://97866.com/') === 0){
+					detail_href		= detail_href.substring(0,  detail_href.indexOf('?TB_iframe'));
 
-					if(detail_href.indexOf('https://blog.wpjam.com/') === 0 || detail_href.indexOf('https://97866.com/') === 0){
-						detail_href		= detail_href.substring(0,  detail_href.indexOf('?TB_iframe'));
-
-						detail_link.attr('href', detail_href).removeClass('thickbox open-plugin-details-modal').attr('target','_blank');
-					}
-				});
-				");
-
-				if($base != 'themes'){
-					wpjam_register_plugin_updater('blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-plugin-versions');
-
-					// delete_site_transient('update_plugins');
-					// wpjam_print_r(get_site_transient('update_plugins'));
+					detail_link.attr('href', detail_href).removeClass('thickbox open-plugin-details-modal').attr('target','_blank');
 				}
+			});
+			");
 
-				if($base != 'plugins'){
-					wpjam_register_theme_updater('blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-theme-versions');
+			if($base != 'themes'){
+				wpjam_register_plugin_updater('blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-plugin-versions');
 
-					// delete_site_transient('update_themes');
-					// wpjam_print_r(get_site_transient('update_themes'));
-				}
+				// delete_site_transient('update_plugins');
+				// wpjam_print_r(get_site_transient('update_plugins'));
+			}
+
+			if($base != 'plugins'){
+				wpjam_register_theme_updater('blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-theme-versions');
+
+				// delete_site_transient('update_themes');
+				// wpjam_print_r(get_site_transient('update_themes'));
 			}
 		}
 	}
 
 	public static function update_dashboard_widget(){
-		$jam_posts	= wpjam_transient('dashboard_jam_posts', fn()=> wpjam_remote_request('https://jam.wpweixin.com/api/post/list.json', ['timeout'=>1, 'field'=>'body.posts']));
+		$posts	= wpjam_transient('jam_dashboard_posts', fn()=> wpjam_remote_request('https://jam.wpweixin.com/api/post/list.json', ['timeout'=>1, 'field'=>'body.posts']));
 
-		if(is_array($jam_posts)){
-			$i = 0;
-
-			echo '<div class="rss-widget">';
-
-			foreach($jam_posts as $jam_post){
-				if($i == 5) break;
-				echo '<a class="jam-post" target="_blank" href="http://blog.wpjam.com'.$jam_post['post_url'].'"><p>'.'<img src="'.str_replace('imageView2/1/w/200/h/200/', 'imageView2/1/w/100/h/100/', $jam_post['thumbnail']).'" /><span>'.$jam_post['title'].'</span></p></a>';
-				$i++;
-			}
-
-			echo '</div>';
-		}
+		echo is_array($posts) ? '<div class="rss-widget">'.implode(array_map(fn($p)=> '<a class="jam-post" target="_blank" href="http://blog.wpjam.com'.$p['post_url'].'"><p>'.'<img src="'.str_replace('imageView2/1/w/200/h/200/', 'imageView2/1/w/100/h/100/', $p['thumbnail']).'" /><span>'.$p['title'].'</span></p></a>', array_slice($posts, 0, 5))).'</div>' : '';
 	}
 }
 

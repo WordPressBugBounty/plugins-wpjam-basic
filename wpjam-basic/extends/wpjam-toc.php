@@ -71,28 +71,26 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 	}
 
 	public static function filter_content($content){
-		if(is_singular() && get_the_ID() == get_queried_object_id() && !doing_filter('get_the_excerpt')){
-			$post_id	= get_the_ID();
-			$depth		= self::get_setting('depth', 6);
+		$post_id	= get_the_ID();
+		$depth		= self::get_setting('depth', 6);
 
-			if(self::get_setting('individual', 1)){
-				if(get_post_meta($post_id, 'toc_hidden', true)){
-					$depth	= 0;
-				}elseif(metadata_exists('post', $post_id, 'toc_depth')){
-					$depth	= get_post_meta($post_id, 'toc_depth', true);
-				}
+		if(self::get_setting('individual', 1)){
+			if(get_post_meta($post_id, 'toc_hidden', true)){
+				$depth	= 0;
+			}elseif(metadata_exists('post', $post_id, 'toc_depth')){
+				$depth	= get_post_meta($post_id, 'toc_depth', true);
 			}
+		}
 
-			if($depth){
-				$index		= str_contains($content, '[toc]');
-				$position	= self::get_setting('position', 'content');
-				$content	= wpjam_preg_replace('#<h([1-'.$depth.'])\b([^>]*)>(.*?)</h\1>#', fn($m)=> self::add_item($m, $index), $content);
+		if($depth){
+			$index		= str_contains($content, '[toc]');
+			$position	= self::get_setting('position', 'content');
+			$content	= wpjam_preg_replace('#<h([1-'.$depth.'])\b([^>]*)>(.*?)</h\1>#', fn($m)=> self::add_item($m, $index), $content);
 
-				if($index){
-					return str_replace('[toc]', self::render(), $content);
-				}elseif($position == 'content'){
-					return self::render().$content;
-				}
+			if($index){
+				return str_replace('[toc]', self::render(), $content);
+			}elseif($position == 'content'){
+				return self::render().$content;
 			}
 		}
 
@@ -107,7 +105,11 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 	}
 
 	public static function add_hooks(){
-		add_filter('the_content', [self::class, 'filter_content'], 11);
+		wpjam_add_filter('the_content', [
+			'callback'	=> [self::class, 'filter_content'],
+			'check'		=> fn()=> !doing_filter('get_the_excerpt') && wpjam_is('single', get_the_ID()),
+			'once'		=> true
+		], 11);
 
 		self::get_setting('auto', 1) && add_action('wp_head', [self::class, 'on_head']);
 

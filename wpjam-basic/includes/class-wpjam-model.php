@@ -1349,7 +1349,7 @@ class WPJAM_Items extends WPJAM_Args{
 		}
 
 		if($method == 'move'){
-			return $this->update_items(wp_array_slice_assoc($items, wpjam_try('wpjam_move', array_keys($items), ...$args)));
+			return $this->update_items(wpjam_pick($items, wpjam_try('wpjam_move', array_keys($items), ...$args)));
 		}
 
 		$id		= ($method == 'insert' || ($method == 'add' && count($args) <= 1)) ? null : array_shift($args);

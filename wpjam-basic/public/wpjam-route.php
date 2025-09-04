@@ -24,40 +24,49 @@ function wpjam_include($hooks, $include, $priority=10){
 }
 
 function wpjam_hooks($name, ...$args){
-	if(is_string($name) && in_array($name, ['add', 'remove'])){
-		$type	= $name;
-		$name	= array_shift($args);
-	}else{
-		$type	= 'add';
-	}
+	[$type, $name]	= is_string($name) && in_array($name, ['add', 'remove']) ? [$name, array_shift($args)] : ['add', $name];
 
-	if($name && is_array($name)){
-		if(wp_is_numeric_array(reset($name))){
-			array_walk($name, fn($n)=> wpjam_hook($type, ...$n));
-		}else{
-			if($args){
-				array_walk($name, fn($n)=> wpjam_hook($type, $n, ...$args));
-			}else{
-				wpjam_hook($type, ...$name);
-			}
-		}
+	if(is_array($name) || (is_string($name) && str_contains($name, ','))){
+		wpjam_map(is_array($name) ? $name : wp_parse_list($name), fn($n)=> wpjam_hooks($type, ...(is_array($n) ? $n : [$n, ...$args])));
 	}elseif($name && is_string($name) && $args){
-		$callback	= array_shift($args);
-
-		if(is_array($callback) && !is_callable($callback)){
-			array_walk($callback, fn($cb)=> wpjam_hook($type, $name, $cb, ...$args));
+		if(is_array($args[0]) && !is_callable($args[0])){
+			wpjam_map(array_shift($args), fn($cb)=> wpjam_hooks($type, $name, $cb, ...$args));
 		}else{
-			wpjam_hook($type, $name, $callback, ...$args);
+			(($type == 'add' ? '' : 'wpjam_').$type.'_filter')($name, ...$args);
 		}
 	}
 }
 
-function wpjam_hook($type, $name, $callback, ...$args){
-	if($type == 'add'){
-		add_filter($name, $callback, ...$args);
-	}else{
-		remove_filter($name, $callback, ...($args ?: [has_filter($name, $callback)]));
+function wpjam_add_filter($name, $args=[], $priority=10, $accepted_args=1){
+	if(is_callable(wpjam_get($args, 'callback'))){
+		$cb	= function(...$params) use($name, $args, $priority, &$cb){
+			if(!empty($args['check']) && !$args['check'](...$params)){
+				return array_shift($params);
+			}
+
+			if(!empty($args['once'])){
+				remove_filter($name, $cb, $priority);
+			}
+
+			return $args['callback'](...$params);
+		};
+
+		return add_filter($name, $cb, $priority, $accepted_args);
 	}
+}
+
+function wpjam_remove_filter($name, $callback, ...$args){
+	$priority	= $args ? $args[0] : has_filter($name, $callback);
+
+	return $priority !== false ? remove_filter($name, $callback, $priority) : false;
+}
+
+function wpjam_add_action($name, $args=[], $priority=10, $accepted_args=1){
+	return wpjam_add_filter($name, $args, $priority, $accepted_args);
+}
+
+function wpjam_remove_action($name, $callback, ...$args){
+	return wpjam_remove_filter($name, $callback, ...$args);
 }
 
 function wpjam_call($callback, ...$args){
@@ -243,7 +252,7 @@ function wpjam_cache($key, ...$args){
 		$args	= is_numeric($arg) ? ['expire'=>$arg] : (array)$arg;
 		$expire	= wpjam_get($args, 'expire') ?: 86400;
 
-		if($expire === -1){
+		if($expire === -1 || $cb === false){
 			return $fix ? ('delete_'.$fix)($key) : wp_cache_delete($key, $group);
 		}
 		
@@ -313,22 +322,61 @@ function wpjam($method='', ...$args){
 
 	if($method){
 		if(!in_array($method, ['add', 'set', 'get', 'delete'])){
-			$field	= $method;
-
-			if(str_ends_with($field, '[]')){
-				$field	= substr($field, 0, -2);
+			if(str_ends_with($method, '[]')){
+				$field	= substr($method, 0, -2);
 				$method	= $args ? (is_null(wpjam_at($args, -1)) ? 'delete' : 'add') : 'get';
 			}else{
+				$field	= $method;
 				$method	= $args && (count($args) > 1 || is_array($args[0])) ? 'set' : 'get';
 			}
-
-			array_unshift($args, $field);
+		}else{
+			$field	= array_shift($args);
 		}
 
-		return $object->$method(...$args);
+		return $object->$method($field, ...$args);
 	}
 
 	return $object;
+}
+
+function wpjam_parse_options($field, $args=[]){
+	$type	= wpjam_get($args, 'type') ?? (is_array($field) ? '' : 'select');
+	$title	= wpjam_get($args, 'title_field') ?: 'title';
+	$name	= wpjam_get($args, 'name_field') ?: 'name';
+	$items	= wpjam_filter(is_array($field) ? $field : (wpjam($field) ?: []), $args['filter'] ?? []);
+
+	return wpjam_reduce($items, function($carry, $item, $opt) use($type, $title, $name){
+		if(!is_array($item) && !is_object($item)){
+			$carry[$opt]	= $item;
+		}elseif(is_null(wpjam_get($item, 'options'))) {
+			$opt	= wpjam_get($item, $name) ?: $opt;
+			$carry	= wpjam_set($carry, $opt, wpjam_pick($item, ['label', 'image', 'description', 'alias', 'fields', 'show_if'])+($type == 'select' ? wpjam_pick($item, [$title]) : (wpjam_get($item, 'field') ?: [])+['label'=>wpjam_get($item, $title)]));
+		}
+
+		return $carry;
+	}, ($type == 'select' ? [''=>__('&mdash; Select &mdash;')] : []), 'options');
+}
+
+function wpjam_get_current_query(){
+	return wpjam_at(wpjam('query'), -1);
+}
+
+function wpjam_is(...$args){
+	if($args && is_object($args[0])){
+		if(!is_a($args[0], 'WP_Query')){
+			return false;
+		}
+
+		$query	= array_shift($args);
+	}else{
+		$query	= wpjam_get_current_query();
+	}
+
+	if(!$query || !$query->is_main_query()){
+		return false;
+	}
+
+	return $args ? array_any(wp_parse_list(array_shift($args)), fn($type)=> method_exists($query, 'is_'.$type) && [$query, 'is_'.$type](...$args)) : true;
 }
 
 // Var
@@ -348,7 +396,7 @@ function wpjam_var($name, ...$args){
 }
 
 function wpjam_pattern($key, ...$args){
-	return wpjam('pattern', $key, ...$args);
+	return wpjam('pattern', $key, ...($args ? [array_combine(['pattern', 'custom_validity'], $args)] : []));
 }
 
 function wpjam_default(...$args){
@@ -414,16 +462,12 @@ function wpjam_add_error_setting($code, $message, $modal=[]){
 }
 
 // Route
-function wpjam_register_route($module, $args){
-	if($module){
-		wpjam('route[]', $module, $args);
-	}
+function wpjam_route($name, $model, $query_var=false){
+	$name && $model && wpjam('route[]', $name, ['model'=>$model, 'query_var'=>$query_var]);
 }
 
 function wpjam_get_query_var($key, $wp=null){
-	$wp	= $wp ?: $GLOBALS['wp'];
-
-	return $wp->query_vars[$key] ?? null;
+	return ($wp ?: $GLOBALS['wp'])->query_vars[$key] ?? null;
 }
 
 // JSON
@@ -464,11 +508,7 @@ function wpjam_get_current_json($output='name'){
 }
 
 function wpjam_is_json_request(){
-	if(get_option('permalink_structure')){
-		return (bool)preg_match("/\/api\/.*\.json/", $_SERVER['REQUEST_URI']);
-	}else{
-		return isset($_GET['module']) && $_GET['module'] == 'json';
-	}
+	return get_option('permalink_structure') ? (bool)preg_match("/\/api\/.*\.json/", $_SERVER['REQUEST_URI']) : wpjam_get_parameter('module') == 'json';
 }
 
 function wpjam_register_source($name, $callback, $query_args=['source_id']){
@@ -543,10 +583,7 @@ function wpjam_style($handle, $args=[]){
 
 // Capability
 function wpjam_map_meta_cap($cap, $map){
-	if($cap && $map && (is_callable($map) || wp_is_numeric_array($map))){
-		wpjam('map_meta_cap') || add_filter('map_meta_cap', [wpjam(), 'map_meta_cap'], 10, 4);
-		wpjam('map_meta_cap', $cap.'[]', $map);
-	}
+	$cap && $map && (is_callable($map) || wp_is_numeric_array($map)) && wpjam_map(wp_parse_list($cap), fn($c)=> $c && wpjam('map_meta_cap[]', $c.'[]', $map));
 }
 
 function wpjam_current_user_can($capability, ...$args){
@@ -763,15 +800,8 @@ wpjam_style('remixicon', [
 	'priority'	=> 1
 ]);
 
-wpjam_pattern('key', [
-	'pattern'			=> '^[a-zA-Z][a-zA-Z0-9_\-]*$',
-	'custom_validity'	=> '请输入英文字母、数字和 _ -，并以字母开头！'
-]);
-
-wpjam_pattern('slug', [
-	'pattern'			=> '[a-z0-9_\\-]+',
-	'custom_validity'	=> '请输入小写英文字母、数字和 _ -！'
-]);
+wpjam_pattern('key', '^[a-zA-Z][a-zA-Z0-9_\-]*$', '请输入英文字母、数字和 _ -，并以字母开头！');
+wpjam_pattern('slug', '[a-z0-9_\\-]+', '请输入小写英文字母、数字和 _ -！');
 
 wpjam_map([
 	['bad_authentication',	'无权限'],
@@ -781,11 +811,18 @@ wpjam_map([
 	['quota_exceeded',		fn($args)=> '%s超过上限'.(count($args) >= 2 ? '「%s」' : '')],
 ], fn($args)=> wpjam_add_error_setting(...$args));
 
-wpjam_register_bind('phone', '', ['domain'=>'@phone.sms']);
-wpjam_register_route('json',	['model'=>'WPJAM_JSON']);
-wpjam_register_route('txt',		['model'=>'WPJAM_Verify_TXT']);
+wpjam_map(['post_type'=>2, 'taxonomy'=>3], fn($v, $k)=> wpjam_add_filter('register_'.$k.'_args', [
+	'check'		=> fn($args)=> did_action('init') || empty($args['_builtin']),
+	'callback'	=> fn($args, $name, ...$more)=> (['WPJAM_'.$k, 'get_instance']($name, ($more ? ['object_type'=>$more[0]] : [])+$args))->to_array()
+], 999, $v));
 
-add_action('plugins_loaded',	['WPJAM_API', 'on_plugins_loaded'], 0);
+wpjam_register_bind('phone', '',['domain'=>'@phone.sms']);
+
+wpjam_route('json', 'WPJAM_JSON');
+wpjam_route('txt', 'WPJAM_Verify_TXT');
+
+add_action('plugins_loaded',	fn()=> wpjam(), 0);
+add_action('plugins_loaded',	fn()=> is_admin() && wpjam_admin(), 0);
 
 if(wpjam_is_json_request()){
 	ini_set('display_errors', 0);

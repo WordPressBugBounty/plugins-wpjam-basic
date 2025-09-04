@@ -6,13 +6,13 @@ Description: 统计文章阅读数，激活该扩展，请不要再激活 WP-Pos
 Version: 1.0
 */
 class WPJAM_Postviews{
-	public static function get_sections(){
-		return ['posts'=>['fields'=>['postviews'=> ['title'=>'初始浏览量', 'sep'=>' ',	'prefix'=>'views', 'fields'=>[
+	public static function get_fields(){
+		return ['postviews'=> ['title'=>'初始浏览量', 'sep'=>' ',	'prefix'=>'views', 'fields'=>[
 			'begin'	=> ['type'=>'number',	'class'=>'small-text'],
 			'v1'	=> '和',
 			'end'	=> ['type'=>'number',	'class'=>'small-text'],
 			'v2'	=> '之间随机数',
-		]]]]];
+		]]];
 	}
 
 	public static function redirect(){
@@ -135,6 +135,8 @@ class WPJAM_Postviews{
 	}
 
 	public static function add_hooks(){
+		wpjam_route('postviews', self::class);
+
 		add_filter('the_content', fn($content)=> $content.(is_feed() ? "\n".'<p><img src="'.home_url('postviews/'.get_the_ID().'.png').'" /></p>'."\n" : ''), 999);
 
 		// 不指定 post_type ，默认查询 post，这样custom post type 的文章页面就会显示 404
@@ -148,8 +150,7 @@ class WPJAM_Postviews{
 	}
 }
 
-wpjam_add_option_section('wpjam-basic',	['model'=>'WPJAM_Postviews']);
-wpjam_register_route('postviews', 		['model'=>'WPJAM_Postviews']);
+wpjam_add_option_section('wpjam-basic', 'posts', ['model'=>'WPJAM_Postviews']);
 
 function wpjam_get_post_total_views($post_id){
 	return wpjam_get_post_views($post_id);

@@ -6,61 +6,42 @@ Description: 统计代码扩展最简化插入 Google 分析和百度统计的�
 Version: 1.0
 */
 class WPJAM_Site_Stats{
-	public static function get_sections(){
-		return ['custom'=>['fields'=>['stats'	=> ['title'=>'统计代码',	'type'=>'fieldset',	'wrap_tag'=>'fieldset',	'fields'=>[
+	public static function get_fields(){
+		return ['stats'	=> ['title'=>'统计代码',	'type'=>'fieldset',	'wrap_tag'=>'fieldset',	'fields'=>[
 			'baidu_tongji_id'		=>['title'=>'百度统计 ID：',		'type'=>'text'],
 			'google_analytics_id'	=>['title'=>'Google分析 ID：',	'type'=>'text'],
-		]]]]];
-	}
-
-	public static function on_head(){
-		if(is_preview()){
-			return;
-		}
-
-		$id	= WPJAM_Custom::get_setting('google_analytics_id');
-
-		if($id){ ?>
-		
-<script async src="https://www.googletagmanager.com/gtag/js?id=<?php echo $id; ?>"></script>
-<script>
-	window.dataLayer = window.dataLayer || [];
-	function gtag(){dataLayer.push(arguments);}
-	gtag('js', new Date());
-
-	gtag('config', '<?php echo $id; ?>');
-</script>
-
-		<?php }
-		
-		$id	= WPJAM_Custom::get_setting('baidu_tongji_id');
-
-		if($id){ ?>
-
-<script type="text/javascript">
-	var _hmt = _hmt || [];
-	(function(){
-	var hm = document.createElement("script");
-	hm.src = "https://hm.baidu.com/hm.js?<?php echo $id;?>";
-	hm.setAttribute('async', 'true');
-	document.getElementsByTagName('head')[0].appendChild(hm);
-	})();
-</script>
-
-		<?php }
+		]]];
 	}
 
 	public static function add_hooks(){
-		foreach(['baidu_tongji_id', 'google_analytics_id'] as $key){
-			if(WPJAM_Custom::get_setting($key) === null){
-				$value	= WPJAM_Basic::get_setting($key) ?: '';
+		wpjam_add_action('wp_head', ['check'=>fn()=> !is_preview(), 'once'=>true, 'callback'=> function(){
+			$id	= WPJAM_Custom::get_setting('google_analytics_id');
 
-				WPJAM_Custom::update_setting($key, $value);
-				WPJAM_Basic::delete_setting($key);
-			}
-		}
+			$id && wpjam_echo(<<<JS
+			<script async src="https://www.googletagmanager.com/gtag/js?id=$id"></script>
+			<script>
+				window.dataLayer = window.dataLayer || [];
+				function gtag(){dataLayer.push(arguments);}
+				gtag('js', new Date());
 
-		add_action('wp_head', [self::class, 'on_head'], 11);
+				gtag('config', '$id');
+			</script>
+			JS);
+
+			$id	= WPJAM_Custom::get_setting('baidu_tongji_id');
+
+			$id && wpjam_echo(<<<JS
+			<script type="text/javascript">
+				var _hmt = _hmt || [];
+				(function(){
+				var hm = document.createElement("script");
+				hm.src = "https://hm.baidu.com/hm.js?$id";
+				hm.setAttribute('async', 'true');
+				document.getElementsByTagName('head')[0].appendChild(hm);
+				})();
+			</script>
+			JS);
+		}], 11);
 	}
 }
 

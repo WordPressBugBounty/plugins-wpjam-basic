@@ -59,14 +59,13 @@ class WPJAM_Cron extends WPJAM_Args{
 	}
 
 	public static function get($id){
-		[$ts, $hook, $key]	= explode('--', $id);
-
-		$data	= self::get_all()[$ts][$hook][$key] ?? [];
+		$data	= wpjam_get(self::get_all(), $id);
+		$args	= wpjam_lines($id, '[', fn($v)=> trim($v, ']'));
 
 		return $data ? [
-			'hook'		=> $hook,
-			'timestamp'	=> $ts,
-			'time'		=> wpjam_date('Y-m-d H:i:s', $ts),
+			'hook'		=> $args[1],
+			'timestamp'	=> $args[0],
+			'time'		=> wpjam_date('Y-m-d H:i:s', $args[0]),
 			'cron_id'	=> $id,
 			'schedule'	=> $data['schedule'] ?? '',
 			'args'		=> $data['args'] ?? []
@@ -97,7 +96,7 @@ class WPJAM_Cron extends WPJAM_Args{
 				foreach($cron as $hook => $dings){
 					foreach($dings as $key => $data){
 						$items[] = [
-							'cron_id'	=> $ts.'--'.$hook.'--'.$key,
+							'cron_id'	=> $ts.'['.$hook.']['.$key.']',
 							'time'		=> wpjam_date('Y-m-d H:i:s', $ts),
 							'hook'		=> $hook,
 							'schedule'	=> $data['schedule'] ?? ''
@@ -160,10 +159,10 @@ class WPJAM_Cron extends WPJAM_Args{
 	}
 
 	public static function add_hooks(){
-		add_filter('cron_schedules', fn($schedules)=> array_merge($schedules, [
+		add_filter('cron_schedules', fn($schedules)=> $schedules+[
 			'five_minutes'		=> ['interval'=>300,	'display'=>'每5分钟一次'],
 			'fifteen_minutes'	=> ['interval'=>900,	'display'=>'每15分钟一次']
-		]));
+		]);
 	}
 }
 
@@ -172,27 +171,25 @@ function wpjam_register_cron($hook, $args=[]){
 		return wpjam_register_job($hook, $args);
 	}
 
-	$args	+= ['hook'=>$hook,  'callback'=>''];
-	$object	= $args['callback'] ? null : wpjam_add_instance('cron', $hook, new WPJAM_Cron($args));
+	$cb		= $args['callback'] ?? '';
+	$object	= $cb ? null : wpjam_add_instance('cron', $hook, new WPJAM_Cron($args+['hook'=>$hook]));
 
-	add_action($hook, $args['callback'] ?: [$object, 'callback']);
+	add_action($hook, $cb ?: [$object, 'callback']);
 
 	wpjam_is_scheduled_event($hook) || wpjam_schedule_event($hook, $args);
 
 	return $object;
 }
 
-function wpjam_register_job($name, $args=[]){
-	$object	= wpjam_get_cron('wpjam_scheduled') ?: wpjam_register_cron('wpjam_scheduled', [
-		'recurrence'	=> 'five_minutes',
-		'weight'		=> true
-	]);
-
+function wpjam_register_job($job, $args=[]){
 	$args	= is_array($args) ? $args : (is_numeric($args) ? ['weight'=>$args] : []);
-	$args	= array_merge($args, is_callable($name) ? ['callback'=>$name] : []);
+	$args	= array_merge($args, is_callable($job) ? ['callback'=>$job] : []);
 
 	if(!empty($args['callback']) && is_callable($args['callback'])){
-		return $object->update_arg('jobs[]', wp_parse_args($args, ['weight'=>1, 'day'=>-1]));
+		$cron	= 'wpjam_scheduled';
+		$cron	= wpjam_get_cron($cron) ?: wpjam_register_cron($cron, ['recurrence'=>'five_minutes', 'weight'=>true]);
+
+		return $cron->update_arg('jobs[]', wp_parse_args($args, ['weight'=>1, 'day'=>-1]));
 	}
 }
 
@@ -202,16 +199,10 @@ function wpjam_get_cron($hook){
 
 function wpjam_schedule_event($hook, $data){
 	$data	+= ['timestamp'=>time(), 'args'=>[], 'recurrence'=>false];
-	$args	= [$hook, $data['args']];
+	$args	= $data['recurrence'] ? [$data['recurrence']] : [];
+	$cb		= $args ? 'wp_schedule_event' : 'wp_schedule_single_event';
 
-	if($data['recurrence']){
-		$cb		= 'wp_schedule_event';
-		$args	= [$data['recurrence'], ...$args];
-	}else{
-		$cb		= 'wp_schedule_single_event';
-	}
-
-	return $cb($data['timestamp'], ...$args);
+	return $cb($data['timestamp'], ...[...$args, $hook, $data['args']]);
 }
 
 function wpjam_is_scheduled_event($hook){	// 不用判断参数

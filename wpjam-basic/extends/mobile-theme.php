@@ -6,11 +6,11 @@ Description: 给当前站点设置移动设备设置上使用单独的主题。
 Version: 2.0
 */
 class WPJAM_Mobile_Stylesheet{
-	public static function get_sections(){
-		$options	= array_map(fn($v)=> $v->get('Name'), wp_get_themes(['allowed'=>true]));
-		$options	= wpjam_pick($options, [get_stylesheet()])+$options;
+	public static function get_fields(){
+		$themes	= array_map(fn($v)=> $v->get('Name'), wp_get_themes(['allowed'=>true]));
+		$themes	= wpjam_pick($themes, [get_stylesheet()])+$themes;
 
-		return wpjam_set('enhance.fields.mobile_stylesheet', ['title'=>'移动主题', 'options'=>$options]);
+		return ['mobile_stylesheet'=>['title'=>'移动主题', 'options'=>$themes]];
 	}
 
 	public static function builtin_page_load(){
@@ -24,7 +24,7 @@ class WPJAM_Mobile_Stylesheet{
 			'callback'		=> fn()=> WPJAM_Basic::update_setting('mobile_stylesheet', wpjam_get_data_parameter('stylesheet'))
 		])->get_button(['data'=>['stylesheet'=>'slug']]);
 
-		wpjam_admin('script', sprintf(<<<'EOD'
+		wpjam_admin('script', sprintf(<<<'JS'
 		if(wp && wp.Backbone && wp.themes && wp.themes.view.Theme){
 			let render	= wp.themes.view.Theme.prototype.render;
 
@@ -34,7 +34,7 @@ class WPJAM_Mobile_Stylesheet{
 				this.$el.find('.theme-actions').append(this.$el.data('slug') == %s ? '<span class="mobile-theme button button-primary">移动主题</span>' : (%s).replace('slug', this.$el.data('slug')));
 			};
 		}
-		EOD, wpjam_json_encode($mobile), wpjam_json_encode($button)));
+		JS, wpjam_json_encode($mobile), wpjam_json_encode($button)));
 
 		// wpjam_admin('style', '.mobile-theme{position: absolute; top: 45px; right: 18px;}');
 	}
@@ -44,16 +44,9 @@ class WPJAM_Mobile_Stylesheet{
 		$name	= $name ?: ($_GET['wpjam_theme'] ?? null);
 		$theme	= $name ? wp_get_theme($name) : null;
 
-		if($theme){
-			add_filter('stylesheet',	fn()=> $theme->get_stylesheet());
-			add_filter('template',		fn()=> $theme->get_template());
-		}
+		$theme && wpjam_map(['stylesheet', 'template'], fn($k)=> add_filter($k, fn()=> $theme->{'get_'.$k}()));
 	}
 }
 
-wpjam_add_option_section('wpjam-basic', [
-	'title'			=> '移动主题',
-	'model'			=> 'WPJAM_Mobile_Stylesheet',
-	'order'			=> 16,
-	'admin_load'	=> ['base'=>'themes'],
-]);
+wpjam_add_option_section('wpjam-basic', 'enhance', ['model'=>'WPJAM_Mobile_Stylesheet', 'admin_load'=>['base'=>'themes']]);
+

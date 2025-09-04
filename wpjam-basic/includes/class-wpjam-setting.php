@@ -135,13 +135,20 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 				$fn		= fn($v) => ($this->model && !isset($v['callback']) && !isset($v['model'])) ? $v+['model'=>$this->model] : $v;
 				$value	= wp_is_numeric_array($value) ? array_map($fn, $value) : $fn($value);
 			}
+		}elseif(($key == 'sections')){
+			if(!$value || !is_array($value)){
+				$id		= $this->type == 'section' ? $this->section_id : ($this->current_tab ?: $this->sub_name ?: $this->name);
+				$value	= [$id=>array_filter(['fields'=>$this->get_arg('fields', null, false)]) ?: $this->get_arg('section') ?: []];
+			}
+
+			$value	= wpjam_array($value, fn($k, $v)=> is_array($v) && isset($v['fields']) ? [$k, $this->parse_section($v, $k)] : null);
 		}
 
 		return $value;
 	}
 
 	public function get_current(){
-		return $this->get_sub(wpjam_join(':', self::pick($GLOBALS))) ?: $this;
+		return $this->get_sub(wpjam_join(':', self::parse_sub())) ?: $this;
 	}
 
 	protected function parse_section($section, $id){
@@ -150,25 +157,19 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 
 	protected function get_sections($all=false, $filter=true){
 		$sections	= $this->get_arg('sections');
-		$sections	= $sections && is_array($sections) ? $sections : [($this->sub_name ?: $this->name)=> ['fields'=>$this->get_arg('fields', null, false)]];
-		$sections	= wpjam_array($sections, fn($k, $v)=> is_array($v) && isset($v['fields']) ? [$k, $this->parse_section($v, $k)] : null);
 		$sections	= count($sections) == 1 ? array_map(fn($s)=> $s+['title'=>$this->title ?: ''], $sections) : $sections;
-		$sections	= array_reduce($all ? $this->get_subs() : [], fn($carry, $v)=> array_merge($carry, $v->get_sections(false, false)), $sections);
+		$sections	= array_reduce($all ? $this->get_subs() : [], fn($c, $v)=> array_merge($c, $v->get_sections(false, false)), $sections);
 
 		if($filter){
-			$args		= ['type'=>'section', 'name'=>$this->name]+($all ? [] : wpjam_map(self::pick($GLOBALS), fn($v)=> ['value'=>$v, 'if_null'=>true]));
+			$args		= ['type'=>'section', 'name'=>$this->name]+($all ? [] : wpjam_map(self::parse_sub(), fn($v)=> ['value'=>$v, 'if_null'=>true]));
 			$objects	= wpjam_sort(self::get_by($args), 'order', 'desc', 10);
 
 			foreach(array_reverse(array_filter($objects, fn($v)=> $v->order > 10))+$objects as $object){
 				foreach(($object->get_arg('sections') ?: []) as $id => $section){
 					$section	= $this->parse_section($section, $id);
-
-					if(isset($sections[$id])){
-						$sections[$id]	= $object->order > 10 ? wpjam_merge($section, $sections[$id]) : $sections[$id];	// 字段靠前
-						$sections[$id]	= wpjam_merge($sections[$id], $section);
-					}else{
-						$sections[$id]	= $section;
-					}
+					$id			= $id ?: array_key_first($sections);
+					$exist		= isset($sections[$id]) ? ($object->order > 10 ? wpjam_merge($section, $sections[$id]) : $sections[$id]) : [];	// 字段靠前
+					$sections	= wpjam_set($sections, $id, wpjam_merge($exist, $section));
 				}
 			}
 
@@ -179,12 +180,9 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	}
 
 	public function add_section(...$args){
-		if(wp_is_numeric_array($args[0])){
-			return array_map([$this, 'add_section'], $args[0]);
-		}
-
-		$args	= is_array($args[0]) ? $args[0] : [$args[0]=> isset($args[1]['fields']) ? $args[1] : ['fields'=>$args[1]]];
-		$args	= isset($args['model']) || isset($args['sections']) ? $args : ['sections'=>$args];
+		$keys	= ['model', 'fields', 'section'];
+		$args	= is_array($args[0]) ? $args[0] : ['section_id'=>$args[0]]+(array_any($keys, fn($k)=> isset($args[1][$k])) ? $args[1] : ['fields'=>$args[1]]);
+		$args	= array_any([...$keys, 'sections'], fn($k)=>isset($args[$k])) ? $args : ['sections'=>$args];
 		$name	= md5(maybe_serialize(wpjam_map($args, fn($v)=> is_closure($v) ? spl_object_hash($v) : $v, true)));
 
 		return self::register($name, new static($this->name, $args+['type'=>'section']));
@@ -328,8 +326,8 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		];
 	}
 
-	public static function pick($args){
-		return wpjam_pick($args, ['plugin_page', 'current_tab']);
+	public static function parse_sub($args=null){
+		return wpjam_pick($args ?? $GLOBALS, ['plugin_page', 'current_tab']);
 	}
 
 	public static function create($name, $args){
@@ -342,7 +340,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			'ajax'			=> true,
 		];
 
-		if($sub	= self::pick($args)){
+		if($sub	= self::parse_sub($args)){
 			$rest	= wpjam_except($args, ['model', 'menu_page', 'admin_load', 'plugin_page', 'current_tab']);
 		}else{
 			$args	= ['primary'=>true]+$args;
@@ -464,7 +462,7 @@ class WPJAM_Extend extends WPJAM_Args{
 						return;
 					}
 				}
-			
+
 				return [$extend, [
 					'value'	=> !empty($option[$extend]),
 					'title'	=> $data['URI'] ? '<a href="'.$data['URI'].'" target="_blank">'.$data['Name'].'</a>' : $data['Name'],
@@ -730,25 +728,22 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 		return $column ? null : [];
 	}
 
-	public function update_data_with_default($id, ...$args){
-		if(is_array($args[0])){
-			$data	= $args[0];
+	public function update_data_with_default($id, $key, ...$args){
+		if(is_array($key)){
+			if(wpjam_is_assoc_array($key)){
+				$defaults	= (isset($args[0]) && is_array($args[0])) ? $args[0] : [];
 
-			if(wpjam_is_assoc_array($data)){
-				$defaults	= (isset($args[1]) && is_array($args[1])) ? $args[1] : [];
-
-				if(isset($data['meta_input']) && wpjam_is_assoc_array($data['meta_input'])){
-					$this->update_data_with_default($id, wpjam_pull($data, 'meta_input'), wpjam_pull($defaults, 'meta_input'));
+				if(isset($key['meta_input']) && wpjam_is_assoc_array($key['meta_input'])){
+					$this->update_data_with_default($id, wpjam_pull($key, 'meta_input'), wpjam_pull($defaults, 'meta_input'));
 				}
 
-				wpjam_map($data, fn($v, $k)=> $this->update_data_with_default($id, $k, $v, wpjam_pull($defaults, $k)));
+				wpjam_map($key, fn($v, $k)=> $this->update_data_with_default($id, $k, $v, wpjam_pull($defaults, $k)));
 			}
 
 			return true;
 		}else{
-			$key		= $args[0];
-			$value		= $args[1];
-			$default	= $args[2] ?? null;
+			$value		= $args[0];
+			$default	= $args[1] ?? null;
 
 			if(is_array($value)){
 				if($value && (!is_array($default) || array_diff_assoc($default, $value))){
@@ -858,6 +853,10 @@ class WPJAM_Meta_Option extends WPJAM_Register{
 			return $value ?: $this->update_callback;
 		}elseif($key == 'action_name'){
 			return $value ?: 'set_'.$this->name;
+		}elseif($key == 'show_in_rest'){
+			return $value ?? true;
+		}elseif($key == 'show_in_posts_rest'){
+			return $value ?? $this->show_in_rest;
 		}
 
 		return $value;

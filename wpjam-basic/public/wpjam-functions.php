@@ -216,8 +216,8 @@ function wpjam_get_metadata($meta_type, $object_id, ...$args){
 	return ($object = WPJAM_Meta_Type::get($meta_type)) ? $object->get_data_with_default($object_id, ...$args) : null;
 }
 
-function wpjam_update_metadata($meta_type, $object_id, ...$args){
-	return ($object = WPJAM_Meta_Type::get($meta_type)) ? $object->update_data_with_default($object_id, ...$args) : null;
+function wpjam_update_metadata($meta_type, $object_id, $key, ...$args){
+	return ($object = WPJAM_Meta_Type::get($meta_type)) ? $object->update_data_with_default($object_id, $key, ...$args) : null;
 }
 
 function wpjam_delete_metadata($meta_type, $object_id, $key){
@@ -363,22 +363,17 @@ function wpjam_get_post($post, $args=[]){
 	}
 }
 
-function wpjam_get_posts($query, $parse=false){
-	if($parse){
-		$args	= [];
-	}elseif(is_array($parse)){
-		$args	= $parse;
-		$parse	= true;
-	}
+function wpjam_get_posts($vars, $parse=false){
+	[$args, $parse]	= is_array($parse) ? [$parse, true] : [[], $parse];
 
-	if(is_string($query) || wp_is_numeric_array($query)){
-		$ids	= wp_parse_id_list($query);
+	if(is_scalar($vars) || wp_is_numeric_array($vars)){
+		$ids	= wp_parse_id_list($vars);
 		$posts	= WPJAM_Post::get_by_ids($ids);
 
-		return $parse ? wpjam_array($ids, fn($i, $p)=> [null, wpjam_get_post($p, $args)], true) : $posts;
+		return $parse ? wpjam_array($ids, fn($k, $v)=> ($v = wpjam_get_post($v, $args)) ? [null, $v] : null) : $posts;
 	}
 
-	return $parse ? wpjam_parse_query($query, $args) : (WPJAM_Posts::query($query))->posts;
+	return $parse ? WPJAM_Posts::parse($vars, $args) : (WPJAM_Posts::query($vars))->posts;
 }
 
 function wpjam_get_post_views($post=null){
@@ -533,20 +528,16 @@ function wpjam_query($args=[]){
 	return new WP_Query(wp_parse_args($args, ['no_found_rows'=>true, 'ignore_sticky_posts'=>true]));
 }
 
-function wpjam_parse_query($wp_query, $args=[], $parse=true){
-	if(!$wp_query && !is_array($wp_query)){
-		return $parse ? [] : '';
-	}
-
-	return ['WPJAM_Posts', ($parse ? 'parse' : 'render')]($wp_query, array_merge($args, ['list_query'=>true]));
+function wpjam_parse_query($query, $args=[], $parse=true){
+	return $query ? ['WPJAM_Posts', ($parse ? 'parse' : 'render')]($query, $args+['list_query'=>true]) : ($parse ? [] : '');
 }
 
 function wpjam_parse_query_vars($vars){
 	return WPJAM_Posts::parse_query_vars($vars);
 }
 
-function wpjam_render_query($wp_query, $args=[]){
-	return WPJAM_Posts::render($wp_query, $args);
+function wpjam_render_query($query, $args=[]){
+	return WPJAM_Posts::render($query, $args);
 }
 
 function wpjam_pagenavi($total=0, $echo=true){

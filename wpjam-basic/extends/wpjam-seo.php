@@ -59,7 +59,7 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 
 	public static function get_value($type='title'){
 		if($type == 'meta'){
-			return array_filter(wpjam_fill(['description', 'keywords'], fn($k)=> self::get_value($k)));
+			return wpjam_fill(['description', 'keywords'], fn($k)=> self::get_value($k));
 		}
 
 		if(is_front_page()){
@@ -97,7 +97,14 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		}
 	}
 
-	public static function sitemap($action){
+	public static function get_rewrite_rule(){
+		return [
+			['sitemap\.xml?$',  'index.php?module=sitemap', 'top'],
+			['sitemap-(.*?)\.xml?$',  'index.php?module=sitemap&action=$matches[1]', 'top'],
+		];
+	}
+
+	public static function redirect($action){
 		$sitemap	= '';
 
 		if(!$action){
@@ -172,13 +179,7 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		add_filter('document_title',	fn($title)=> self::get_value('title') ?: $title);
 
 		if(self::get_setting('sitemap') == 0){
-			wpjam_register_route('sitemap', [
-				'callback'		=> [self::class, 'sitemap'],
-				'rewrite_rule'	=> [
-					['sitemap\.xml?$',  'index.php?module=sitemap', 'top'],
-					['sitemap-(.*?)\.xml?$',  'index.php?module=sitemap&action=$matches[1]', 'top'],
-				],
-			]);
+			wpjam_route('sitemap', self::class);
 		}
 
 		if(is_admin() && self::get_setting('individual')){

@@ -29,7 +29,7 @@ class WPJAM_Rewrite{
 	}
 
 	public static function query_items($args){
-		return wpjam_array(self::get_all(), fn($query, $regex)=> [null, compact('regex', 'query')]);
+		return wpjam_reduce(self::get_all(), fn($carry, $regex, $query)=> [...$carry, compact('regex', 'query')], []);
 	}
 
 	public static function get_actions(){

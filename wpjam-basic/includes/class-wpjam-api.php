@@ -1,54 +1,53 @@
 <?php
 class WPJAM_API{
 	private $data	= [];
+	private $query	= [];
+
+	private function __construct(){
+		add_filter('query_vars',	fn($vars)=>array_merge($vars, ['module', 'action', 'term_id']), 11);
+		add_filter('request',		[$this, 'filter_request'], 11);
+		add_action('loop_start',	fn($query)=> array_push($this->query, $query), 1);
+		add_action('loop_end',		fn($query)=> array_pop($this->query), 999);
+
+		wpjam_map($this->activation(), fn($active)=> $active && count($active) >= 2 && add_action(...$active));
+	}
 
 	public function add($field, $key, ...$args){
 		[$key, $item]	= $args ? [$key, $args[0]] : [null, $key];
 
 		if($field == 'route'){
 			$item	= wpjam_is_assoc_array($item) ? $item : ['callback'=>$item];
-
-			if(!empty($item['model'])){
-				foreach(['callback'=>'redirect', 'rewrite_rule'=>'get_rewrite_rule'] as $k => $v){
-					if(empty($item[$k]) && method_exists($item['model'], $v)){
-						$item[$k]	= [$item['model'], $v];
-					}
-				}
-			}
+			$cb		= fn($m)=> method_exists($item['model'] ?? '', $m) ? [$item['model'], $m] : null;
+			$item	= (empty($item['callback']) ? ['callback'=>$cb('redirect')] : [])+$item;
 
 			foreach(['rewrite_rule', 'menu_page', 'admin_load'] as $k){
-				($k == 'rewrite_rule' || is_admin()) && wpjam_get($item, $k) && wpjam_call('wpjam_add_'.$k, $item[$k]);
+				if($k == 'rewrite_rule' || is_admin()){
+					$v	= wpjam_get($item, $k) ?: $cb('get_'.$k);
+					$v && wpjam_call('wpjam_add_'.$k, $k == 'rewrite_rule' ? $v : maybe_callback($v));
+				}
 			}
 
 			if(!empty($item['query_var'])){
 				$action	= wpjam_get_parameter($key, ['method'=> wp_doing_ajax() ? 'DATA' : 'GET']);
 				$action	&& add_action((wp_doing_ajax() ? 'admin_init' : 'parse_request'), fn()=> $this->dispatch($key, $action), 0);
 			}
+		}elseif($field == 'map_meta_cap'){
+			$this->get($field) || add_filter($field, [$this, $field], 10, 4);
 		}
 
-		if(isset($key)){
-			if($this->get($field, $key) !== null){
-				return new WP_Error('invalid_key', '「'.$key.'」已存在，无法添加');
-			}
-
-			$this->set($field, $key, $item);
-		}else{
-			$this->data[$field][]	= $item;
+		if(isset($key) && !str_ends_with($key, '[]') && $this->get($field, $key) !== null){
+			return new WP_Error('invalid_key', '「'.$key.'」已存在，无法添加');
 		}
 
-		return $item;
+		return $this->set($field, $key ?? '[]', $item);
 	}
 
 	public function set($field, $key, ...$args){
-		if(is_array($key)){
-			$this->data[$field]	= ($args && $args[0]) ? $key : array_merge($this->get($field), $key);
+		$exists	= $this->get($field);
 
-			return $key;
-		}elseif($args){
-			$this->data[$field]	= wpjam_set($this->get($field), $key, ...$args);
+		$this->data[$field]	= is_array($key) ? (($args && $args[0]) ? $key : array_merge($exists, $key)) : wpjam_set($exists, $key, ...$args);
 
-			return $args[0];
-		}
+		return is_array($key) ? $key : $args[0];
 	}
 
 	public function delete($field, ...$args){
@@ -60,7 +59,7 @@ class WPJAM_API{
 	}
 
 	public function get($field, ...$args){
-		return wpjam_get(($this->data[$field] ?? []), ($args ? $args[0] : null));
+		return $field == 'query' ? $this->query : wpjam_get(($this->data[$field] ?? []), ($args ? $args[0] : null));
 	}
 
 	public function map_meta_cap($caps, $cap, $user_id, $args){
@@ -108,18 +107,6 @@ class WPJAM_API{
 		return [wpjam_get_handler(['items_type'=>'transient', 'transient'=>'wpjam-actives']), ($args ? 'add' : 'empty')](...$args);
 	}
 
-	public static function on_plugins_loaded(){
-		add_filter('query_vars',	fn($vars)=>array_merge($vars, ['module', 'action', 'term_id']), 11);
-		add_filter('request',		[self::get_instance(), 'filter_request'], 11);
-
-		add_filter('register_post_type_args',	['WPJAM_Post_Type',	'filter_register_args'], 999, 2);
-		add_filter('register_taxonomy_args',	['WPJAM_Taxonomy',	'filter_register_args'], 999, 3);
-
-		wpjam_map(self::activation(), fn($active)=> $active && count($active) >= 2 && add_action(...$active));
-
-		is_admin() && wpjam_admin();
-	}
-
 	public static function get_instance(){
 		static $object;
 		return $object ??= new self();
@@ -136,23 +123,17 @@ class WPJAM_API{
 
 class WPJAM_JSON extends WPJAM_Register{
 	public function response(){
-		$attr		= ['page_title', 'share_title', 'share_image'];
 		$method		= $this->method ?: $_SERVER['REQUEST_METHOD'];
-		$response	= wpjam_if_error(apply_filters('wpjam_pre_json', [], $this->args, $this->name), 'throw');
-		$response	+= ['errcode'=>0, 'current_user'=>wpjam_try('wpjam_get_current_user', $this->pull('auth'))];
-		$response	+= $method != 'POST' ? wpjam_pick($this, $attr) : [];
+		$attr		= $method != 'POST' ? ['page_title', 'share_title', 'share_image'] : [];
+		$response	= wpjam_if_error(apply_filters('wpjam_pre_json', [], $this, $this->name), 'throw');
+		$response	+= ['errcode'=>0, 'current_user'=>wpjam_try('wpjam_get_current_user', $this->pull('auth'))]+$this->pick($attr);
 
 		if($this->modules){
 			$modules	= maybe_callback($this->modules, $this->name, $this->args);
 			$results	= array_map(fn($module)=> self::parse_module($module, true), wp_is_numeric_array($modules) ? $modules : [$modules]);
 		}elseif($this->callback){
-			if($this->fields){
-				$fields	= wpjam_try('maybe_callback', $this->fields, $this->name);
-				$data	= $fields ? wpjam_fields($fields)->get_parameter($method) : [];
-			}else{
-				$data	= $this->args;
-			}
-	
+			$fields		= $this->fields ? wpjam_try('maybe_callback', $this->fields, $this->name) : [];
+			$data		= $this->fields ? ($fields ? wpjam_fields($fields)->get_parameter($method) : []) : $this->args;
 			$results[]	= wpjam_try($this->pull('callback'), $data, $this->name);
 		}elseif($this->template){
 			$results[]	= is_file($this->template) ? include $this->template : '';
@@ -163,10 +144,14 @@ class WPJAM_JSON extends WPJAM_Register{
 		$response	= array_reduce($results, fn($c, $v)=> array_merge($c, is_array($v) ? array_diff_key($v, wpjam_pick($c, $attr)) : []), $response);
 		$response	= apply_filters('wpjam_json', $response, $this->args, $this->name);
 
-		if($method != 'POST' && !str_ends_with($this->name, '.config')){
+		if($attr && !str_ends_with($this->name, '.config')){
 			foreach($attr as $k){
-				if(($k !== 'share_image') === empty($response[$k])){
-					$response[$k]	= ($k == 'share_image') ? wpjam_get_thumbnail($response[$k], '500x400') : html_entity_decode(wp_get_document_title());
+				$v	= $response[$k] ?? '';
+
+				if($k == 'share_image'){
+					$v && ($response[$k]	= wpjam_get_thumbnail($v, '500x400'));
+				}else{
+					$response[$k]	= html_entity_decode($v ?: wp_get_document_title());
 				}
 			}
 		}
@@ -211,8 +196,9 @@ class WPJAM_JSON extends WPJAM_Register{
 		$name	= substr($name, str_starts_with($name, '.mag') ? 4 : 0);	// 兼容
 		$name	= str_replace('/', '.', $name);
 		$name	= wpjam_var('json', apply_filters('wpjam_json_name', $name));
+		$user	= wpjam_get_current_user();
 
-		($user	= wpjam_get_current_user()) && !empty($user['user_id']) && wp_set_current_user($user['user_id']);
+		$user && !empty($user['user_id']) && wp_set_current_user($user['user_id']);
 
 		do_action('wpjam_api', $name);
 
@@ -472,11 +458,7 @@ class WPJAM_Platform extends WPJAM_Register{
 	}
 
 	public function get_page($page_key=''){
-		if($page_key){
-			return ($path = $this->get_path($page_key.'[path]')) ? explode('?', $path)[0] : null;
-		}
-
-		return wpjam_array($this->get_paths(), fn($k)=> [$k, $this->get_page($k)], true);
+		return $page_key ? wpjam_at($this->get_path($page_key.'[path]'), '?', 0) : wpjam_array($this->get_paths(), fn($k)=> [$k, $this->get_page($k)], true);
 	}
 
 	public function get_fields($page_key){
@@ -520,7 +502,7 @@ class WPJAM_Platform extends WPJAM_Register{
 			}
 
 			return isset($path) ? $path : (isset($item['path']) ? (string)$item['path'] : null);
-		}	
+		}
 	}
 
 	public function get_paths($page_key=null, $args=[]){
@@ -696,9 +678,7 @@ class WPJAM_Data_Type extends WPJAM_Register{
 				return new WP_Error('undefined_method', ['query_items', '回调函数']);
 			}
 
-			$map	= $this->label_field ? ['label'=>$this->label_field, 'value'=>$this->id_field] : [];
-
-			return $map ? array_map(fn($item)=> wpjam_array($map, fn($k, $v)=> [$k, wpjam_get($item, $v)]), $items) : $items;
+			return $this->label_field ? array_map(fn($item)=> wpjam_array(['label'=>$this->label_field, 'value'=>$this->id_field], fn($k, $v)=> [$k, wpjam_get($item, $v)]), $items) : $items;
 		}
 
 		return [];
@@ -1072,7 +1052,7 @@ class WPJAM_File{
 		if(!self::is_attachment($id)){
 			try{
 				$tmp	= wpjam_try('download_url', $url);
-				$upload	= ['name'=>wpjam_get($args, 'name') ?: md5($url).'.'.(explode('/', wp_get_image_mime($tmp))[1]), 'tmp_name'=>$tmp];
+				$upload	= ['name'=>wpjam_get($args, 'name') ?: md5($url).'.'.wpjam_at(wp_get_image_mime($tmp), '/', 1), 'tmp_name'=>$tmp];
 
 				if(!$media){
 					return wpjam_try([self::class, 'upload'], $upload)[$field];
@@ -1183,7 +1163,7 @@ class WPJAM_File{
 			$sizes	= wp_get_additional_image_sizes();
 
 			if($sep && !isset($sizes[$size])){
-				[$width, $height]	= array_replace([0,0], explode($sep, $size));
+				[$width, $height]	= explode($sep, $size)+[0,0];
 			}else{
 				$name		= $size == 'thumb' ? 'thumbnail' : $size;
 				$default	= ['thumbnail'=>[100, 100], 'medium'=>[300,300], 'medium_large'=>[768,0], 'large'=>[1024,1024]][$name] ?? '';
@@ -1210,7 +1190,7 @@ class WPJAM_File{
 
 		if(count($max) >= 2 && $max[0] && $max[1]){
 			$max	= ($size['width'] && $size['height']) ? wp_constrain_dimensions($size['width'], $size['height'], $max[0], $max[1]) : $max;
-			$size	= array_merge($size, wpjam_array(['width', 'height'], fn($k, $v)=> [$v, min($size[$v], $max[$k])]));
+			$size	= array_merge($size, wpjam_fill(['width', 'height'], fn($k, $i)=> min($size[$k], $max[$i])));
 		}
 
 		return $size;

@@ -302,7 +302,7 @@ jQuery(function($){
 						$('body').wpjam_form().trigger('option_action_success', data);
 					}else if(type == 'page'){
 						if(!['form', 'append', 'redirect'].includes(data.type)){
-							data.done || setTimeout(()=> this.wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
+							data.done === 0 && setTimeout(()=> this.wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
 
 							args.action_type == 'submit' && $('#wpjam_form').length && data.form && $('#wpjam_form').html(data.form);
 

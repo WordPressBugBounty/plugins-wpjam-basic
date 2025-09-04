@@ -6,8 +6,8 @@ Description: 优化设置通过屏蔽和增强功能来加快 WordPress 的加�
 Version: 2.0
 */
 class WPJAM_Basic extends WPJAM_Option_Model{
-	public static function get_fields(){
-		return [
+	public static function get_sections(){
+		return ['disabled'=>['title'=>'功能屏蔽',	'fields'=>[
 			'basic'		=>['title'=>'常规功能',	'fields'=>[
 				'disable_revisions'			=>['label'=>'屏蔽文章修订功能，精简文章表数据。',		'value'=>1],
 				'disable_trackbacks'		=>['label'=>'彻底关闭Trackback，防止垃圾留言。',		'value'=>1],
@@ -41,7 +41,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 				'disable_block_editor'			=>['label'=>'屏蔽Gutenberg编辑器，换回经典编辑器。'],
 				'disable_widgets_block_editor'	=>['label'=>'屏蔽小工具区块编辑器模式，切换回经典模式。']
 			]],
-		];
+		]]];
 	}
 
 	public static function disabled($feature, ...$args){
@@ -66,16 +66,17 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 		if(self::disabled('head_links')){
 			add_filter('the_generator', fn()=> '');
 
-			wpjam_hooks('remove', 'wp_head', ['rsd_link', 'wlwmanifest_link', 'feed_links_extra', 'index_rel_link', 'parent_post_rel_link', 'start_post_rel_link', 'adjacent_posts_rel_link_wp_head','wp_shortlink_wp_head', 'rest_output_link_wp_head']);
+			wpjam_hooks('remove', [
+				['wp_head',				['rsd_link', 'wlwmanifest_link', 'feed_links_extra', 'index_rel_link', 'parent_post_rel_link', 'start_post_rel_link', 'adjacent_posts_rel_link_wp_head','wp_shortlink_wp_head', 'rest_output_link_wp_head']],
+				['template_redirect',	['wp_shortlink_header', 'rest_output_link_header']]
+			]);
 
-			wpjam_hooks('remove', 'template_redirect', ['wp_shortlink_header', 'rest_output_link_header']);
-
-			wpjam_hooks('add', ['style_loader_src', 'script_loader_src'], fn($src)=> $src ? preg_replace('/[\&\?]ver='.preg_quote($GLOBALS['wp_version']).'(&|$)/', '', $src) : $src);
+			wpjam_hooks('style_loader_src, script_loader_src', fn($src)=> $src ? preg_replace('/[\&\?]ver='.preg_quote($GLOBALS['wp_version']).'(&|$)/', '', $src) : $src);
 		}
 
 		// 屏蔽WordPress大小写修正
 		if(self::disabled('capital_P_dangit', 1)){
-			wpjam_hooks('remove', ['the_content', 'the_title', 'wp_title', 'document_title', 'comment_text', 'widget_text_content'], 'capital_P_dangit');
+			wpjam_hooks('remove', 'the_content, the_title, wp_title, document_title, comment_text, widget_text_content', 'capital_P_dangit');
 		}
 
 		// 屏蔽字符转码
@@ -90,22 +91,25 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 
 		//禁用 XML-RPC 接口
 		if(self::disabled('xml_rpc', 1)){
-			add_filter('xmlrpc_enabled', fn()=> false);
-			add_filter('xmlrpc_methods', fn()=> []);
+			wpjam_hooks([
+				['xmlrpc_enabled',	fn()=> false],
+				['xmlrpc_methods',	fn()=> []]
+			]);
 
 			remove_action('xmlrpc_rsd_apis', 'rest_output_rsd');
 		}
 
 		// 屏蔽古腾堡编辑器
 		if(self::disabled('block_editor')){
-			wpjam_hooks('remove', ['wp_enqueue_scripts', 'admin_enqueue_scripts'], 'wp_common_block_scripts_and_styles');
-			wpjam_hook('remove', 'the_content', 'do_blocks');
+			wpjam_hooks('remove', [
+				['wp_enqueue_scripts, admin_enqueue_scripts',	'wp_common_block_scripts_and_styles'],
+				['the_content', 								'do_blocks']
+			]);
 		}
 
 		// 屏蔽小工具区块编辑器模式
 		if(self::disabled('widgets_block_editor')){
-			add_filter('gutenberg_use_widgets_block_editor', fn()=> false);
-			add_filter('use_widgets_block_editor', fn()=> false);
+			wpjam_hooks('gutenberg_use_widgets_block_editor, use_widgets_block_editor', fn()=> false);
 		}
 
 		// 屏蔽站点管理员邮箱验证功能
@@ -121,33 +125,28 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			]));
 
 			wpjam_hooks('remove', [
-				['wp_head',			'print_emoji_detection_script'],
-				['embed_head',		'print_emoji_detection_script'],
-				['wp_print_styles',	'print_emoji_styles']
+				['wp_head, embed_head',					'print_emoji_detection_script'],
+				['wp_print_styles',						'print_emoji_styles'],
+				['the_content_feed, comment_text_rss',	'wp_staticize_emoji'],
+				['wp_mail', 							'wp_staticize_emoji_for_email']
 			]);
 
-			wpjam_hooks('remove', [
-				['the_content_feed',	'wp_staticize_emoji'],
-				['comment_text_rss',	'wp_staticize_emoji'],
-				['wp_mail',				'wp_staticize_emoji_for_email']
+			wpjam_hooks([
+				['emoji_svg_url',		fn()=> false],
+				['tiny_mce_plugins',	fn($plugins)=> array_diff($plugins, ['wpemoji'])]
 			]);
-
-			add_filter('emoji_svg_url',		fn()=> false);
-			add_filter('tiny_mce_plugins',	fn($plugins)=> array_diff($plugins, ['wpemoji']));
 		}
 
 		//禁用文章修订功能
 		if(self::disabled('revisions', 1)){
 			defined('WP_POST_REVISIONS') || define('WP_POST_REVISIONS', false);
 
-			wpjam_hook('remove', 'pre_post_update', 'wp_save_post_revision');
-
-			add_filter('register_meta_args', fn($args, $defaults, $meta_type, $meta_key)=> ($meta_type == 'post' && !empty($args['object_subtype']) && in_array($args['object_subtype'], ['post', 'page'])) ? array_merge($args, ['revisions_enabled'=>false]) : $args, 10, 4);
+			wpjam_remove_filter('pre_post_update', 'wp_save_post_revision');
 		}
 
 		// 屏蔽Trackbacks
 		if(self::disabled('trackbacks', 1)){
-			if(!self::disabled('xml_rpc', 1)){	//彻底关闭 pingback
+			if(self::disabled('xml_rpc', 1)){	//彻底关闭 pingback
 				add_filter('xmlrpc_methods', fn($methods)=> wpjam_except($methods, ['pingback.ping', 'pingback.extensions.getPingbacks']));
 			}
 
@@ -159,8 +158,10 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 
 		//禁用 Auto OEmbed
 		if(self::disabled('autoembed')){
-			wpjam_hooks('remove', ['edit_form_advanced', 'edit_page_form'], [$GLOBALS['wp_embed'], 'maybe_run_ajax_cache']);
-			wpjam_hooks('remove', ['the_content', 'widget_text_content', 'widget_block_content'], [$GLOBALS['wp_embed'], 'autoembed']);
+			wpjam_hooks('remove', [
+				['edit_form_advanced, edit_page_form', 						[$GLOBALS['wp_embed'], 'maybe_run_ajax_cache']],
+				['the_content, widget_text_content, widget_block_content',	[$GLOBALS['wp_embed'], 'autoembed']]
+			]);
 		}
 
 		// 屏蔽文章Embed
@@ -173,16 +174,14 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			add_filter('automatic_updater_disabled', fn()=> true);
 
 			wpjam_hooks('remove', array_map(fn($v)=> [$v, $v], ['wp_version_check', 'wp_update_plugins', 'wp_update_themes']));
-			wpjam_hook('remove', 'init', 'wp_schedule_update_checks');
+			wpjam_remove_filter('init', 'wp_schedule_update_checks');
 		}
 
 		// 屏蔽后台隐私
 		if(self::disabled('privacy', 1)){
-			wpjam_hooks('remove', 'user_request_action_confirmed', ['_wp_privacy_account_request_confirmed', '_wp_privacy_send_request_confirmation_notification']);
-
-			wpjam_hooks('remove', 'wp_privacy_personal_data_exporters', ['wp_register_comment_personal_data_exporter', 'wp_register_media_personal_data_exporter', 'wp_register_user_personal_data_exporter']);
-
 			wpjam_hooks('remove', [
+				['user_request_action_confirmed',		['_wp_privacy_account_request_confirmed', '_wp_privacy_send_request_confirmation_notification']],
+				['wp_privacy_personal_data_exporters',	['wp_register_comment_personal_data_exporter', 'wp_register_media_personal_data_exporter', 'wp_register_user_personal_data_exporter']],
 				['wp_privacy_personal_data_erasers',	'wp_register_comment_personal_data_eraser'],
 				['init',								'wp_schedule_delete_old_privacy_export_files'],
 				['wp_privacy_delete_old_export_files',	'wp_privacy_delete_old_export_files']
@@ -205,8 +204,10 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			}
 
 			if(self::disabled('screen_options')){
-				add_filter('screen_options_show_screen', fn()=> false);
-				add_filter('hidden_columns', fn()=> []);
+				wpjam_hooks([
+					['screen_options_show_screen',	fn()=> false],
+					['hidden_columns',				fn()=> []]
+				]);
 			}
 
 			if(self::disabled('privacy', 1)){
@@ -226,7 +227,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			}
 
 			if(self::disabled('dashboard_primary')){
-				add_action('do_meta_boxes', fn($screen, $context)=> str_contains($screen, 'dashboard') && remove_meta_box('dashboard_primary', $screen, $context), 10, 2);
+				add_action('do_meta_boxes', fn($screen, $context)=> remove_meta_box('dashboard_primary', $screen, $context), 10, 2);
 			}
 		}
 	}
@@ -237,7 +238,6 @@ wpjam_register_option('wpjam-basic', [
 	'model'			=> 'WPJAM_Basic',
 	'summary'		=> __FILE__,
 	'site_default'	=> true,
-	'sections'		=> ['disabled'=>['title'=>'功能屏蔽',	'fields'=>['WPJAM_Basic', 'get_fields']]],
 	'menu_page'		=> ['menu_title'=>'WPJAM', 'sub_title'=>'优化设置', 'icon'=>'ri-rocket-fill', 'position'=>'58.99']
 ]);
 

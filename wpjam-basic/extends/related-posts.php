@@ -33,64 +33,46 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 	}
 
 	public static function get_options(){
-		return ['post'=>__('Post')]+wpjam_array(get_post_types(['_builtin'=>false]), fn($k, $v)=> is_post_type_viewable($v) && get_object_taxonomies($v) ? [$v, wpjam_get_post_type_setting($v, 'title')] : null);
+		return ['post'=>__('Post')]+wpjam_reduce(get_post_types(['_builtin'=>false]), fn($c, $v, $k)=> is_post_type_viewable($v) && get_object_taxonomies($v) ? wpjam_set($c, $v, wpjam_get_post_type_setting($v, 'title')) : $c, []);
 	}
 
-	public static function get_args($ratio=1){
-		$support	= get_theme_support('related-posts');
-		$args		= self::get_setting() ?: [];
-		$args		= $support ? array_merge(is_array($support) ? current($support) : [], wpjam_except($args, ['div_id', 'class', 'auto'])) : $args;
+	public static function on_the_post($post, $query){
+		$options	= self::get_options();
+		$options	= count($options) > 1 && ($setting	= self::get_setting('post_types')) ? wpjam_pick($options, $setting) : $options;
 
-		if(!empty($args['thumb'])){
-			if(!isset($args['size'])){
-				$args['size']	= wpjam_pick($args, ['width', 'height']);
-
-				self::update_setting('size', $args['size']);
-			}
-
-			if($args['size']){
-				$args	= wpjam_set($args, 'size', wpjam_parse_size($args['size'], $ratio));
-			}
+		if(!isset($options[$post->post_type])){
+			return;
 		}
 
-		return $args;;
-	}
+		$args	= self::get_setting() ?: [];
 
-	public static function get_related($id, $parse=false){
-		return wpjam_get_related_posts($id, self::get_args($parse ? 2 : 1), $parse);
-	}
+		if(current_theme_supports('related-posts')){
+			$support	= get_theme_support('related-posts');
+			$args		= array_merge(is_array($support) ? current($support) : [], wpjam_except($args, ['div_id', 'class', 'auto']));
 
-	public static function on_the_post($post, $wp_query){
-		if($wp_query->is_main_query()
-			&& !$wp_query->is_page()
-			&& $wp_query->is_singular($post->post_type)
-			&& $post->ID == $wp_query->get_queried_object_id()
-		){
-			$options	= self::get_options();
+			add_theme_support('related-posts', $args);
+		}
 
-			if(count($options) > 1){
-				$setting	= self::get_setting('post_types');
-				$options	= $setting ? wpjam_pick($options, $setting) : $options;
+		if(wpjam_is_json_request()){
+			if(!empty($args['thumb']) && !empty($args['size'])){
+				$args['size']	= wpjam_parse_size($args['size'], 2);
 			}
 
-			if(!isset($options[$post->post_type])){
-				return;
-			}
-
-			$id		= $post->ID;
-			$args	= self::get_args();
-
-			current_theme_supports('related-posts') && add_theme_support('related-posts', $args);
-
-			if(wpjam_is_json_request()){
-				empty($args['rendered']) && add_filter('wpjam_post_json', fn($json)=> array_merge($json, $id == $json['id'] ? ['related'=> self::get_related($id, true)] : []), 10);
-			}else{
-				!empty($args['auto']) && add_filter('the_content', fn($content)=> $id == get_the_ID() ? $content.self::get_related($id) : '', 11);
-			}
+			empty($args['rendered']) && wpjam_add_filter('wpjam_post_json', [
+				'callback'	=> fn($json, $id)=> $json+['related'=>wpjam_get_related_posts($id, $args, true)],
+				'check'		=> fn($json, $id, $args)=> wpjam_is(wpjam_get($args, 'query'), 'single', $id),
+				'once'		=> true
+			], 10, 3);
+		}else{
+			!empty($args['auto']) && wpjam_add_filter('the_content', [
+				'callback'	=> fn($content)=> $content.wpjam_get_related_posts(get_the_ID(), $args, false),
+				'check'		=> fn()=> wpjam_is('single', get_the_ID()),
+				'once'		=> true
+			], 11);
 		}
 	}
 
-	public static function shortcode($atts, $content=''){
+	public static function shortcode($atts){
 		return !empty($atts['tag']) ? wpjam_render_query([
 			'post_type'		=> 'any',
 			'no_found_rows'	=> true,
@@ -98,7 +80,7 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 			'post__not_in'	=> [get_the_ID()],
 			'tax_query'		=> [[
 				'taxonomy'	=> 'post_tag',
-				'terms'		=> explode(",", $atts['tag']),
+				'terms'		=> wp_parse_list($atts['tag']),
 				'operator'	=> 'AND',
 				'field'		=> 'name'
 			]]
@@ -106,7 +88,11 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 	}
 
 	public static function add_hooks(){
-		is_admin() || add_action('the_post', [self::class, 'on_the_post'], 10, 2);
+		is_admin() || wpjam_add_action('the_post', [
+			'check'		=> fn($post, $query)=> wpjam_is($query, 'single', $post->ID),
+			'callback'	=> [self::class, 'on_the_post'],
+			'once'		=> true
+		], 10, 2);
 
 		add_shortcode('related', [self::class, 'shortcode']);
 	}

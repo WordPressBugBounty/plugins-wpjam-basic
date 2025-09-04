@@ -17,12 +17,12 @@ class WPJAM_Server_Status{
 
 		if(strpos(ini_get('open_basedir'), ':/proc') !== false){
 			if(@is_readable('/proc/cpuinfo')){
-				$cpus	= explode("\n\n", trim(file_get_contents('/proc/cpuinfo')));
+				$cpus	= wpjam_lines(file_get_contents('/proc/cpuinfo'), "\n\n");
 				$base[]	= count($cpus).'核';
 			}
 			
 			if(@is_readable('/proc/meminfo')){
-				$mems	= explode("\n", trim(file_get_contents('/proc/meminfo')));
+				$mems	= wpjam_lines(file_get_contents('/proc/meminfo'));
 				$mem	= (int)substr(array_find($mems, fn($m) => str_starts_with($m, 'MemTotal:')), 9);
 				$base[]	= round($mem/1024/1024).'G';
 			}
@@ -32,7 +32,7 @@ class WPJAM_Server_Status{
 			}
 		
 			if(@is_readable('/proc/meminfo')){
-				$uptime		= explode(' ', trim(file_get_contents('/proc/uptime')));
+				$uptime		= wpjam_lines(file_get_contents('/proc/uptime'), ' ');
 				$items[]	= ['title'=>'运行时间',	'value'=>human_time_diff(time()-$uptime[0])];
 			}
 
@@ -57,10 +57,10 @@ class WPJAM_Server_Status{
 	public static function version_widget(){
 		global $wpdb, $required_mysql_version, $required_php_version, $wp_version,$wp_db_version, $tinymce_version;
 
-		$http_server	= explode('/', $_SERVER['SERVER_SOFTWARE'])[0];
+		$http	= $_SERVER['SERVER_SOFTWARE'];
 
 		self::output([
-			['title'=>$http_server,	'value'=>$_SERVER['SERVER_SOFTWARE']],
+			['title'=>wpjam_lines($http, '/')[0],	'value'=>$http],
 			['title'=>'MySQL',		'value'=>$wpdb->db_version().'（最低要求：'.$required_mysql_version.'）'],
 			['title'=>'PHP',		'value'=>phpversion().'（最低要求：'.$required_php_version.'）'],
 			['title'=>'Zend',		'value'=>Zend_Version()],

@@ -7,8 +7,8 @@ Version: 2.0
 */
 class WPJAM_Thumbnail extends WPJAM_Option_Model{
 	public static function get_fields(){
-		$taxonomies		= array_filter(get_object_taxonomies('post', 'objects'), fn($v)=> ($v->show_ui && $v->public));
-		$tax_options	= wpjam_map($taxonomies, fn($v, $k)=> wpjam_get_taxonomy_setting($k, 'title'));
+		$tax_options	= wpjam_reduce(get_object_taxonomies('post', 'objects'), fn($c, $v, $k)=> $v->show_ui && $v->public ? wpjam_set($c, $k, wpjam_get_taxonomy_setting($k, 'title')) : $c, []);
+
 		$show_if		= ['term_thumbnail_type', '!=', ''];
 		$term_fields	= [
 			'type'			=> ['options'=>[''=>'关闭分类缩略图', 'img'=>'本地媒体模式', 'image'=>'输入图片链接模式']],
@@ -51,73 +51,64 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 		return apply_filters('wpjam_default_thumbnail_url', $default);
 	}
 
-	public static function filter_post_thumbnail_url($url, $post){
-		if(is_object_in_taxonomy($post, 'category')){
-			foreach(self::get_setting('post_thumbnail_orders') ?: [] as $order){
-				if($order['type'] == 'first'){
-					$value	= wpjam_get_post_first_image_url($post);
-				}elseif($order['type'] == 'post_meta'){
-					if(!empty($order['post_meta'])){
-						$value	= get_post_meta($post->ID, $order['post_meta'], true);
-					}
-				}elseif($order['type'] == 'term'){
-					if($order['taxonomy'] && is_object_in_taxonomy($post, $order['taxonomy'])){
-						$value	= wpjam_found(get_the_terms($post, $order['taxonomy']) ?: [], fn($term)=> wpjam_get_term_thumbnail_url($term));
-					}
+	public static function get_post_thumbnail_url($post){
+		foreach(self::get_setting('post_thumbnail_orders') ?: [] as $order){
+			if($order['type'] == 'first'){
+				$url	= wpjam_get_post_first_image_url($post);
+			}elseif($order['type'] == 'post_meta'){
+				if(!empty($order['post_meta'])){
+					$url	= get_post_meta($post->ID, $order['post_meta'], true);
 				}
-
-				if(!empty($value)){
-					return $value;
+			}elseif($order['type'] == 'term'){
+				if($order['taxonomy'] && is_object_in_taxonomy($post, $order['taxonomy'])){
+					$url	= wpjam_found(get_the_terms($post, $order['taxonomy']) ?: [], fn($term)=> wpjam_get_term_thumbnail_url($term));
 				}
 			}
 
-			return $url ?: self::get_default();
-		}
-
-		return $url;
-	}
-
-	public static function filter_has_post_thumbnail($has, $post){
-		return $has ?: (self::get_setting('auto') && (bool)wpjam_get_post_thumbnail_url($post));
-	}
-
-	public static function filter_post_thumbnail_html($html, $post_id, $post_thumbnail_id, $size, $attr){
-		if(($post = get_post($post_id)) && (!post_type_supports($post->post_type, 'thumbnail') || empty($html))){
-			if(self::get_setting('auto')){
-				$src	= wpjam_get_post_thumbnail_url($post, wpjam_parse_size($size, 2));
-			}else{
-				$images	= wpjam_get_post_images($post, false);
-				$src	= $images ? wpjam_get_thumbnail(wpjam_at($images, 0), wpjam_parse_size($size, 2)) : ''; 
-			}
-
-			if($src){
-				$class	= is_array($size) ? join('x', $size) : $size;
-				$attr	= wp_parse_args($attr, [
-					'src'		=> $src,
-					'class'		=> "attachment-$class size-$class wp-post-image",
-					'decoding'	=> 'async',
-					'loading'	=> 'lazy'
-				]);
-
-				return (string)wpjam_tag('img', $attr)->attr(wpjam_pick(wpjam_parse_size($size), ['width', 'height']));
+			if(!empty($url)){
+				return $url;
 			}
 		}
+	}
 
-		return $html;
+	public static function get_post_thumbnail_html($post_id, $size, $attr){
+		if(self::get_setting('auto')){
+			$src	= wpjam_get_post_thumbnail_url($post_id, wpjam_parse_size($size, 2));
+		}else{
+			$images	= wpjam_get_post_images($post_id, false);
+			$src	= $images ? wpjam_get_thumbnail(wpjam_at($images, 0), wpjam_parse_size($size, 2)) : ''; 
+		}
+
+		if($src){
+			$name	= is_array($size) ? join('x', $size) : $size;
+			$attr	= wp_parse_args($attr, ['src'=>$src, 'class'=>"attachment-$name size-$name wp-post-image", 'decoding'=>'async', 'loading'=>'lazy']);
+
+			return (string)wpjam_tag('img', $attr)->attr(wpjam_pick(wpjam_parse_size($size), ['width', 'height']));
+		}
 	}
 
 	public static function init(){
 		foreach(self::get_setting('term_thumbnail_taxonomies') ?: [] as $tax){
-			is_object_in_taxonomy('post', $tax) && wpjam_get_taxonomy_object($tax)->add_support('thumbnail')->update_arg(wpjam_fill(['thumbnail_type', 'thumbnail_size'], fn($k)=> self::get_setting('term_'.$k)));
+			if(is_object_in_taxonomy('post', $tax) && ($object = wpjam_get_taxonomy_object($tax))){
+				$object->add_support('thumbnail')->update_arg(wpjam_fill(['thumbnail_type', 'thumbnail_size'], fn($k)=> self::get_setting('term_'.$k)));
+			}
 		}
 	}
 
 	public static function add_hooks(){
-		add_filter('has_post_thumbnail',		[self::class, 'filter_has_post_thumbnail'], 10, 2);
-		add_filter('wpjam_post_thumbnail_url',	[self::class, 'filter_post_thumbnail_url'], 1, 2);
-		add_filter('post_thumbnail_html',		[self::class, 'filter_post_thumbnail_html'], 10, 5);
+		self::get_setting('disable_pdf_preview') && add_filter('fallback_intermediate_image_sizes', fn() => []);
 
-		add_filter('fallback_intermediate_image_sizes', fn($sizes) => self::get_setting('disable_pdf_preview') ? [] : $sizes);
+		self::get_setting('auto') && add_filter('has_post_thumbnail', fn($has, $post)=> $has ?: (bool)wpjam_get_post_thumbnail_url($post), 10, 2);
+
+		wpjam_add_filter('wpjam_post_thumbnail_url', [
+			'check'		=> fn($url, $post)=> is_object_in_taxonomy($post, 'category'),
+			'callback'	=> fn($url, $post)=> self::get_post_thumbnail_url($post) ?: ($url ?: self::get_default())
+		], 1, 2);
+
+		wpjam_add_filter('post_thumbnail_html',		[
+			'check'		=> fn($html, $post_id)=> !post_type_supports(get_post_type($post_id), 'thumbnail') || empty($html),
+			'callback'	=> fn($html, $post_id, $post_thumbnail_id, $size, $attr)=> self::get_post_thumbnail_html($post_id, $size, $attr) ?: ''
+		], 10, 5);
 	}
 }
 

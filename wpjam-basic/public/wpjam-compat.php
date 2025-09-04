@@ -178,8 +178,8 @@ function wpjam_throw_if_error($result){
 	return wpjam_if_error($result, 'throw');
 }
 
-function wpjam_remove_postfix($str, $postfix, &$removed=false){
-	return wpjam_remove_suffix($str, $postfix, $removed);
+function wpjam_remove_postfix($str, $postfix){
+	return wpjam_remove_suffix($str, $postfix);
 }
 
 function wpjam_get_plain_text($text){
@@ -274,26 +274,6 @@ function wpjam_get_permastruct($name){
 
 function wpjam_set_permastruct($name, $value){
 	return $GLOBALS['wp_rewrite']->extra_permastructs[$name]['struct']	= $value;
-}
-
-function wpjam_parse_options($options){
-	$parsed	= [];
-
-	foreach($options as $opt => $item){
-		if(is_array($item)){
-			if(isset($item['options'])){
-				$parsed	= array_replace($parsed, wpjam_parse_options($item['options']));
-			}elseif(!empty($item['title'])){
-				$parsed[$opt]	= $item['title'];
-			}elseif(!empty($item['label'])){
-				$parsed[$opt]	= $item['label'];
-			}
-		}else{
-			$parsed[$opt]	= $item;
-		}
-	}
-
-	return $parsed;
 }
 
 function wpjam_get_items($group){
@@ -916,11 +896,12 @@ function wpjam_get_ajax_attributes($name, $data=[]){
 	return wpjam_get_ajax_data_attr($name, $data, '[]');
 }
 
-function wpjam_register_route_module($name, $args){
-	return wpjam_register_route($name, $args);
+function wpjam_register_route($module, $args){
+	$module && wpjam('route[]', $module, $args);
 }
 
 function_alias('is_login', 'wpjam_is_login');
+function_alias('wpjam_register_route', 'wpjam_register_route_module');
 function_alias('wp_cache_delete_multiple', 'wp_cache_delete_multi');
 function_alias('wp_cache_get_multiple', 'wp_cache_get_multi');
 
