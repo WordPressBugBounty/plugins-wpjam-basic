@@ -147,6 +147,11 @@ class WPJAM_Postviews{
 		$views	= ($begin && $end) ? rand(min($begin, $end), max($begin, $end)) : 0;
 		
 		$views && add_action('wp_after_insert_post', fn($post_id, $post, $update)=> (!$update && $post->post_type != 'attachment' && is_post_type_viewable($post->post_type)) && update_post_meta($post_id, 'views', $views), 999, 3);
+
+		wpjam_hook('once', 'wpjam_post_json', [
+			'callback'	=> fn($json, $id)=> $json+['views'=>wpjam_update_post_views($id)],
+			'check'		=> fn($json, $id, $args)=> wpjam_is(wpjam_get($args, 'query'), 'single, page', $id)
+		], 10, 3);
 	}
 }
 

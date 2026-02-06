@@ -103,7 +103,7 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 		$submited	= (int)self::get_setting('baidu_zz_submited');
 
 		if(time() - (int)self::get_setting('baidu_zz_last') < DAY_IN_SECONDS){
-			return $submited == -1 ? ['notice_type'=>'info', 'errmsg'=>'所有页面都已提交'] : wp_die('批量提交的配额已用完，请稍后重试');
+			return $submited == -1 ? ['notice'=>'所有页面都已提交'] : wp_die('批量提交的配额已用完，请稍后重试');
 		}
 
 		if($submited == -1){
@@ -142,15 +142,12 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 			self::update_setting('baidu_zz_submited', -1);
 
 			return [
-				'notice_type'	=> 'success',
-				'errmsg'		=> '提交成功，本次提交了'.$number.'个页面。',
+				'notice'	=> '提交成功，本次提交了'.$number.'个页面。',
 			];
 		}else{
 			return [
-				'done'			=> 0,
-				'errmsg'		=> '批量提交中，请勿关闭浏览器，本次提交了'.$number.'个页面。',
-				'notice_type'	=> 'info',
-				'args'			=> http_build_query(['offset'=>$number])
+				'notice'	=> ['type'=>'info', 'message'=>'批量提交中，请勿关闭浏览器，本次提交了'.$number.'个页面。'],
+				'args'		=> ['offset'=>$number]
 			];
 		}
 	}

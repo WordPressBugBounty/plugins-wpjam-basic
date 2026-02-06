@@ -81,8 +81,7 @@ if(class_exists('Memcached')){
 
 	if(!isset($_GET['debug']) || $_GET['debug'] != 'sql'){
 		function wp_cache_init(){
-			global $wp_object_cache;
-			$wp_object_cache	= new WP_Object_Cache();
+			$GLOBALS['wp_object_cache']	= new WP_Object_Cache();
 		}
 	}
 

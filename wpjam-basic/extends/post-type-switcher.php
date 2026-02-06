@@ -28,7 +28,7 @@ if(is_admin()){
 				return is_wp_error($result) ? $result : ['type'=>'redirect', 'url'=>admin_url('edit.php?post_type='.$ptype.'&id='.$post_id)];
 			}
 
-			return ['errmsg'=>'未修改文章类型'];
+			return ['notice'=>'未修改文章类型'];
 		}
 
 		public static function on_after_insert_post($post_id, $post){

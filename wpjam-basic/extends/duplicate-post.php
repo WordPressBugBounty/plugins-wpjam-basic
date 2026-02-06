@@ -11,36 +11,26 @@ is_admin() && wpjam_register_list_table_action('quick_duplicate', [
 	'direct'	=> true,
 	'data_type'	=> 'post_type',
 	'callback'	=> 'wpjam_duplicate_post',
-	'post_type'	=> fn($ptype) => apply_filters('wpjam_post_type_duplicatable', $ptype != 'attachment', $ptype),
+	'post_type'	=> fn($v) => $v != 'attachment' && wpjam_get_post_type_setting($v, 'duplicatable') !== false,
 ]);
 
 function wpjam_duplicate_post($post_id){
-	$post_arr	= get_post($post_id, ARRAY_A);
-	$post_arr	= wpjam_except($post_arr, ['ID', 'post_date_gmt', 'post_modified_gmt', 'post_name']);
+	$data	= wpjam_except(get_post($post_id, ARRAY_A), ['ID', 'post_date_gmt', 'post_modified_gmt', 'post_name']);
+	$added	= wpjam_try('WPJAM_Post::insert', array_merge($data, [
+		'post_status'	=> 'draft',
+		'post_author'	=> get_current_user_id(),
+		'post_date'		=> wpjam_date('Y-m-d H:i:s'),
+		'post_modified'	=> wpjam_date('Y-m-d H:i:s'),
+		'tax_input'		=> wpjam_fill(get_object_taxonomies($data['post_type']), fn($tax)=> wp_get_object_terms($post_id, $tax, ['fields'=>'ids']))
+	]));
 
-	$post_arr['post_status']	= 'draft';
-	$post_arr['post_author']	= get_current_user_id();
-	$post_arr['post_date']		= $post_arr['post_modified']	= wpjam_date('Y-m-d H:i:s');
-
-	$post_arr['tax_input']		= [];
-
-	foreach(get_object_taxonomies($post_arr['post_type']) as $taxonomy){
-		$post_arr['tax_input'][$taxonomy]	= wp_get_object_terms($post_id, $taxonomy, ['fields' => 'ids']);
-	}
-
-	$new_post_id	= WPJAM_Post::insert($post_arr);
-
-	if(!is_wp_error($new_post_id)){
-		$meta_keys	= get_post_custom_keys($post_id) ?: [];
-
-		foreach($meta_keys as $meta_key){
-			if($meta_key == '_thumbnail_id' || ($meta_key != 'views' && !is_protected_meta($meta_key, 'post'))){
-				foreach(get_post_meta($post_id, $meta_key) as $meta_value){
-					add_post_meta($new_post_id, $meta_key, $meta_value, false);
-				}
+	foreach(get_post_custom_keys($post_id) ?: [] as $key){
+		if($key == '_thumbnail_id' || ($key != 'views' && !is_protected_meta($key, 'post'))){
+			foreach(get_post_meta($post_id, $key) as $value){
+				add_post_meta($added, $key, $value, false);
 			}
 		}
 	}
 
-	return $new_post_id;
+	return $added;
 }

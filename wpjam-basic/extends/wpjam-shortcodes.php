@@ -65,7 +65,7 @@ class WPJAM_Shortcode{
 
 	public static function filter_video_override($override, $attr, $content){
 		$src	= $attr['src'] ?? $content;
-		$src	= $src ? wpjam_found(wpjam('video_parser'), fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : '') : '';
+		$src	= $src ? wpjam_find(wpjam('video_parser'), fn($v)=> $v, fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : '') : '';
 
 		if($src){
 			$attr	= shortcode_atts(['width'=>0, 'height'=>0], $attr);

@@ -48,7 +48,7 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 
 		if(current_theme_supports('related-posts')){
 			$support	= get_theme_support('related-posts');
-			$args		= array_merge(is_array($support) ? current($support) : [], wpjam_except($args, ['div_id', 'class', 'auto']));
+			$args		= array_merge(is_array($support) ? array_first($support) : [], wpjam_except($args, ['div_id', 'class', 'auto']));
 
 			add_theme_support('related-posts', $args);
 		}
@@ -58,22 +58,20 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 				$args['size']	= wpjam_parse_size($args['size'], 2);
 			}
 
-			empty($args['rendered']) && wpjam_add_filter('wpjam_post_json', [
+			empty($args['rendered']) && wpjam_hook('once', 'wpjam_post_json', [
 				'callback'	=> fn($json, $id)=> $json+['related'=>wpjam_get_related_posts($id, $args, true)],
-				'check'		=> fn($json, $id, $args)=> wpjam_is(wpjam_get($args, 'query'), 'single', $id),
-				'once'		=> true
+				'check'		=> fn($json, $id, $args)=> wpjam_is(wpjam_get($args, 'query'), 'single', $id)
 			], 10, 3);
 		}else{
-			!empty($args['auto']) && wpjam_add_filter('the_content', [
+			!empty($args['auto']) && wpjam_hook('once', 'the_content', [
 				'callback'	=> fn($content)=> $content.wpjam_get_related_posts(get_the_ID(), $args, false),
-				'check'		=> fn()=> wpjam_is('single', get_the_ID()),
-				'once'		=> true
+				'check'		=> fn()=> wpjam_is('single', get_the_ID())
 			], 11);
 		}
 	}
 
 	public static function shortcode($atts){
-		return !empty($atts['tag']) ? wpjam_render_query([
+		return !empty($atts['tag']) ? wpjam_query('render', [
 			'post_type'		=> 'any',
 			'no_found_rows'	=> true,
 			'post_status'	=> 'publish',
@@ -88,10 +86,9 @@ class WPJAM_Related_Posts extends WPJAM_Option_Model{
 	}
 
 	public static function add_hooks(){
-		is_admin() || wpjam_add_action('the_post', [
+		is_admin() || wpjam_hook('once', 'the_post', [
 			'check'		=> fn($post, $query)=> wpjam_is($query, 'single', $post->ID),
-			'callback'	=> [self::class, 'on_the_post'],
-			'once'		=> true
+			'callback'	=> [self::class, 'on_the_post']
 		], 10, 2);
 
 		add_shortcode('related', [self::class, 'shortcode']);

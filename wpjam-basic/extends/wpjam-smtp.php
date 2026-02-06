@@ -33,29 +33,24 @@ class WPJAM_SMTP extends WPJAM_Option_Model{
 		];
 	}
 
-	public static function on_phpmailer_init($phpmailer){
-		if(!array_all(['host', 'user', 'pass'], fn($k)=> self::get_setting($k))){
-			return;
-		}
-
-		$phpmailer->Mailer		= 'smtp';
-		$phpmailer->SMTPAuth	= true;
-		$phpmailer->SMTPSecure	= self::get_setting('ssl', 'ssl');
-		$phpmailer->Host		= self::get_setting('host'); 
-		$phpmailer->Port		= self::get_setting('port', '465');
-		$phpmailer->Username	= self::get_setting('user');
-		$phpmailer->Password	= self::get_setting('pass');
-
-		$from_name	= self::get_setting('mail_from_name', '');
-		$reply_to	= self::get_setting('reply_to_mail');
-
-		$phpmailer->setFrom(self::get_setting('user'), $from_name, false);
-
-		$reply_to && $phpmailer->AddReplyTo($reply_to, $from_name);
-	}
-
 	public static function add_hooks(){
-		add_action('phpmailer_init',	[self::class, 'on_phpmailer_init']);
+		if(array_all(['host', 'user', 'pass'], fn($k)=> self::get_setting($k))){
+			add_action('phpmailer_init', function($phpmailer){
+				$phpmailer->Mailer		= 'smtp';
+				$phpmailer->SMTPAuth	= true;
+				$phpmailer->SMTPSecure	= self::get_setting('ssl', 'ssl');
+				$phpmailer->Host		= self::get_setting('host'); 
+				$phpmailer->Port		= self::get_setting('port', '465');
+				$phpmailer->Username	= self::get_setting('user');
+				$phpmailer->Password	= self::get_setting('pass');
+
+				($reply_to	= self::get_setting('reply_to_mail')) && $phpmailer->AddReplyTo($reply_to, self::get_setting('mail_from_name', ''));
+			});
+
+			add_filter('wp_mail_from', fn()=> self::get_setting('user'));
+
+			($from_name = self::get_setting('mail_from_name')) && add_filter('wp_mail_from_name', fn()=> $from_name);
+		}
 
 		(wp_doing_ajax() || wpjam_is_json_request()) && add_action('wp_mail_failed', 'wpjam_send_json');
 	}

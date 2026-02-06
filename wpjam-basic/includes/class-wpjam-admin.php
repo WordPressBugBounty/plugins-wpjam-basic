@@ -1,40 +1,5 @@
 <?php
 class WPJAM_Admin extends WPJAM_Args{
-	public function call($key, ...$args){
-		if(method_exists($this, $key)){
-			return $this->$key(...$args);
-		}
-
-		$value	= $this->get_arg($key);
-
-		if(!$args){
-			return $value ?? $this->get_arg('vars['.$key.']');
-		}
-	
-		if(is_object($value)){
-			return count($args) >= 2 ? ($value->{$args[0]} = $args[1]) : $value->{$args[0]};
-		}
-
-		$value	= $args[0];
-
-		if(in_array($key, ['script', 'style'])){
-			$key	.= '[]';
-			$value	= is_array($value) ? implode("\n", $value) : $value;
-		}elseif($key == 'pages[]'){
-			$slug	= wpjam_pull($value, 'menu_slug');
-			$parent	= wpjam_pull($value, 'parent');
-			$key	= 'pages['.($parent ?: $slug).']';
-			$subs	= array_merge($this->get_arg($key.'[subs]', []), $parent ? [$slug=>$value] : $value['subs'] ?? []);
-			$value	= array_merge($this->get_arg($key, []), ($parent ? [] : $value), ['subs'=>$subs]);
-		}elseif($key == 'query_data'){
-			$value	= array_merge($this->get_arg($key, []), array_map(fn($v)=> is_null($v) ? $v : (is_array($v) ? wp_die('query_data 不能为数组') : sanitize_textarea_field($v)), $value));
-		}
-
-		is_null($value) ? $this->delete_arg($key) : $this->update_arg($key, $value);
-
-		return $value;
-	}
-
 	public function prefix(){
 		return is_network_admin() ? 'network_' : (is_user_admin() ? 'user_' : '');
 	}
@@ -43,19 +8,24 @@ class WPJAM_Admin extends WPJAM_Args{
 		return ($this->prefix().'admin_url')($path);
 	}
 
-	public function chart($method, ...$args){
-		if(is_object($method)){
-			return $this->chart	= $method;
+	public function error($msg='', $type='success'){
+		if($msg === ''){
+			return wpjam_map($this->error ?: [], fn($e)=> wpjam_echo(wpjam_tag('div', ['is-dismissible', 'notice', 'notice-'.$e['type']], ['p', [], $e['msg']])));	
 		}
 
-		return $this->chart ? $this->chart->$method(...$args) : null;
+		if(is_wp_error($msg)){
+			$msg	= $msg->get_error_message();
+			$type	= 'error';
+		}
+
+		$msg && $type && $this->update_arg('error[]', compact('msg', 'type'));
 	}
 
 	public function enqueue(){
 		$ver	= get_plugin_data(WPJAM_BASIC_PLUGIN_FILE)['Version'];
 		$static	= wpjam_url(dirname(__DIR__), 'relative').'/static';
 
-		wp_enqueue_media($this->screen->base == 'post' ? ['post'=>wpjam_get_admin_post_id()] : []);
+		wp_enqueue_media(wpjam_pick($this, ['post_id']));
 		wp_enqueue_style('wpjam-style', $static.'/style.css', ['thickbox', 'wp-color-picker', 'editor-buttons'], $ver);
 		wp_enqueue_script('wpjam-script', $static.'/script.js', ['jquery', 'thickbox', 'wp-color-picker', 'jquery-ui-sortable', 'jquery-ui-tabs', 'jquery-ui-draggable', 'jquery-ui-autocomplete'], $ver);
 		wp_enqueue_script('wpjam-form', $static.'/form.js', ['wpjam-script'], $ver);
@@ -65,29 +35,29 @@ class WPJAM_Admin extends WPJAM_Args{
 		$this->script	&& wp_add_inline_script('wpjam-script', "jQuery(function($){".preg_replace('/^/m', "\t", "\n".implode("\n\n", $this->script))."\n});");
 	}
 
-	public function notices(){
-		WPJAM_Notice::render();
+	public function load(...$args){
+		if(count($args) >= 2){
+			$map	= ['builtin_page'=>'base', 'plugin_page'=>'plugin_page'];
+			$type	= $args[0] ?? array_find_key($map, fn($v)=> isset($args[1][$v]));
 
-		wpjam_map($this->get_arg('error[]'), fn($e)=> wpjam_echo(wpjam_tag('div', ['is-dismissible', 'notice', 'notice-'.$e['type']], ['p', [], $e['msg']])));
-	}
+			return isset($map[$type]) && $this->update_arg($type.'_load[]', $args[1]);
+		}
 
-	public function load($screen=''){
-		if($screen){
+		if($screen = array_shift($args)){
 			$this->screen	= $screen;
 			$this->vars		= ['screen_id'=>$screen->id]+array_filter(wpjam_pick($screen, ['post_type', 'taxonomy']));
+
+			$screen->base == 'post' && ($this->post_id = (int)($_GET['post'] ?? ($_POST['post_ID'] ?? 0)));
 		}
 
 		if($this->plugin_page){
 			$type	= 'plugin_page';
 			$object	= $this->current_tab ?: $this->plugin_page;
-			$args	= [$object->menu_slug, ''];
+			$args	= [$object->menu_slug, $this->current_tab ? $object->tab_slug : ''];
 
-			$this->vars	+= ['plugin_page'=>$args[0]];
+			$this->vars	+= ['plugin_page'=>$args[0]]+($args[1] ? ['current_tab'=>$args[1]] : []);
 
-			if($this->current_tab){
-				$args[1]	= $object->tab_slug;
-				$this->vars	+= ['current_tab'=>$args[1]];
-			}elseif($screen && str_contains($screen->id, '%')){
+			if(!$args[1] && $screen && str_contains($screen->id, '%')){
 				$screen->id	= preg_replace_callback('/^(.*?)(_page_.*)/', fn($m)=> (array_search($m[1], $GLOBALS['admin_page_hooks']) ?: $m[1]).$m[2], $screen->id);
 			}
 		}else{
@@ -145,20 +115,15 @@ class WPJAM_Admin extends WPJAM_Args{
 				return true;
 			}
 		}), 'order', 'desc', 10) as $load){
-			!empty($load['page_file']) && wpjam_map((array)$load['page_file'], fn($file)=> is_file($file) && include $file);
+			wpjam_map((array)($load['page_file'] ?? []), fn($file)=> is_file($file) && include $file);
 
-			$cb	= $load['callback'] ?? '';
-			$cb	= $cb ?: (($model = $load['model'] ?? '') ? array_find([[$model, 'load'], [$model, $type.'_load']], fn($cb)=> method_exists(...$cb)) : '');
-
-			wpjam_call($cb, ...$args);
+			wpjam_call(wpjam_get($load, 'callback') ?: [($model = $load['model'] ?? ''), array_find(['load', $type.'_load'], fn($m)=> method_exists($model, $m))], ...$args);
 		}
 
-		$cb	= $this->plugin_page ? [$object, 'load'] : ['WPJAM_Builtin_Page', 'load'];
-
-		wpjam_if_error(wpjam_catch($cb, $screen), fn($e)=> wpjam_add_admin_error($e));
+		wpjam_trap($this->plugin_page ? [$object, 'load'] : 'WPJAM_Builtin_Page::load', $screen, fn($e)=> $this->error($e));
 
 		add_action('admin_enqueue_scripts',	[$this, 'enqueue'], 9);
-		add_action('all_admin_notices',		[$this, 'notices'], 9);
+		add_action('all_admin_notices',		[$this, 'error'], 9);
 	}
 
 	public function init(){
@@ -173,19 +138,22 @@ class WPJAM_Admin extends WPJAM_Args{
 				return;
 			}
 
-			wpjam_add_admin_ajax('wpjam-page-action', [
+			wpjam_ajax('wpjam-page-action', [
+				'admin'			=> true,
 				'nonce_action'	=> fn($data)=> $data['page_action'] ?? '',
-				'callback'		=> fn($data)=> ($object	= WPJAM_Page_Action::get($data['page_action'] ?? '')) ? $object->callback($data['action_type']) : wpjam_page_action_compat($data),
+				'callback'		=> fn($data)=> ($object	= wpjam_get_page_action($data['page_action'] ?? '')) ? $object($data['action_type']) : wpjam_page_action_compat($data),
 			]);
 
-			wpjam_add_admin_ajax('wpjam-query', [
+			wpjam_ajax('wpjam-query', [
+				'admin'		=> true,
 				'fields'	=> ['data_type'=> ['required'=>true]],
-				'callback'	=> fn($data)=> ['items'=>($object = WPJAM_Data_Type::get_instance($data['data_type'], $data['query_args'])) ? wpjam_if_error($object->query_items($data['query_args']), 'throw') : []]
+				'callback'	=> fn($data)=> ['items'=>($cb = [wpjam_get_data_type($data['data_type'], $data['query_args']), 'query_items'])[0] ? wpjam_try($cb, $data['query_args']) : []]
 			]);
 
-			wpjam_add_admin_ajax('wpjam-upload', [
+			wpjam_ajax('wpjam-upload', [
+				'admin'			=> true,
 				'nonce_action'	=> fn($data)=> 'upload-'.$data['name'],
-				'callback'		=> fn($data)=> wpjam_upload($data['name'], ['mimes'=>$data['mimes']])
+				'callback'		=> fn($data)=> wpjam_upload($data['name'], ['accept'=>$data['accept']])
 			]);
 
 			$page	= $GLOBALS['plugin_page'] = $_POST['plugin_page'] ?? '';
@@ -236,15 +204,10 @@ class WPJAM_Admin extends WPJAM_Args{
 }
 
 class WPJAM_Page_Action extends WPJAM_Args{
-	public function is_allowed($type=''){
-		return wpjam_current_user_can(($this->capability ?? ($type ? 'manage_options' : '')), $this->name);
-	}
-
-	public function callback($type=''){
+	public function __invoke($type=''){
 		if($type == 'form'){
 			$title	= wpjam_get_post_parameter('page_title');
 			$key	= $title ? '' : array_find(['page_title', 'button_text', 'submit_text'], fn($k)=> $this->$k && !is_array($this->$k));
-			$title	= $key ? $this->$key : $title;
 
 			return [
 				'type'	=> 'form',
@@ -252,86 +215,64 @@ class WPJAM_Page_Action extends WPJAM_Args{
 				'width'	=> (int)$this->width,
 
 				'modal_id'		=> $this->modal_id,
-				'page_title'	=> $title
+				'page_title'	=> $key ? $this->$key : $title
 			];
 		}
 
 		$this->is_allowed($type) || wp_die('access_denied');
 
-		$response	= $this->response ?? $this->name;
-		$callback	= $this->callback;
-		$args		= [$this->name];
+		$args	= $this->validate ? [$this->get_fields()->get_parameter('data')] : [];
+		$submit	= $type == 'submit' ? (wpjam_get_post_parameter('submit_name') ?: $this->name) : '';
+		$button	= $submit ? wpjam_button($this, $submit) : [];
+		$type	= $button['response'] ?? ($this->response ?? $this->name);
+		$cb		= $button['callback'] ?? $this->callback;
+		$result	= ($cb ? wpjam_try($cb, ...[...$args, $submit ?: $this->name]) : null) ?? wpjam_throw('invalid_callback');
+		$result	= is_array($result) ? wpjam_notice($result)+$result : (is_string($result) ? [($type == 'redirect' ? 'url' : 'data')=>$result] : []);
+		$result	+= ['type'=>$type]+($this->dismiss ? ['dismiss'=>true] : []);
+		$result	+= $result['type'] == 'redirect' ? ['target'=>$this->target ?: '_self'] : [];
 
-		if($type == 'submit'){
-			$submit		= $args[] = wpjam_get_post_parameter('submit_name') ?: $this->name;
-			$button		= $this->get_submit_button($submit);
-			$callback	= $button['callback'] ?? $callback;
-			$response	= $button['response'] ?? $response;
-		}
+		return apply_filters('wpjam_ajax_response', $result);
+	}
 
-		(!$callback || !is_callable($callback)) && wp_die('无效的回调函数');
-
-		$result	= wpjam_try($callback, ...($this->validate ? [$this->get_fields()->get_parameter('data'), ...$args] : $args));
-		$result	= is_null($result) ? wp_die('回调函数没有正确返回') : (is_array($result) ? $result : (is_string($result) ? [($response == 'redirect' ? 'url' : 'data') => $result] : []));
-
-		$response	= array_merge(['type'=>$response], $result)+($this->dismiss ? ['dismiss'=>true] : []);
-		$response	+= $response['type'] == 'redirect' ? ['target'=>$this->target ?: '_self'] : [];
-
-		return apply_filters('wpjam_ajax_response', $response);
+	public function is_allowed($type=''){
+		return wpjam_can(($this->capability ?? ($type ? 'manage_options' : '')), $this->name);
 	}
 
 	public function render(){
-		return wpjam_if_error(wpjam_catch([$this, 'get_form']), 'die');
-	}
-
-	public function get_submit_button($name=null){
-		$button = maybe_callback($this->submit_text, $this->name) ?? wp_strip_all_tags($this->page_title);
-		$button	= is_array($button) ? $button : [$this->name => $button];
-
-		return WPJAM_AJAX::parse_submit_button($button, $name);
+		return wpjam_trap([$this, 'get_form'], 'die');
 	}
 
 	public function get_button($args=[]){
 		if($this->is_allowed()){
-			$data	= wpjam_pull($args, 'data') ?: [];
-			$text	= $this->update_args($args)->button_text ?? '保存';
+			$text	= $this->update_args(wpjam_except($args, 'data'))->button_text ?? '保存';
 
 			return wpjam_tag(($this->tag ?: 'a'), [
 				'title'	=> $this->page_title ?: $text,
 				'style'	=> $this->style,
 				'class'	=> $this->class ?? 'button-primary large',
-				'data'	=> $this->generate_data_attr(['data'=>$data])
+				'data'	=> ['action'=>$this->name, 'nonce'=>wp_create_nonce($this->name)]+$this->pick(['direct', 'confirm'])+[
+					'title'	=> $this->page_title ?: $this->button_text,
+					'data'	=> wp_parse_args($args['data'] ?? [], ($this->data ?: [])),
+				]
 			], $text)->add_class('wpjam-button');
 		}
 	}
 
 	public function get_form(){
 		if($this->is_allowed()){
-			return $this->get_fields()->render()->wrap('form', [
-				'novalidate',
-				'method'	=> 'post',
-				'action'	=> '#',
+			return $this->get_fields()->wrap('form', [
 				'id'		=> $this->form_id ?: 'wpjam_form',
-				'data'		=> $this->generate_data_attr([], 'form')
-			])->append($this->get_submit_button());
+				'button'	=> wpjam_button($this),
+				'data'		=> ['action'=>$this->name, 'nonce'=>wp_create_nonce($this->name)]
+			]);
 		}
 	}
 
-	protected function get_fields(){
-		$fields	= wpjam_try(fn()=> maybe_callback($this->fields, $this->name)) ?: [];
-		$data	= wpjam_if_error(wpjam_call($this->data_callback, $this->name, $fields), 'throw') ?: [];
+	public function get_fields(){
+		$fields	= wpjam_try('maybe_callback', $this->fields, $this->name) ?: [];
+		$data	= is_callable($this->data_callback) ? wpjam_try($this->data_callback, $this->name, $fields) : [];
 
-		return WPJAM_Fields::create($fields, wpjam_merge($this->args, ['data'=>$data]));
-	}
-
-	public function generate_data_attr($args=[], $type='button'){
-		return [
-			'action'	=> $this->name,
-			'nonce'		=> wp_create_nonce($this->name)
-		] + ($type == 'button' ? $this->pick(['direct', 'confirm'])+[
-			'title'		=> $this->page_title ?: $this->button_text,
-			'data'		=> wp_parse_args(($args['data'] ?? []), ($this->data ?: [])),
-		] : []);
+		return wpjam_fields($fields, wpjam_merge($this->args, ['data'=>$data ?: []]));
 	}
 
 	public static function get($name){
@@ -357,26 +298,24 @@ class WPJAM_Dashboard extends WPJAM_Args{
 		$widgets	= maybe_callback($this->widgets, $this->name) ?: [];
 		$widgets	= array_merge($widgets, array_filter(wpjam_admin('widgets[]'), [$this, 'is_available']));
 
-		foreach($widgets as $id => $widget){
-			$id	= $widget['id'] ?? $id;
-
+		foreach($widgets as $id => $w){
 			add_meta_box(
-				$id,
-				$widget['title'],
-				$widget['callback'] ?? wpjam_get_filter_name($id, 'dashboard_widget_callback'),
+				$w['id'] ?? $id,
+				$w['title'],
+				$w['callback'] ?? wpjam_get_filter_name($w['id'] ?? $id, 'dashboard_widget_callback'),
 				get_current_screen(),
-				$widget['context'] ?? 'normal',	// 位置，normal：左  side：右
-				$widget['priority'] ?? 'core',
-				$widget['args'] ?? []
+				$w['context'] ?? 'normal',
+				$w['priority'] ?? 'core',
+				$w['args'] ?? []
 			);
 		}
 	}
 
 	public function render(){
-		$panel	= wpjam_ob_get_contents($this->welcome_panel, $this->name);
+		$panel	= wpjam_ob($this->welcome_panel, $this->name);
 		$panel	= $panel ? wpjam_tag('div', ['id'=>'welcome-panel', 'class'=>'welcome-panel wpjam-welcome-panel'], $panel) : '';
 
-		return wpjam_tag('div', ['id'=>'dashboard-widgets-wrap'], wpjam_ob_get_contents('wp_dashboard'))->before($panel);
+		return wpjam_tag('div', ['id'=>'dashboard-widgets-wrap'], wpjam_ob('wp_dashboard'))->before($panel);
 	}
 
 	private function is_available($widget){
@@ -407,22 +346,10 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 		return $this->pull('subs['.$slug.']') ?: array_filter(['menu_title'=>$this->sub_title])+wpjam_except($this->args, ['position', 'subs', 'page_title']);
 	}
 
-	public function parse_subs($parent=null){
-		$slug	= $this->menu_slug;
-		$subs	= ($parent ? [] : [$slug=>$this->get_sub($slug)])+wpjam_sort($this->subs, fn($v)=> ($v['order'] ?? 10) - ($v['position'] ?? 10)*1000);
-
-		wpjam_map($subs, fn($sub, $s)=> $this->parse($sub, $s, $parent ?: $slug));
-	}
-
 	public function parse($args, $slug, $parent=''){
 		if(wp_doing_ajax()){
-			$this->args	= $args;
-
-			if($this->subs){
-				$args	= $this->get_sub($slug);
-			}else{
-				$parent	= '';
-			}
+			$this->args			= $args;
+			[$args, $parent]	= $this->subs ? [$this->get_sub($slug), $parent] : [$args, ''];
 		}elseif(!$this->builtins){
 			$map	= ['appearance'=>'themes', 'settings'=>'options', 'profile'=>'users'];
 
@@ -430,42 +357,44 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 		}
 
 		$this->args	= $args+['menu_slug'=>$slug];
+		$slug		= $this->menu_slug;
+		$builtin	= $parent ? '' : ($this->builtins[$slug] ?? '');
 
-		if(!$parent && ($v	= $this->builtins[$slug] ?? '')){
-			return $this->parse_subs($v);
-		}
+		if(!$builtin){
+			$path	= str_contains($parent, '.php') ? $parent : 'admin.php';
 
-		$path	= str_contains($parent, '.php') ? $parent : 'admin.php';
-
-		if(!$this->menu_title || !$this->is_available(['network'=>$this->pull('network', ($path == 'admin.php'))])){
-			return;
-		}
-
-		$this->page_title	??= $this->menu_title;
-		$this->capability	??= 'manage_options';
-
-		if(!str_contains($slug, '.php')){
-			$this->admin_url = add_query_arg(['page'=>$slug], $path);
-
-			if(!$this->query_data()){
+			if(!$this->menu_title || !$this->is_available(['network'=>$this->pull('network', ($path == 'admin.php'))])){
 				return;
 			}
 
-			$cb	= '__return_true';
-		}else{
-			$cb	= null;
+			$this->page_title	??= $this->menu_title;
+			$this->capability	??= 'manage_options';
 
-			str_starts_with($slug, $GLOBALS['pagenow']) && array_all(wp_parse_args(parse_url($slug, PHP_URL_QUERY)), fn($v, $k)=> $v == wpjam_get_parameter($k)) && add_filter('parent_file', fn()=> $parent ?: $slug);
+			if(!str_contains($slug, '.php')){
+				$this->admin_url = add_query_arg(['page'=>$slug], $path);
+
+				if(!$this->query_data()){
+					return;
+				}
+
+				$cb	= '__return_true';
+			}else{
+				str_starts_with($slug, $GLOBALS['pagenow']) && array_all(wp_parse_args(parse_url($slug, PHP_URL_QUERY)), fn($v, $k)=> $v == wpjam_get_parameter($k)) && add_filter('parent_file', fn()=> $parent ?: $slug);
+			}
+
+			$object	= ($this->is_current() && ($parent || (!$parent && !$this->subs))) ? wpjam_admin('plugin_page', wp_clone($this)) : null;
+			$args	= [$this->page_title, $this->menu_title, $this->capability, $slug, ($object ? [$object, 'render'] : ($cb ?? null)), $this->position];
+			$icon	= $parent ? '' : ($this->icon ? (str_starts_with($this->icon, 'dashicons-') ? '' : 'dashicons-').$this->icon : '');
+			$hook	= $parent ? add_submenu_page($parent, ...$args) : add_menu_page(...wpjam_add_at($args, -1, $icon));
+
+			$object && wpjam_admin('page_hook', $hook);
 		}
 
-		$object	= ($this->is_current() && ($parent || (!$parent && !$this->subs))) ? wpjam_admin('plugin_page', wp_clone($this)) : null;
-		$args	= [$this->page_title, $this->menu_title, $this->capability, $slug, ($object ? [$object, 'render'] : $cb), $this->position];
-		$icon	= $parent ? '' : ($this->icon ? (str_starts_with($this->icon, 'dashicons-') ? '' : 'dashicons-').$this->icon : '');
-		$hook	= $parent ? add_submenu_page($parent, ...$args) : add_menu_page(...wpjam_add_at($args, -1, $icon));
+		if(!$parent && ($builtin || $this->subs)){
+			$subs	= ($builtin ? [] : [$slug=>$this->get_sub($slug)])+wpjam_sort($this->subs, fn($v)=> ($v['order'] ?? 10) - ($v['position'] ?? 10)*1000);
 
-		$object && wpjam_admin('page_hook', $hook);
-
-		$this->subs && !$parent && $this->parse_subs();
+			wpjam_map($subs, fn($sub, $s)=> $this->parse($sub, $s, $builtin ?: $slug));
+		}
 	}
 
 	private function is_available($args){
@@ -502,11 +431,9 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 	}
 
 	private function include(){
-		if($cb = $this->pull('load_callback')){	// load_callback 优先于文件加载执行，如果不存在，尝试先加载文件
-			!is_callable($cb) && $this->include();
-
-			wpjam_call($cb, $this->name);
-		}
+		$cb	= $this->pull('load_callback');
+		$cb && !is_callable($cb) && $this->include();	// load_callback 优先文件加载，如不存在，尝试先加载文件
+		$cb && wpjam_call($cb, $this->name);
 
 		wpjam_map((array)$this->pull(($this->tab_slug ? 'tab' : 'page').'_file'), fn($f)=> include($f));
 	}
@@ -519,25 +446,23 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 		$this->defaults();
 		$this->include();
 
-		$type	= $this->type;
-
-		do_action('wpjam_plugin_page', $this, $type);
+		do_action('wpjam_plugin_page', $this, ($type = $this->type));
 
 		if($type && $type != 'tab'){
 			$name	= $this->{$type.'_name'} ?: $this->menu_slug;
-			$object	= $this->preprocess($type, $name);
+			$object	= $this->page_object($type, $name, 'preprocess');
 		}
 
 		if($this->data_type){
 			$data_type	= wpjam_admin('data_type', $this->data_type);
-			$dt_object	= wpjam_get_data_type_object($data_type, $this->args);
+			$dt_object	= wpjam_get_data_type($data_type, $this->args);
 
 			$dt_object && $dt_object->meta_type && wpjam_admin('meta_type', $dt_object->meta_type);
 
 			in_array($data_type, ['post_type', 'taxonomy']) && $this->$data_type && !wpjam_admin('screen', $data_type) && wpjam_admin('screen', $data_type, $this->$data_type);
 		}
 
-		$this->chart	&& wpjam_admin('chart', WPJAM_Chart::get_instance($this->chart));
+		$this->chart	&& wpjam_chart(is_array($this->chart) ? $this->chart : []);
 		$this->editor	&& add_action('admin_footer', 'wp_enqueue_editor');
 
 		$GLOBALS['current_admin_url']	= wpjam_admin('url', $this->admin_url);
@@ -546,18 +471,13 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 			$GLOBALS['current_tab']	= wpjam_get_parameter(...(wp_doing_ajax() ? ['current_tab', [], 'POST'] : ['tab'])) ?: null;
 
 			$tabs	= $this->get_arg('tabs', [], 'callback');
-			$tabs	= wpjam_reduce(wpjam_admin('tabs[]'), fn($c, $v, $k)=> $c+($this->is_available($v) ? [$v['tab_slug']=>$v] : []), $tabs);
-			$tabs	= wpjam_array(wpjam_sort($tabs, 'order', 'desc', 10), function($slug, $tab){
-				$tab	= new self(['tab_slug'=>$slug, 'admin_url'=>$this->admin_url.'&tab='.$slug]+$tab+['capability'=>$this->capability]);
+			$tabs	= wpjam_reduce(wpjam_admin('tabs[]'), fn($c, $v, $k)=> $this->is_available($v) ? $c+[$v['tab_slug']=>$v] : $c, $tabs);
+			$tabs	= wpjam_array(wpjam_sort($tabs, 'order', 'desc', 10), fn($s, $tab)=> ($tab = new self(['tab_slug'=>$s, 'admin_url'=>$this->admin_url.'&tab='.$s]+$tab+['capability'=>$this->capability]))->query_data() ? [$s, $tab, $GLOBALS['current_tab'] ??= $s] : null);
 
-				return $tab->query_data() ? wpjam_tap([$slug, $tab], fn()=> $GLOBALS['current_tab'] ??= $slug) : null;
-			});
+			$object	= $tabs ? ($tabs[$GLOBALS['current_tab']] ?? $this->throw('无效的 Tab')) : $this->throw('Tabs 未设置');
 
-			$object	= $tabs ? ($tabs[$GLOBALS['current_tab']] ?? null) : $this->throw('Tabs 未设置');
-
-			$object || $this->throw('无效的 Tab');
-			$object->function || $this->throw('Tab 未设置 function');
-			$object->function == 'tab' && $this->throw('Tab 不能嵌套 Tab');
+			$object->type || $object->function || $this->throw('Tab 未设置 function');
+			$object->type == 'tab' && $this->throw('Tab 不能嵌套 Tab');
 
 			$object->menu_slug	= $this->menu_slug;
 
@@ -570,9 +490,9 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 			wpjam_admin('load');
 		}elseif($type){
 			$object	??= $this->page_object($type, $name);
-			$load	= [$object, 'page_load'];
+			$load	= fn()=> wpjam_call([$object, 'page_load']);
 
-			wp_doing_ajax() ? wpjam_call($load) : add_action('load-'.wpjam_admin('page_hook'), fn()=> wpjam_call($load));
+			wp_doing_ajax() ? $load() : add_action('load-'.wpjam_admin('page_hook'), $load);
 
 			$this->render		= [$object, 'render'];
 			$this->page_title	= $object->title ?: $this->page_title;
@@ -581,87 +501,83 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 			$object->query_args && wpjam_admin('query_data', wpjam_get_data_parameter($object->query_args));
 		}else{
 			$function		= $this->function ?: wpjam_get_filter_name($this->name, 'page');
-			$this->render	= is_callable($function) ? fn()=> wpjam_admin('chart', 'render').wpjam_ob_get_contents($function) : $this->throw('页面函数'.'「'.$function.'」未定义。');
+			$this->render	= is_callable($function) ? fn()=> wpjam_chart('render').wpjam_ob($function) : $this->throw('页面函数'.'「'.$function.'」未定义。');
 		}
 	}
 
-	private function preprocess($type, $name){
-		$class	= ['form'=>'WPJAM_Page_Action', 'option'=>'WPJAM_Option_Setting'][$type] ?? '';
-		$object	= $class ? $class::get($name) : null;
-
-		if($object){
-			$object	= $type == 'option' ? $object->get_current() : $object;
-			$args	= $object->to_array();
-		}else{
-			$args	= $this->$type;
-			$model	= in_array($type, ['list_table', 'form']) ? ($args ? (is_string($args) ? $args : '') : $this->model) : '';
-			$cb		= $model && class_exists($model) ? [$model, 'get_'.$type] : '';
-			$args	= $cb && method_exists(...$cb) ? $cb($this) : $args;
-			$args	= wpjam_is_assoc_array($args) ? $args+$this->pick(['model']) : $args;
-
-			$args && ($args	= $this->$type = maybe_callback($args, $this));
-		}
-
-		if(is_array($args)){
-			!empty($args['meta_type']) && wpjam_admin('meta_type', $args['meta_type']);
-
-			$this->update_args(WPJAM_Data_Type::prepare($args));
-		}
-
-		return $object;
-	}
-
-	private function page_object($type, $name){
+	private function page_object($type, $name, $step=''){
 		$args	= $this->$type;
+		$class	= ['form'=>'WPJAM_Page_Action', 'option'=>'WPJAM_Option_Setting'][$type] ?? '';
 
-		if($type == 'form'){
-			$args	= $args ?: ($this->callback ? $this->to_array() : []);
-			$args	= $args ?: $this->throw('Page Action'.'「'.$name.'」未定义。');
+		if($step == 'preprocess'){
+			$object	= $class ? $class::get($name) : null;
 
-			return WPJAM_Page_Action::create($name, $args);
-		}elseif($type == 'option'){
-			$args	= $args ?: (($this->sections || $this->fields) ? $this->to_array() : []);
-			$args	= $args ?: $this->throw('Option'.'「'.$name.'」未定义。');
+			if($object){
+				$object	= $type == 'option' ? $object->get_current() : $object;
+				$args	= $object->to_array();
+			}else{
+				$model	= in_array($type, ['list_table', 'form']) ? ($args ? (is_string($args) ? $args : '') : $this->model) : '';
+				$cb		= $model && class_exists($model) ? [$model, 'get_'.$type] : '';
+				$args	= $cb && method_exists(...$cb) ? $cb($this) : $args;
+				$args	= wpjam_is_assoc_array($args) ? $args+$this->pick(['model']) : $args;
 
-			return (WPJAM_Option_Setting::create($name, $args))->get_current();
-		}elseif($type == 'dashboard'){
-			$args	= $args ?: ($this->widgets ? $this->to_array() : []);
-			$args	= $args ?: $this->throw('Dashboard'.'「'.$name.'」未定义。');
+				$args && ($args	= $this->$type = maybe_callback($args, $this));
+			}
 
-			return new WPJAM_Dashboard(array_merge($args, ['name'=>$name]));
-		}elseif($type == 'list_table'){
-			$args	= $args ?: ($this->model ? wpjam_except($this->to_array(), 'defaults') : []);
-			$args	= $args ?: $this->throw('List Table'.'「'.$name.'」未定义。');
-			$model	= $args['model'] ?? '';
+			if(is_array($args)){
+				!empty($args['meta_type']) && wpjam_admin('meta_type', $args['meta_type']);
 
-			isset($args['defaults']) && $this->defaults($args['defaults']);
+				$this->update_args(WPJAM_Data_Type::prepare($args));
+			}
 
-			(empty($model) || (!is_object($model) && !class_exists($model))) && $this->throw('List Table Model'.'「'.$model.'」未定义。');
-
-			wpjam_map(['admin_head', 'admin_footer'], fn($v)=> method_exists($model, $v) && add_action($v, [$model, $v]));
-
-			return new WPJAM_List_Table($args+array_filter([
-				'layout'	=> 'table',
-				'name'		=> $name,
-				'singular'	=> $name,
-				'plural'	=> $name.'s',
-				'capability'=> $this->capability ?: 'manage_options',
-				'sortable'	=> $this->sortable,
-				'data_type'	=> 'model',
-				'per_page'	=> 50
-			]));
+			return $object ?? null;
 		}
+
+		if(!$args){
+			array_any(['form'=>['callback'], 'option'=>['sections', 'fields'], 'dashboard'=>['widgets'], 'list_table'=>['model']][$type], fn($k)=> $this->$k) || $this->throw($type.'「'.$name.'」未定义。');
+
+			$args	= $type == 'list_table' ? wpjam_except($this->to_array(), 'defaults') : $this->to_array();
+		}
+
+		if($class){
+			$object	= $class::create($name, $args);
+
+			return $type == 'option' ? $object->get_current() : $object;
+		}
+
+		if($type == 'dashboard'){
+			return new WPJAM_Dashboard(['name'=>$name]+$args);
+		}
+
+		$model	= $args['model'] ?? '';
+
+		(!$model || !class_exists($model)) && $this->throw('List Table Model'.'「'.$model.'」未定义。');
+
+		$this->defaults($args['defaults'] ?? []);
+
+		wpjam_map(['admin_head', 'admin_footer'], fn($v)=> method_exists($model, $v) && add_action($v, [$model, $v]));
+
+		return new WPJAM_List_Table($args+array_filter([
+			'layout'	=> 'table',
+			'name'		=> $name,
+			'singular'	=> $name,
+			'plural'	=> $name.'s',
+			'capability'=> $this->capability ?: 'manage_options',
+			'sortable'	=> $this->sortable,
+			'data_type'	=> 'model',
+			'per_page'	=> 50
+		]));
 	}
 
 	public function render(){
 		$tag		= wpjam_tag('h1', ['wp-heading-inline'], ($this->page_title ?? $this->title))->after('hr', ['wp-header-end']);
 		$summary	= maybe_callback($this->summary, $this->menu_slug, $this->tab_slug ?: '');
-		$summary	= !$summary || is_array($summary) ? '' : (is_file($summary) ? wpjam_get_file_summary($summary) : $summary);
+		$summary	= !$summary || is_array($summary) ? '' : (is_file($summary) ? wpjam_get_file_data($summary, 'summary') : $summary);
 
 		$summary && $tag->after('p', ['summary'], $summary);
 
 		if($this->type == 'tab'){
-			$tag->after(wpjam_ob_get_contents(wpjam_get_filter_name($this->menu_slug, 'page')) ?: '');	// 所有 Tab 页面都执行的函数
+			$tag->after(wpjam_ob(wpjam_get_filter_name($this->menu_slug, 'page')) ?: '');	// 所有 Tab 页面都执行的函数
 
 			count($this->tabs) > 1 && $tag->after(wpjam_tag('nav', ['nav-tab-wrapper', 'wp-clearfix'])->append(array_map(fn($tab)=> ['a', ['class'=>['nav-tab', $tab->is_current() ? 'nav-tab-active' : ''], 'href'=>$tab->admin_url], ($tab->tab_title ?: $tab->title)], $this->tabs)));
 		}
@@ -680,7 +596,7 @@ class WPJAM_Builtin_Page{
 			foreach((array)$boxes as $box){
 				if(!empty($box['id']) && !empty($box['title'])){
 					$title[]	= ['a', ['class'=>'nav-tab', 'href'=>'#tab_'.$box['id']], $box['title']];
-					$content[]	= ['div', ['id'=>'tab_'.$box['id']], wpjam_ob_get_contents($box['callback'], $post, $box)];
+					$content[]	= ['div', ['id'=>'tab_'.$box['id']], wpjam_ob($box['callback'], $post, $box)];
 				}
 			}
 		}
@@ -707,16 +623,18 @@ class WPJAM_Builtin_Page{
 			}
 		}else{
 			$context	= use_block_editor_for_post_type($post_type) ? 'normal' : 'wpjam';
-
 			$context == 'wpjam' && add_action(($post_type == 'page' ? 'edit_page_form' : 'edit_form_advanced'), [self::class, 'on_edit_form'], 99);
 		}
 
 		foreach(wpjam_get_post_options($post_type, ['list_table'=>false]) as $object){
-			if($object->meta_box_cb || ($object->fields	= $object->get_fields($post_id, ''))){
+			if(($cb = $object->meta_box_cb) || ($object->fields	= $object->get_fields($post_id, ''))){
 				if($method == 'callback'){
-					wpjam_if_error(wpjam_catch([$object, 'callback'], $post_id), 'die');
+					wpjam_trap([$object, 'callback'], $post_id, 'die');
 				}else{
-					add_meta_box($object->name, $object->title, [$object, 'render'], $post_type, ($object->context ?: $context), $object->priority);
+					$id		= $GLOBALS['current_screen']->action == 'add' ? false : $post_id;
+					$args	= ['fields_type'=>$object->context === 'side' ? 'list' : 'table'];
+
+					add_meta_box($object->name, $object->title, $cb ?: fn()=> $object->render($id, $args), $post_type, ($object->context ?: $context), $object->priority);
 				}
 			}
 		}
@@ -733,7 +651,7 @@ class WPJAM_Builtin_Page{
 		}
 
 		foreach(wpjam_get_term_options($tax, ['action'=>$action, 'list_table'=>false]) as $object){
-			wpjam_if_error(wpjam_catch([$object, $method], ...$args), 'die');
+			wpjam_trap([$object, $method], ...[...$args, 'die']);
 		}
 
 		if($method == 'validate'){
@@ -832,82 +750,10 @@ class WPJAM_Builtin_Page{
 }
 
 class WPJAM_Chart extends WPJAM_Args{
-	public function get_parameter($key, $args=[]){
-		if(str_contains($key, 'timestamp')){
-			return wpjam_strtotime($this->get_parameter(str_replace('timestamp', 'date', $key), $args).' '.(str_starts_with($key, 'end_') ? '23:59:59' : '00:00:00'));
-		}
+	public function validate($data){
+		$fields	= wpjam_fields($this->get_fields(['data'=>$data]));
 
-		$data	= $args['data'] ?? null;
-		$method	= $args['method'] ?? $this->method;
-		$value	= (is_array($data) && !empty($data[$key])) ? $data[$key] : wpjam_get_parameter($key, ['method'=>$method]);
-
-		if($value){
-			wpjam_set_cookie($key, $value, HOUR_IN_SECONDS);
-
-			return $value;
-		}
-
-		if(!empty($_COOKIE[$key])){
-			return $_COOKIE[$key];
-		}
-
-		if($key == 'date_format' || $key == 'date_type'){
-			return '%Y-%m-%d';
-		}elseif($key == 'compare'){
-			return 0;
-		}elseif(str_contains($key, 'date')){
-			if($key == 'start_date'){
-				$ts	= time() - DAY_IN_SECONDS*30;
-			}elseif($key == 'end_date'){
-				$ts	= time();
-			}elseif($key == 'date'){
-				$ts	= time() - DAY_IN_SECONDS;
-			}elseif($key == 'start_date_2'){
-				$ts	= $this->get_parameter('end_timestamp_2') - ($this->get_parameter('end_timestamp') - $this->get_parameter('start_timestamp'));
-			}elseif($key == 'end_date_2'){
-				$ts	= $this->get_parameter('start_timestamp') - DAY_IN_SECONDS;
-			}
-
-			return wpjam_date('Y-m-d', $ts);
-		}
-	}
-
-	public function get_fields($args=[]){
-		if($this->show_start_date){
-			$fields['date']	= ['sep'=>' ',	'fields'=>[
-				'start_date'	=> ['type'=>'date',	'value'=>$this->get_parameter('start_date', $args)],
-				'date_view'		=> ['type'=>'view',	'value'=>'-'],
-				'end_date'		=> ['type'=>'date',	'value'=>$this->get_parameter('end_date', $args)]
-			]];
-		}elseif($this->show_date){
-			$fields['date']	= ['sep'=>' ',	'fields'=>[
-				'prev_day'	=> ['type'=>'button',	'value'=>'‹',	'class'=>'button prev-day'],
-				'date'		=> ['type'=>'date',		'value'=>$this->get_parameter('date', $args)],
-				'next_day'	=> ['type'=>'button',	'value'=>'›',	'class'=>'button next-day']
-			]];
-		}
-
-		if(isset($fields['date']) && !empty($args['show_title'])){
-			$fields['date']['title']	= '日期';
-		}
-
-		if($this->show_date_type){
-			$fields['date_format']	= ['type'=>'select','value'=>$this->get_parameter('date_format', $args), 'options'=>[
-				'%Y-%m'				=> '按月',
-				'%Y-%m-%d'			=> '按天',
-				// '%Y%U'			=> '按周',
-				'%Y-%m-%d %H:00'	=> '按小时',
-				'%Y-%m-%d %H:%i'	=> '按分钟',
-			]];
-		}
-
-		return $fields;
-	}
-
-	public function get_data($args=[]){
-		$keys	= $this->show_start_date ? ['start_date', 'end_date'] : ($this->show_date ? ['date'] : []);
-
-		return wpjam_fill($keys, fn($k)=> $this->get_parameter($k, $args));
+		return $fields->validate($data+$fields->get_defaults());
 	}
 
 	public function render($wrap=true){
@@ -947,25 +793,71 @@ class WPJAM_Chart extends WPJAM_Args{
 		}
 	}
 
-	public static function line($args=[], $type='Line'){
-		$args	+= [
-			'data'			=> [],
-			'labels'		=> [],
-			'day_labels'	=> [],
-			'day_label'		=> '时间',
-			'day_key'		=> 'day',
-			'chart_id'		=> 'daily-chart',
-			'show_table'	=> true,
-			'show_chart'	=> true,
-			'show_sum'		=> true,
-			'show_avg'		=> true,
-		];
+	public function get_parameter($key, $args=[]){
+		if(is_array($key)){
+			return wpjam_fill($key, fn($k)=> $this->get_parameter($k, $args));	
+		}
 
-		foreach($args['labels'] as $k => $v){
+		if(str_contains($key, 'timestamp')){
+			return wpjam_strtotime($this->get_parameter(str_replace('timestamp', 'date', $key), $args).' '.(str_starts_with($key, 'end_') ? '23:59:59' : '00:00:00'));
+		}
+
+		$value	= ($args['data'][$key] ?? '') ?: wpjam_get_parameter($key, ['method'=>($args['method'] ?? $this->method)]);
+		$value && wpjam_set_cookie($key, $value, HOUR_IN_SECONDS);
+
+		if(!empty($_COOKIE[$key])){
+			return $_COOKIE[$key];
+		}
+
+		if($key == 'date_format' || $key == 'date_type'){
+			return '%Y-%m-%d';
+		}elseif($key == 'compare'){
+			return 0;
+		}
+
+		if($key == 'date'){
+			$ts	= time() - DAY_IN_SECONDS;
+		}elseif($key == 'start_date'){
+			$ts	= time() - DAY_IN_SECONDS*30;
+		}elseif($key == 'end_date'){
+			$ts	= time();
+		}elseif($key == 'start_date_2'){
+			$ts	= $this->get_parameter('end_timestamp_2') - ($this->get_parameter('end_timestamp') - $this->get_parameter('start_timestamp'));
+		}elseif($key == 'end_date_2'){
+			$ts	= $this->get_parameter('start_timestamp') - DAY_IN_SECONDS;
+		}
+
+		return isset($ts) ? wpjam_date('Y-m-d', $ts) : null;
+	}
+
+	public function get_fields($args=[]){
+		$fields	= $this->show_start_date ? [
+			'start_date'=> ['type'=>'date'],
+			'date_view'	=> ['type'=>'view',		'value'=>'-'],
+			'end_date'	=> ['type'=>'date']
+		] : ($this->show_date ? [
+			'prev_day'	=> ['type'=>'button',	'value'=>'‹',	'class'=>'button prev-day'],
+			'date'		=> ['type'=>'date'],
+			'next_day'	=> ['type'=>'button',	'value'=>'›',	'class'=>'button next-day']
+		] : []);
+
+		$fields	= $fields ? ['date'=>['sep'=>' ', 'fields'=>wpjam_map($fields, fn($v, $k)=> ['value'=>($v['value'] ?? $this->get_parameter($k, $args))]+$v)]+(!empty($args['show_title']) ? ['title'=>'日期'] : [])] : [];
+
+		return $fields+($this->show_date_type ? ['date_format'=>['type'=>'select','value'=>$this->get_parameter('date_format', $args), 'options'=>[
+			'%Y-%m'				=> '按月',
+			'%Y-%m-%d'			=> '按天',
+			// '%Y%U'			=> '按周',
+			'%Y-%m-%d %H:00'	=> '按小时',
+			'%Y-%m-%d %H:%i'	=> '按分钟',
+		]]] : []);
+	}
+
+	public static function line($data, $args=[], $type='Line'){
+		foreach(($args['labels'] ?? []) as $k => $v){
 			if(is_array($v)){
-				$args['columns'][$k]	= $v['label'];
+				$columns[$k]	= $v['label'];
 
-				if(!isset($v['show_in_chart']) || $v['show_in_chart']){
+				if($v['show_in_chart'] ?? true){
 					$labels[$k]	= $v['label'];
 				}
 
@@ -973,119 +865,97 @@ class WPJAM_Chart extends WPJAM_Args{
 					$cbs[$k]	= $v['callback'];
 				}
 			}else{
-				$args['columns'][$k]	= $labels[$k] = $v;
+				$columns[$k]	= $labels[$k] = $v;
 			}
 		}
 
-		$parser	= fn($item)=> empty($cbs) ? $item : array_merge($item, array_map(fn($cb)=> $cb($item), $cbs));
-		$data	= $total = [];
+		$xkey	= $args['day_key'] ?? 'day';
+		$ykeys	= array_keys($labels);
+		$data	+= ($args['show_table'] ?? true) && $data ? ['total' => array_fill_keys($ykeys, 0)] : [];
 
-		if($args['show_table']){
-			$args['day_labels']	+= ['sum'=>'累加', 'avg'=>'平均'];
+		foreach($data as $day => &$item){
+			$item	= isset($cbs) ? array_merge((array)$item, array_map(fn($cb)=> $cb($item), $cbs)) : $item;
 
-			$row	= self::row('head', [], $args);
-			$thead	= wpjam_tag('thead')->append($row);
-			$tfoot	= wpjam_tag('tfoot')->append($row);
-			$tbody	= wpjam_tag('tbody');
+			if($day !== 'total'){
+				$item[$xkey] ??= $day;
+
+				if(isset($data['total'])){
+					$data['total']		= wpjam_map($data['total'], fn($v, $k)=> $v+(is_numeric($item[$k] ?? null) ? $item[$k] : 0));
+					$rows[$item[$xkey]]	= $item;
+				}
+
+				$item	= wpjam_pull($item, [...$ykeys, $xkey]);
+			}
 		}
 
-		foreach($args['data'] as $day => $item){
-			$item	= $parser((array)$item);
-			$day	= $item[$args['day_key']] ?? $day;
-			$total	= wpjam_map($args['columns'], fn($v, $k)=> ($total[$k] ?? 0)+((isset($item[$k]) && is_numeric($item[$k])) ? $item[$k] : 0));
-			$data[]	= array_merge([$args['day_key']=> $day], array_intersect_key($item, $labels));
-
-			$args['show_table'] && $tbody->append(self::row($day, $item, $args));
-		}
-
+		$total	= wpjam_pull($data, 'total');
 		$tag	= wpjam_tag();
 
-		$args['show_chart'] && $data && wpjam_tag('div', ['id'=>$args['chart_id']])->data(['chart'=>true, 'type'=>$type, 'options'=>['data'=>$data, 'xkey'=>$args['day_key'], 'ykeys'=>array_keys($labels), 'labels'=>array_values($labels)]])->append_to($tag);
+		if($args['show_chart'] ?? true){
+			$tag->append(wpjam_tag('div', [
+				'id'	=> $args['chart_id'] ?? 'daily-chart',
+				'data'	=> ['type'=>$type, 'chart'=>true, 'options'=>['data'=>$data, 'xkey'=>$xkey, 'ykeys'=>$ykeys, 'labels'=>array_values($labels)]]
+			]));
+		}
 
-		if($args['show_table'] && $args['data']){
-			$total	= $parser($total);
+		if($total && $data){
+			$labels		= ($args['day_labels'] ?? [])+['sum'=>'累加', 'avg'=>'平均'];
+			$columns	= [$xkey => $args['day_label'] ?? '时间']+$columns;
+			$th			= wpjam_tag('tr')->append(wpjam_map($columns, fn($col, $id)=> wpjam_tag('th', ['scope'=>'col', 'id'=>$id], $col)));
+			$rows		+= ($args['show_sum'] ?? true) ? ['sum'=>$total] : [];
+			$rows		+= ($args['show_avg'] ?? true) ? ['avg'=>array_map(fn($v)=> is_numeric($v) ? round($v/count($data)) : '', $total)] : [];
+			$rows		= wpjam_map($rows, fn($row, $k)=> wpjam_tag('tr')->append(wpjam_map($columns, fn($col, $id)=> wpjam_tag('td', [
+				'data'	=> ['colname'=>$col],
+				'class'	=> ['column-'.$id, ($id == $xkey ? 'column-primary' : '')]
+			])->append($id == $xkey ? [($labels[$k] ?? $k), wpjam_tag('button', ['class'=>'toggle-row'])] : ($row[$id] ?? '')))));
 
-			$args['show_sum'] && $tbody->append(self::row('sum', $total, $args));
-			$args['show_avg'] && $tbody->append(self::row('avg', array_map(fn($v)=> is_numeric($v) ? round($v/count($args['data'])) : '', $total), $args));
-
-			$thead->after([$tbody, $tfoot])->wrap('table', ['class'=>'wp-list-table widefat striped'])->append_to($tag);
+			$tag->append(wpjam_tag('table', ['class'=>'wp-list-table widefat striped'])->append([
+				wpjam_tag('thead')->append($th),
+				wpjam_tag('tbody')->append($rows),
+				wpjam_tag('tfoot')->append($th)
+			]));
 		}
 
 		return $tag;
 	}
 
-	public static function donut($args=[]){
-		$args	+= [
-			'data'			=> [],
-			'total'			=> 0,
-			'title'			=> '名称',
-			'key'			=> 'type',
-			'chart_id'		=> 'chart_'.wp_generate_password(6, false, false),
-			'show_table'	=> true,
-			'show_chart'	=> true,
-			'show_line_num'	=> false,
-			'labels'		=> []
-		];
-
-		if($args['show_table']){
-			$thead	= wpjam_tag('thead')->append(self::row('head', '', $args));
-			$tbody	= wpjam_tag('tbody');
-		}
-
-		foreach(array_values($args['data']) as $i => $item){
-			$label 	= $item['label'] ?? '/';
-			$label 	= $args['labels'][$label] ?? $label;
-			$value	= $item['count'];
-			$data[]	= ['label'=>$label, 'value'=>$value];
-
-			$args['show_table'] && $tbody->append(self::row($i+1, $value, ['label'=>$label]+$args));
-		}
-
-		$tag	= wpjam_tag();
-
-		$args['show_chart'] && $tag->append('div', ['id'=>$args['chart_id'], 'data'=>['chart'=>true, 'type'=>'Donut', 'options'=>['data'=>$data ?? []]]]);
-
-		if($args['show_table']){
-			$args['total'] && $tbody->append(self::row('total', $args['total'], $args+['label'=>'所有']));
-
-			$tag->append('table', ['wp-list-table', 'widefat', 'striped'], implode('', [$thead, $tbody]));
-		}
-
-		return $tag->wrap('div', ['class'=>'donut-chart-wrap']);
+	public static function bar($data, $args=[]){
+		return self::line($data, $args, 'Bar');
 	}
 
-	protected static function row($key, $data=[], $args=[]){
-		$row	= wpjam_tag('tr');
+	public static function donut($data, $args=[]){
+		$tag	= wpjam_tag('div', ['class'=>'donut-chart-wrap']);
+		$data	= wpjam_array($data, fn($k, $v)=> [null, [
+			'label'	=> !empty($v['label']) ? ($args['labels'][$v['label']] ?? $v['label']) : '/',
+			'value'	=> $v['count']
+		]]);
 
-		if(is_array($data)){
-			$day_key	= $args['day_key'];
-			$columns	= [$day_key=>$args['day_label']]+$args['columns'];
-			$data		= [$day_key=>$args['day_labels'][$key] ?? $key]+$data;
-
-			foreach($columns as $col => $column){
-				$cell	= wpjam_tag(...($key == 'head' ? ['th', ['scope'=>'col', 'id'=>$col], $column] : ['td', ['data'=>['colname'=>$column]], $data[$col] ?? '']));
-
-				$col == $day_key && $cell->add_class('column-primary')->append('button', ['class'=>'toggle-row']);
-				$cell->add_class('column-'.$col)->append_to($row);
-			}
-		}else{
-			$row->append($key == 'head' ? [
-				$args['show_line_num'] ? ['th', ['style'=>'width:40px;'], '排名'] : '',
-				['th', [], $args['title']],
-				['th', [], '数量'],
-				$args['total'] ? ['th', [], '比例'] : ''
-			] : [
-				$args['show_line_num'] ? ['td', [], $key == 'total' ? '' : $key] : '',
-				['td', [], $args['label']],
-				['td', [], $data],
-				$args['total'] ? ['td', [], round($data / $args['total'] * 100, 2).'%'] : ''
+		if($args['show_chart'] ?? true){
+			$tag->append('div', [
+				'id'	=> $args['chart_id'] ?? 'chart_'.wp_generate_password(6, false, false),
+				'data'	=> ['type'=>'Donut', 'chart'=>true, 'options'=>['data'=>$data]]
 			]);
 		}
 
-		return $row;
+		if(($args['show_table'] ?? true) && $data){
+			$columns	= (!empty($args['show_line_num']) ? ['no'=>'排名'] : [])+['label'=>$args['title'] ?? '名称', 'value'=>'数量'];
+
+			if($total = $args['total'] ?? false){
+				$total		= $total === true ? array_sum(array_column($data, 'value')) : $total;
+				$data		+= ['total'=>['label'=>'所有', 'value'=>$total]];
+				$columns	+= ['rate'=>'比例'];
+			}
+
+			$tag->append(wpjam_tag('table', ['wp-list-table', 'widefat', 'striped'])->append([
+				wpjam_tag('thead')->append(wpjam_tag('tr')->append(wpjam_map($columns, fn($col, $id)=> wpjam_tag('th', ['scope'=>'col', 'id'=>$id], $col)))),
+				wpjam_tag('tbody')->append(wpjam_map($data, fn($item, $k)=> wpjam_tag('tr')->append(wpjam_map($columns, fn($col, $id)=> wpjam_tag('td', ['data'=>['colname'=>$col]], $item[$id] ?? ($id == 'no' ? ($k === 'total' ? '' : $k+1) : round($item['value']/$total*100, 2).'%'))))))
+			]));
+		}
+
+		return $tag;
 	}
 
-	public static function create_instance(){
+	public static function create($args=[]){
 		$offset	= (int)get_option('gmt_offset');
 		$offset	= $offset >= 0 ? '+'.$offset.':00' : $offset.':00';
 
@@ -1095,7 +965,7 @@ class WPJAM_Chart extends WPJAM_Args{
 		wpjam_script('raphael',	wpjam_get_static_cdn().'/raphael/2.3.0/raphael.min.js');
 		wpjam_script('morris',	wpjam_get_static_cdn().'/morris.js/0.5.1/morris.min.js');
 
-		return new self([
+		return new self($args+[
 			'method'			=> 'POST',
 			'show_form'			=> true,
 			'show_start_date'	=> true,
@@ -1103,9 +973,5 @@ class WPJAM_Chart extends WPJAM_Args{
 			'show_date_type'	=> false,
 			'show_compare'		=> false
 		]);
-	}
-
-	public static function get_instance($args=[]){
-		return wpjam_get_instance('chart_form', 'object', fn()=> self::create_instance())->update_args(is_array($args) ? $args : []);
 	}
 }

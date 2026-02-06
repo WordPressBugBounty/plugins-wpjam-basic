@@ -10,214 +10,163 @@ if(!is_admin()){
 }
 
 class WPJAM_Server_Status{
-	public static function server_widget(){
-		$items[]	= ['title'=>'服务器',		'value'=>gethostname().'（'.$_SERVER['HTTP_HOST'].'）'];
-		$items[]	= ['title'=>'服务器IP',	'value'=>'内网：'.gethostbyname(gethostname())];
-		$items[]	= ['title'=>'系统',		'value'=>php_uname('s')];
+	public static function callback(...$args){
+		$id		= $args[1]['id'];
+		$items	= [self::class, $GLOBALS['current_tab']]($id);
 
-		if(strpos(ini_get('open_basedir'), ':/proc') !== false){
-			if(@is_readable('/proc/cpuinfo')){
-				$cpus	= wpjam_lines(file_get_contents('/proc/cpuinfo'), "\n\n");
-				$base[]	= count($cpus).'核';
-			}
-			
-			if(@is_readable('/proc/meminfo')){
-				$mems	= wpjam_lines(file_get_contents('/proc/meminfo'));
-				$mem	= (int)substr(array_find($mems, fn($m) => str_starts_with($m, 'MemTotal:')), 9);
-				$base[]	= round($mem/1024/1024).'G';
-			}
+		if($id == 'usage'){
+			foreach($items as $item){
+				echo '<hr />';
 
-			if(!empty($base)){
-				$items[]	= ['title'=>'配置',	'value'=>'<strong>'.implode('&nbsp;/&nbsp;', $base).'</strong>'];
-			}
-		
-			if(@is_readable('/proc/meminfo')){
-				$uptime		= wpjam_lines(file_get_contents('/proc/uptime'), ' ');
-				$items[]	= ['title'=>'运行时间',	'value'=>human_time_diff(time()-$uptime[0])];
-			}
+				$unit	= wpjam_pull($item[1], 'unit') ?: 1;
+				$data	= wpjam_map(wpjam_pull($item[1], 'labels'), fn($v, $k) => ['label'=>$v, 'count'=>round($item[0][$k]/$unit, 2)]);
 
-			
-			$items[]	= ['title'=>'空闲率',		'value'=>round($uptime[1]*100/($uptime[0]*count($cpus)), 2).'%'];
-			$items[]	= ['title'=>'系统负载',	'value'=>'<strong>'.implode('&nbsp;&nbsp;',sys_getloadavg()).'</strong>'];
+				echo wpjam_chart('donut', $data, $item[1]+['total'=>true, 'chart_width'=>150, 'table_width'=>320]);
+			}
+		}else{
+			?>
+			<table class="widefat striped" style="border:none;">
+				<tbody><?php foreach($items as $item){ ?>
+					<tr><?php foreach($item as $i){ ?>
+						<td><?php echo $i; ?></td>
+					<?php } ?></tr>
+				<?php } ?></tbody>
+			</table>
+			<?php
 		}
-
-		$items[]	= ['title'=>'文档根目录',	'value'=>$_SERVER['DOCUMENT_ROOT']];
-		
-		self::output($items);
 	}
 
-	public static function php_widget(){
-		self::output([['value'=>implode(', ', get_loaded_extensions())]]);
-	}
+	public static function server($id){
+		if($id == 'server'){
+			$items[]	= ['服务器',		gethostname().'（'.$_SERVER['HTTP_HOST'].'）'];
+			$items[]	= ['服务器IP',	'内网：'.gethostbyname(gethostname())];
+			$items[]	= ['系统',		php_uname('s')];
 
-	public static function apache_widget(){
-		self::output([['value'=>implode(', ', apache_get_modules())]]);
-	}
+			if(strpos(ini_get('open_basedir'), ':/proc') !== false){
+				if(@is_readable('/proc/cpuinfo')){
+					$cpus	= wpjam_lines(file_get_contents('/proc/cpuinfo'), "\n\n");
+					$base[]	= count($cpus).'核';
+				}
+				
+				if(@is_readable('/proc/meminfo')){
+					$mems	= wpjam_lines(file_get_contents('/proc/meminfo'));
+					$mem	= (int)substr(array_find($mems, fn($m) => str_starts_with($m, 'MemTotal:')), 9);
+					$base[]	= round($mem/1024/1024).'G';
+				}
 
-	public static function version_widget(){
-		global $wpdb, $required_mysql_version, $required_php_version, $wp_version,$wp_db_version, $tinymce_version;
+				if(!empty($base)){
+					$items[]	= ['配置',	'<strong>'.implode('&nbsp;/&nbsp;', $base).'</strong>'];
+				}
+			
+				if(@is_readable('/proc/meminfo')){
+					$uptime		= wpjam_lines(file_get_contents('/proc/uptime'), ' ');
+					$items[]	= ['运行时间',	human_time_diff(time()-$uptime[0])];
+				}
 
-		$http	= $_SERVER['SERVER_SOFTWARE'];
+				
+				$items[]	= ['空闲率',		round($uptime[1]*100/($uptime[0]*count($cpus)), 2).'%'];
+				$items[]	= ['系统负载',	'<strong>'.implode('&nbsp;&nbsp;',sys_getloadavg()).'</strong>'];
+			}
 
-		self::output([
-			['title'=>wpjam_lines($http, '/')[0],	'value'=>$http],
-			['title'=>'MySQL',		'value'=>$wpdb->db_version().'（最低要求：'.$required_mysql_version.'）'],
-			['title'=>'PHP',		'value'=>phpversion().'（最低要求：'.$required_php_version.'）'],
-			['title'=>'Zend',		'value'=>Zend_Version()],
-			['title'=>'WordPress',	'value'=>$wp_version.'（'.$wp_db_version.'）'],
-			['title'=>'TinyMCE',	'value'=>$tinymce_version]
-		]);
-	}
-
-	public static function opcache_status_widget(){
-		self::output(wpjam_map(opcache_get_status()['opcache_statistics'], fn($v, $k) => ['title'=>$k, 'value'=>$v]));
-	}
-
-	public static function opcache_usage_widget(){
-		echo '<p>'.wpjam_get_page_button('reset_opcache').'</p>';
-
-		echo '<hr />';
-
-		$status	= opcache_get_status();
-		$args 	= ['chart_width'=>150, 'table_width'=>320];
-
-		$labels	= ['used_memory'=>'已用内存', 'free_memory'=>'剩余内存', 'wasted_memory'=>'浪费内存'];
-		$counts	= wpjam_map($labels, fn($v, $k) => ['label'=>$v,	'count'=>round($status['memory_usage'][$k]/(1024*1024),2)]);
-		$total	= round(array_reduce(array_keys($labels), fn($total, $k) => $total+$status['memory_usage'][$k], 0)/(1024*1024),2);
-
-		wpjam_donut_chart($counts, ['title'=>'内存使用', 'total'=>$total]+$args);
-
-		echo '<hr />';
-
-		$labels	= ['hits'=>'命中', 'misses'=>'未命中'];
-		$counts	= wpjam_map($labels, fn($v, $k) => ['label'=>$v,	'count'=>$status['opcache_statistics'][$k]]);
-		$total	= array_reduce(array_keys($labels), fn($total, $k) => $total+$status['opcache_statistics'][$k], 0);
-
-		wpjam_donut_chart($counts, ['title'=>'命中率', 'total'=>$total]+$args);
-
-		echo '<hr />';
-
-		$counts	= [
-			['label'=>'已用Keys',	'count'=>$status['opcache_statistics']['num_cached_keys']],
-			['label'=>'剩余Keys',	'count'=>$status['opcache_statistics']['max_cached_keys']-$status['opcache_statistics']['num_cached_keys']]
-		];
-
-		$total	= $status['opcache_statistics']['max_cached_keys'];
-
-		wpjam_donut_chart($counts, ['title'=>'存储Keys','total'=>$total]+$args);
-
-		// echo '<hr />';
-
-		// $labels	= ['used_memory'=>'已用内存', 'free_memory'=>'剩余内存'];
-		// $counts	= wpjam_map($labels, fn($v, $k) => ['label'=>$v,	'count'=>round($status['interned_strings_usage'][$k]/(1024*1024),2)]);
-		// $total	= round(array_reduce(array_keys($labels), fn($total, $k) => $total+$status['interned_strings_usage'][$k], 0)/(1024*1024),2);
-
-		// wpjam_donut_chart($counts, ['title'=>'临时字符串存储内存','total'=>$total]+$args);
-	}
-
-	public static function opcache_configuration_widget(){
-		$config = opcache_get_configuration();
-		$items	= wpjam_map($config['version'], fn($v, $k) => ['title'=>$k, 'value'=>$v]);
-		$items	= array_merge($items,  wpjam_map($config['directives'], fn($v, $k) => ['title'=>str_replace('opcache.', '', $k), 'value'=>$v]));
-	
-		self::output($items);
-	}
-
-	public static function memcached_usage_widget(){
-		global $wp_object_cache;
-
-		echo '<p>'.wpjam_get_page_button('flush_mc').'</p>';
-
-		foreach($wp_object_cache->get_stats() as $key => $details){
-			echo '<hr />';
-
-			$args	= ['chart_width'=>150,'table_width'=>320];
-			$labels	= ['get_hits'=>'命中次数', 'get_misses'=>'未命中次数'];
-			$counts	= wpjam_map($labels, fn($v, $k) => ['label'=>$v,	'count'=>$details[$k]]);
-
-			wpjam_donut_chart($counts, ['title'=>'命中率','total'=>$details['cmd_get']]+$args);
-
-			echo '<hr />';
-
-			$counts	= [
-				['label'=>'已用内存',	'count'=>round($details['bytes']/(1024*1024),2)],
-				['label'=>'剩余内存',	'count'=>round(($details['limit_maxbytes']-$details['bytes'])/(1024*1024),2)]
+			$items[]	= ['文档根目录',	$_SERVER['DOCUMENT_ROOT']];
+			
+			return $items;
+		}elseif($id == 'version'){
+			return [
+				[wpjam_lines($_SERVER['SERVER_SOFTWARE'], '/')[0],	$_SERVER['SERVER_SOFTWARE']],
+				['MySQL',		$GLOBALS['wpdb']->db_version().'（最低要求：'.$GLOBALS['required_mysql_version'].'）'],
+				['PHP',			phpversion().'（最低要求：'.$GLOBALS['required_php_version'].'）'],
+				['Zend',		Zend_Version()],
+				['WordPress',	$GLOBALS['wp_version'].'（'.$GLOBALS['wp_db_version'].'）'],
+				['TinyMCE',		$GLOBALS['tinymce_version']]
 			];
-
-			$total	= round($details['limit_maxbytes']/(1024*1024),2);
-
-			wpjam_donut_chart($counts, ['title'=>'内存使用','total'=>$total]+$args);
+		}elseif($id == 'php'){
+			return [[implode('&emsp;', get_loaded_extensions())]];
+		}elseif($id == 'apache'){
+			return [[implode('&emsp;', apache_get_modules())]];
 		}
 	}
 
-	public static function memcached_status_widget(){
-		global $wp_object_cache;
+	public static function opcache($id){
+		if($id == 'usage'){
+			echo '<p>'.wpjam_get_page_button('reset_opcache').'</p>';
 
-		foreach($wp_object_cache->get_stats() as $key => $details){
-			self::output([
-				// ['title'=>'Memcached进程ID',	'value'=>$details['pid']],
-				['title'=>'Memcached地址',	'value'=>$key],
-				['title'=>'Memcached版本',	'value'=>$details['version']],
-				['title'=>'启动时间',			'value'=>wpjam_date('Y-m-d H:i:s',($details['time']-$details['uptime']))],
-				['title'=>'运行时间',			'value'=>human_time_diff(0,$details['uptime'])],
-				['title'=>'已用/分配的内存',	'value'=>size_format($details['bytes']).' / '.size_format($details['limit_maxbytes'])],
-				['title'=>'启动后总数量',		'value'=>$details['curr_items'].' / '.$details['total_items']],
-				['title'=>'为获取内存踢除数量',	'value'=>$details['evictions']],
-				['title'=>'当前/总打开连接数',	'value'=>$details['curr_connections'].' / '.$details['total_connections']],
-				['title'=>'命中次数',			'value'=>$details['get_hits']],
-				['title'=>'未命中次数',		'value'=>$details['get_misses']],
-				['title'=>'总获取请求次数',	'value'=>$details['cmd_get']],
-				['title'=>'总设置请求次数',	'value'=>$details['cmd_set']],
-				['title'=>'Item平均大小',		'value'=>size_format($details['bytes']/$details['curr_items'])],
-			]);
+			$status	= opcache_get_status();
+			$rest	= $status['opcache_statistics']['max_cached_keys']-$status['opcache_statistics']['num_cached_keys'];
+
+			return [
+				[$status['memory_usage'], [
+					'title'		=> '内存使用',
+					'labels'	=> ['used_memory'=>'已用内存', 'free_memory'=>'剩余内存', 'wasted_memory'=>'浪费内存'],
+					'unit'		=> 1024*1024
+				]],
+				[$status['opcache_statistics'], [
+					'title'		=> '命中率',
+					'labels'	=> ['hits'=>'命中', 'misses'=>'未命中']
+				]],
+				[$status['opcache_statistics']+['rest_cached_keys'=>$rest], [
+					'title'		=> '存储Keys',
+					'labels'	=> ['num_cached_keys'=>'已用Keys', 'rest_cached_keys'=>'剩余Keys']
+				]]
+			];
+		}elseif($id == 'status'){
+			return wpjam_entries(opcache_get_status()['opcache_statistics']);
+		}elseif($id == 'configuration'){
+			$config = opcache_get_configuration();
+		
+			return array_reduce([$config['version'], wpjam_array($config['directives'], fn($k)=> str_replace('opcache.', '', $k))], fn($c, $v)=> array_merge($c, wpjam_entries($v)), []);
 		}
 	}
 
-	public static function memcached_options_widget(){
-		global $wp_object_cache;
+	public static function memcached($id){
+		foreach($GLOBALS['wp_object_cache']->get_stats() as $key => $stats){
+			if($id == 'usage'){
+				echo '<p>'.wpjam_get_page_button('flush_mc').'</p>';
 
-		$reflector	= new ReflectionClass('Memcached');
-		$constants	= wpjam_filter($reflector->getConstants(), fn($v, $k) => str_starts_with($k, 'OPT_'));
-		$mc			= $wp_object_cache->get_mc();
-
-		self::output(wpjam_map($constants, fn($v, $k) => ['title'=>$k, 'value'=>$mc->getOption($v)]));
-	}
-
-	public static function memcached_efficiency_widget(){
-		global $wp_object_cache;
-
-		foreach($wp_object_cache->get_stats() as $key => $details){
-			self::output([
-				['title'=>'每秒命中次数',		'value'=>round($details['get_hits']/$details['uptime'],2)],
-				['title'=>'每秒未命中次数',	'value'=>round($details['get_misses']/$details['uptime'],2)],
-				['title'=>'每秒获取请求次数',	'value'=>round($details['cmd_get']/$details['uptime'],2)],
-				['title'=>'每秒设置请求次数',	'value'=>round($details['cmd_set']/$details['uptime'],2)],
-			]);
+				return [
+					[$stats, [
+						'title'		=> '命中率',
+						'labels'	=> ['get_hits'=>'命中次数', 'get_misses'=>'未命中次数'],
+					]],
+					[$stats+['rest'=>$stats['limit_maxbytes']-$stats['bytes']], [
+						'title'		=> '内存使用',
+						'labels'	=> ['bytes'=>'已用内存', 'rest'=>'剩余内存'],
+						'unit'		=> 1024*1024
+					]]
+				];
+			}elseif($id == 'status'){
+				return [
+					['Memcached地址',	$key],
+					['Memcached版本',	$stats['version']],
+					['进程ID',			$stats['pid']],
+					['启动时间',			wpjam_date('Y-m-d H:i:s',($stats['time']-$stats['uptime']))],
+					['运行时间',			human_time_diff(0,$stats['uptime'])],
+					['已用/分配的内存',	size_format($stats['bytes']).' / '.size_format($stats['limit_maxbytes'])],
+					['当前/启动后总数量',	$stats['curr_items'].' / '.$stats['total_items']],
+					['为获取内存踢除数量',	$stats['evictions']],
+					['当前/总打开连接数',	$stats['curr_connections'].' / '.$stats['total_connections']],
+					['总命中次数',		$stats['get_hits']],
+					['总未命中次数',		$stats['get_misses']],
+					['总获求次数',		$stats['cmd_get']],
+					['总请求次数',		$stats['cmd_set']],
+					['Item平均大小',		size_format($stats['bytes']/$stats['curr_items'])],
+				];
+			}elseif($id == 'efficiency'){
+				return wpjam_map(['get_hits'=>'命中', 'get_misses'=>'未命中', 'cmd_get'=>'获取', 'cmd_set'=>'设置'], fn($v, $k)=> ['每秒'.$v.'次数', round($stats[$k]/$stats['uptime'])]);
+			}elseif($id == 'options'){
+				return wpjam_array(wpjam_get_reflection(['Memcached'], 'Constants'), fn($k, $v)=> str_starts_with($k, 'OPT_') ? [$k, [$k, $GLOBALS['wp_object_cache']->get_mc()->getOption($v)]] : null);
+			}
 		}
-	}
-
-	public static function output($items){
-		?>
-		<table class="widefat striped" style="border:none;">
-			<tbody><?php foreach($items as $item){ ?>
-				<tr><?php if(!empty($item['title'])){ ?>
-					<td><?php echo $item['title'] ?></td>
-					<td><?php echo $item['value'] ?></td>
-				<?php }else{ ?>
-					<td colspan="2"><?php echo $item['value'] ?></td>
-				<?php } ?></tr>
-			<?php } ?></tbody>
-		</table>
-		<?php
 	}
 
 	public static function get_tabs(){
-		$tabs['server']	= ['title'=>'服务器', 'function'=>'dashboard', 'widgets'=>[
-			'server'	=> ['title'=>'信息',			'callback'=>[self::class, 'server_widget']],
-			'php'		=> ['title'=>'PHP扩展',		'callback'=>[self::class, 'php_widget']],
-			'version'	=> ['title'=>'版本',			'callback'=>[self::class, 'version_widget'],	'context'=>'side'],
-			'apache'	=> ['title'=>'Apache模块',	'callback'=>[self::class, 'apache_widget'],		'context'=>'side']
-		]];
+		$parse	= fn($items)=> array_map(fn($v)=> $v+['callback'=>[self::class, 'callback']], $items);
+		$tabs	= ['server'=>['title'=>'服务器', 'function'=>'dashboard', 'widgets'=>$parse([
+			'server'	=> ['title'=>'信息'],
+			'php'		=> ['title'=>'PHP扩展'],
+			'version'	=> ['title'=>'版本',			'context'=>'side'],
+			'apache'	=> ['title'=>'Apache模块',	'context'=>'side']
+		])]];
 
 		if(strtoupper(substr(PHP_OS,0,3)) === 'WIN'){
 			unset($tabs['server']['widgets']['server']);
@@ -228,35 +177,35 @@ class WPJAM_Server_Status{
 		}
 
 		if(function_exists('opcache_get_status')){
-			$tabs['opcache']	= ['title'=>'Opcache',	'function'=>'dashboard',	'widgets'=>[
-				'usage'			=> ['title'=>'使用率',	'callback'=>[self::class, 'opcache_usage_widget']],
-				'status'		=> ['title'=>'状态',		'callback'=>[self::class, 'opcache_status_widget']],
-				'configuration'	=> ['title'=>'配置信息',	'callback'=>[self::class, 'opcache_configuration_widget'],	'context'=>'side']
-			]];
+			$tabs['opcache']	= ['title'=>'Opcache',	'function'=>'dashboard',	'widgets'=>$parse([
+				'usage'			=> ['title'=>'使用率'],
+				'status'		=> ['title'=>'状态'],
+				'configuration'	=> ['title'=>'配置信息',	'context'=>'side']
+			])];
 
 			wpjam_register_page_action('reset_opcache', [
 				'title'			=> '重置缓存',
 				'button_text'	=> '重置缓存',
 				'direct'		=> true,
 				'confirm'		=> true,
-				'callback'		=> fn() => opcache_reset() ? ['errmsg'=>'缓存重置成功'] : wp_die('缓存重置失败')
+				'callback'		=> fn() => opcache_reset() ? ['notice'=>'缓存重置成功'] : wp_die('缓存重置失败')
 			]);
 		}
 
 		if(method_exists('WP_Object_Cache', 'get_mc')){
-			$tabs['memcached']	= ['title'=>'Memcached',	'function'=>'dashboard',	'widgets'=>[
-				'usage'			=> ['title'=>'使用率',	'callback'=>[self::class, 'memcached_usage_widget']],
-				'efficiency'	=> ['title'=>'效率',		'callback'=>[self::class, 'memcached_efficiency_widget']],
-				'options'		=> ['title'=>'选项',		'callback'=>[self::class, 'memcached_options_widget'], 'context'=>'side'],
-				'status'		=> ['title'=>'状态',		'callback'=>[self::class, 'memcached_status_widget']]
-			]];
+			$tabs['memcached']	= ['title'=>'Memcached',	'function'=>'dashboard',	'widgets'=>$parse([
+				'usage'			=> ['title'=>'使用率'],
+				'efficiency'	=> ['title'=>'效率'],
+				'options'		=> ['title'=>'选项', 'context'=>'side'],
+				'status'		=> ['title'=>'状态']
+			])];
 
 			wpjam_register_page_action('flush_mc', [
 				'title'			=> '刷新缓存',
 				'button_text'	=> '刷新缓存',
 				'direct'		=> true,
 				'confirm'		=> true,
-				'callback'		=> fn() => wp_cache_flush() ? ['errmsg'=>'缓存刷新成功'] : wp_die('缓存刷新失败')
+				'callback'		=> fn() => wp_cache_flush() ? ['notice'=>'缓存刷新成功'] : wp_die('缓存刷新失败')
 			]);
 		}
 

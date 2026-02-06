@@ -1,23 +1,15 @@
 <?php
-class WPJAM_User{
-	use WPJAM_Instance_Trait;
-
-	protected $id;
-
-	protected function __construct($id){
-		$this->id	= (int)$id;
-	}
-
+class WPJAM_User extends WPJAM_Instance{
 	public function __get($key){
 		if(in_array($key, ['id', 'user_id'])){
 			return $this->id;
 		}elseif(in_array($key, ['user', 'data'])){
 			return get_userdata($this->id);
 		}elseif($key == 'role'){
-			return reset($this->data->roles);
-		}else{
-			return $this->user->$key ?? $this->meta_get($key);
+			return array_first($this->roles);
 		}
+
+		return $this->user->$key ?? $this->meta_get($key);
 	}
 
 	public function __isset($key){
@@ -25,11 +17,11 @@ class WPJAM_User{
 	}
 
 	public function value_callback($field){
-		if($field == 'role'){
-			return reset($this->user->roles);
-		}
+		return $this->$field;
+	}
 
-		return $this->user->$field ?? $this->meta_get($field);
+	public function save($data){
+		return $data ? self::update($this->id, $data) : true;
 	}
 
 	public function parse_for_json($size=96){
@@ -40,32 +32,6 @@ class WPJAM_User{
 			'display_name'	=> $this->display_name,
 			'avatar'		=> get_avatar_url($this->user, $size),
 		], $this->id);
-	}
-
-	public function meta_get($key){
-		return wpjam_get_metadata('user', $this->id, $key, null);
-	}
-
-	public function meta_exists($key){
-		return metadata_exists('user', $this->id, $key);
-	}
-
-	public function meta_input(...$args){
-		if($args){
-			return wpjam_update_metadata('user', $this->id, ...$args);
-		}
-	}
-
-	public function update_avatarurl($avatarurl){
-		$this->avatarurl != $avatarurl && $this->meta_input('avatarurl', $avatarurl);
-
-		return true;
-	}
-
-	public function update_nickname($nickname){
-		$this->nickname != $nickname && self::update($this->id, ['nickname'=>$nickname, 'display_name'=>$nickname]);
-
-		return true;
 	}
 
 	public function add_role($role, $blog_id=0){
@@ -86,26 +52,6 @@ class WPJAM_User{
 		do_action('wp_login', $this->user_login, $this->user);
 	}
 
-	public function get_openid($name, $appid=''){
-		return self::get_signup($name, $appid)->get_openid($this->id);
-	}
-
-	public function update_openid($name, $appid, $openid){
-		return self::get_signup($name, $appid)->update_openid($this->id, $openid);
-	}
-
-	public function delete_openid($name, $appid=''){
-		return self::get_signup($name, $appid)->delete_openid($this->id);
-	}
-
-	public function bind($name, $appid, $openid){
-		return self::get_signup($name, $appid)->bind($openid, $this->id);
-	}
-
-	public function unbind($name, $appid=''){
-		return self::get_signup($name, $appid)->unbind($this->id);
-	}
-
 	public static function get_instance($id, $wp_error=false){
 		$user	= self::validate($id);
 
@@ -119,41 +65,25 @@ class WPJAM_User{
 	public static function validate($user_id){
 		$user	= $user_id ? self::get_user($user_id) : null;
 
-		return ($user && ($user instanceof WP_User)) ? $user : new WP_Error('invalid_user');
+		return ($user && ($user instanceof WP_User)) ? $user : new WP_Error('invalid_user_id');
 	}
 
-	public static function update_caches($user_ids){
-		$user_ids	= array_filter(wp_parse_id_list($user_ids));
+	public static function update_caches($ids){
+		if($ids	= array_filter(wp_parse_id_list($ids))){
+			cache_users($ids);
 
-		if(!$user_ids){
-			return [];
+			return array_map('get_userdata', $ids);
 		}
 
-		cache_users($user_ids);
-
-		return array_map('get_userdata', $user_ids);
+		return [];
 	}
 
-	public static function get_by_ids($user_ids){
-		return self::update_caches($user_ids);
+	public static function get_by_ids($ids){
+		return self::update_caches($ids);
 	}
 
 	public static function get_user($user){
-		if($user && is_numeric($user)){	// 不存在情况下的缓存优化
-			$user_id	= $user;
-			$found		= false;
-			$cache		= wp_cache_get($user_id, 'users', false, $found);
-
-			if($found){
-				return $cache ? get_userdata($user_id) : $cache;
-			}else{
-				$user	= get_userdata($user_id);
-
-				$user	|| wp_cache_add($user_id, false, 'users', 10);	// 防止重复 SQL 查询。
-			}
-		}
-
-		return $user;
+		return $user && is_numeric($user) ? wpjam_tap(get_userdata($user), fn($v)=> !$v && do_action('wpjam_deleted_ids', 'user', $user)) : $user;
 	}
 
 	public static function get_authors($args=[]){
@@ -161,7 +91,11 @@ class WPJAM_User{
 	}
 
 	public static function get_path($args, $item=[]){
-		$id	= is_array($args) ? (int)wpjam_pull($args, 'author') : $args;
+		$id	= is_array($args) ? (int)wpjam_get($args, 'author') : $args;
+
+		if($id === 'fields'){
+			return ['author' => ['type'=>'select', 'options'=>fn()=> wp_list_pluck(WPJAM_User::get_authors(), 'display_name', 'ID')]];
+		}
 
 		if(!$id){
 			return new WP_Error('invalid_author', ['作者']);
@@ -170,33 +104,19 @@ class WPJAM_User{
 		return $item['platform'] == 'template' ? get_author_posts_url($id) : str_replace('%author%', $id, $item['path']);
 	}
 
-	public static function get_path_fields(){
-		return ['author' => ['type'=>'select', 'options'=>fn()=> wp_list_pluck(WPJAM_User::get_authors(), 'display_name', 'ID')]];
-	}
-
 	public static function options_callback($field){
 		return wp_list_pluck(self::get_authors(), 'display_name', 'ID');
 	}
 
 	public static function get($id){
-		$user	= get_userdata($id);
-
-		return $user ? $user->to_array() : [];
+		return ($user	= get_userdata($id)) ? $user->to_array() : [];
 	}
 
-	public static function insert($data){
-		return wp_insert_user(wp_slash($data));
-	}
-
-	public static function update($user_id, $data){
-		$data['ID'] = $user_id;
-
-		return wp_update_user(wp_slash($data));
-	}
-
-	public static function create($args){
-		return wpjam_call_for_blog(array_get($args, 'blog_id'), function($args){
-			$args	+= [
+	protected static function call_method($method, ...$args){
+		if($method == 'get_meta_type'){
+			return 'user';
+		}elseif($method == 'create'){
+			$args	= $args[0]+[
 				'user_pass'		=> wp_generate_password(12, false),
 				'user_login'	=> '',
 				'user_email'	=> '',
@@ -224,24 +144,21 @@ class WPJAM_User{
 			}
 
 			$data	= wpjam_pick($args, ['user_login', 'user_pass', 'user_email', 'role']);
+			$data	+= $args['nickname'] ? ['nickname'=>$args['nickname'], 'display_name'=>$args['nickname']] : [];
+			$id		= static::insert($data);
 
-			if($args['nickname']){
-				$data['nickname']	= $data['display_name']	= $args['nickname'];
-			}
+			return wpjam_tap(is_wp_error($id) ? $id : static::get_instance($id), fn()=> wp_cache_delete($lock_key, 'users'));
+		}elseif($method == 'insert'){
+			return wp_insert_user(wp_slash($args[0]));
+		}elseif($method == 'update'){
+			return wp_update_user(wp_slash(array_merge($args[1], ['ID'=>$args[0]])));
+		}elseif($method == 'delete'){
+			return wp_delete_user($args[0]);
+		}
+	}
 
-			$meta_input	= wpjam_pull($data, 'meta_input');
-			$user_id	= self::insert($data);
-
-			wp_cache_delete($lock_key, 'users');
-
-			if(is_wp_error($user_id)){
-				return $user_id;
-			}
-
-			$meta_input && wpjam_update_metadata('user', $user_id, $meta);
-
-			return self::get_instance($user_id);
-		}, $args);
+	public static function create($args){
+		return wpjam_call_for_blog(wpjam_get($args, 'blog_id'), fn()=> static::call_method('create', $args));
 	}
 
 	public static function query_items($args){
@@ -258,39 +175,11 @@ class WPJAM_User{
 
 		return $fields;
 	}
-
-	public static function signup($name, $appid, $openid, $args){
-		return self::get_signup($name, $appid)->signup($openid);
-	}
-
-	protected static function get_signup($name, $appid=''){
-		trigger_error('get_signup');	// delete 2024-06-30
-		return wpjam_get_user_signup_object($name, $appid);
-	}
-
-	public static function get_meta($user_id, ...$args){
-		_deprecated_function(__METHOD__, 'WPJAM Basic 6.0', 'wpjam_get_metadata');		// delete 2024-06-30
-		return wpjam_get_metadata('user', $user_id, ...$args);
-	}
-
-	public static function update_meta($user_id, ...$args){
-		_deprecated_function(__METHOD__, 'WPJAM Basic 6.0', 'wpjam_update_metadata');		// delete 2024-06-30
-		return wpjam_update_metadata('user', $user_id, ...$args);
-	}
-
-	public static function update_metas($user_id, $data, $meta_keys=[]){
-		_deprecated_function(__METHOD__, 'WPJAM Basic 6.0', 'wpjam_update_metadata');		// delete 2024-06-30
-		return wpjam_update_metadata('user', $user_id, $data, $meta_keys);
-	}
 }
 
 class WPJAM_Bind extends WPJAM_Register{
 	public function __construct($type, $appid, $args=[]){
-		parent::__construct($type.':'.$appid, array_merge($args, [
-			'type'		=> $type,
-			'appid'		=> $appid,
-			'bind_key'	=> wpjam_join('_', [$type, $appid])
-		]));
+		parent::__construct($type.':'.$appid, array_merge($args, ['type'=>$type, 'appid'=>$appid, 'bind_key'=>wpjam_join('_', $type, $appid)]));
 	}
 
 	public function get_appid(){
@@ -357,24 +246,10 @@ class WPJAM_Bind extends WPJAM_Register{
 			return new WP_Error('invalid_openid');
 		}
 
-		$object_id	= $this->get_value($openid, $meta_type.'_id');
-		$object		= $this->get_object($meta_type, $object_id);
+		$object	= $this->get_object($meta_type, $this->get_value($openid, $meta_type.'_id'));
+		$object	= $object ?: (($meta = wpjam_get_by_meta($meta_type, $this->bind_key, $openid)) ? $this->get_object($meta_type, array_first($meta)[$meta_type.'_id']) : null);
 
-		if(!$object){
-			$meta_data	= wpjam_get_by_meta($meta_type, $this->bind_key, $openid);
-
-			if($meta_data){
-				$object_id	= current($meta_data)[$meta_type.'_id'];
-				$object		= $this->get_object($meta_type, $object_id);
-			}
-		}
-
-		if(!$object && $meta_type == 'user'){
-			$user_id	= username_exists($openid);
-			$object		= $user_id ? wpjam_get_user_object($user_id) : null;
-		}
-
-		return $object;
+		return $object ?: (($meta_type == 'user' && ($user_id = username_exists($openid))) ? wpjam_get_user_object($user_id) : null);
 	}
 
 	public function bind_by_openid($meta_type, $openid, $object_id){
@@ -382,34 +257,26 @@ class WPJAM_Bind extends WPJAM_Register{
 	}
 
 	public function unbind_by_openid($meta_type, $openid){
-		$object_id	= $this->get_value($openid, $meta_type.'_id');
-
-		if($object_id){
+		if($object_id = $this->get_value($openid, $meta_type.'_id')){
 			$this->delete_openid($meta_type, $object_id);
 			$this->update_value($openid, $meta_type.'_id', 0);
 		}
 	}
 
 	public function get_by_user_email($meta_type, $email){
-		if($email && str_ends_with($email, '@'.$this->get_domain())){
-			$openid	= substr($email, 0, 0-strlen('@'.$this->get_domain()));
-
-			return $this->get_value($openid, $meta_type.'_id');
+		if($email && try_remove_suffix($email, '@'.$this->get_domain())){
+			return $this->get_value($email, $meta_type.'_id');
 		}
 	}
 
 	protected function get_value($openid, $key){
-		$user	= $this->get_user($openid);
-
-		if($user && !is_wp_error($user)){
+		if(($user = $this->get_user($openid)) && !is_wp_error($user)){
 			return $user[$key] ?? null;
 		}
 	}
 
 	protected function update_value($openid, $key, $value){
-		$prev	= $this->get_value($openid, $key);
-
-		return ($prev != $value) ? $this->update_user($openid, [$key=>$value]) : true;
+		return ($this->get_value($openid, $key) != $value) ? $this->update_user($openid, [$key=>$value]) : true;
 	}
 
 	public function get_user_email($openid){
@@ -429,10 +296,7 @@ class WPJAM_Bind extends WPJAM_Register{
 	}
 
 	public function get_phone_data($openid){
-		$phone			= $this->get_value($openid, 'phone') ?: 0;
-		$country_code	= $this->get_value($openid, 'country_code') ?: 86;
-
-		return $phone ? ['phone'=>$phone, 'country_code'=>$country_code] : [];
+		return ($phone = $this->get_value($openid, 'phone')) ? ['phone'=>$phone, 'country_code'=>$this->get_value($openid, 'country_code') ?: 86] : [];
 	}
 
 	public function get_openid_by($key, $value){
@@ -494,13 +358,15 @@ class WPJAM_Qrcode_Bind extends WPJAM_Bind{
 
 		$this->cache_delete($qrcode['key'].'_qrcode');
 
-		if(!empty($qrcode['id']) && !empty($qrcode['bind_callback']) && is_callable($qrcode['bind_callback'])){
-			return $qrcode['bind_callback']($openid, $qrcode['id']);
-		}else{
-			$this->cache_set($scene.'_scene', array_merge($qrcode, ['openid'=>$openid]), 1200);
+		$cb	= !empty($qrcode['id']) ? ($qrcode['bind_callback'] ?? '') : '';
 
-			return $qrcode['code'];
+		if($cb && is_callable($cb)){
+			return $cb($openid, $qrcode['id']);
 		}
+
+		$this->cache_set($scene.'_scene', ['openid'=>$openid]+$qrcode, 1200);
+
+		return $qrcode['code'];
 	}
 
 	public function create_qrcode($key, $args=[]){
@@ -605,22 +471,22 @@ class WPJAM_User_Signup extends WPJAM_Register{
 		$result		= $this->bind_openid($user_id, $openid);
 
 		if($result && !is_wp_error($result)){
-			$avatarurl	= $this->get_avatarurl($openid);
-			$nickname	= $this->get_nickname($openid);
-			$user		= wpjam_get_user_object($user_id);
+			$user	= wpjam_get_user_object($user_id);
 
-			$avatarurl && $user->update_avatarurl($avatarurl);
+			if(($avatarurl = $this->get_avatarurl($openid)) && $avatarurl !== $user->avatarurl){
+				$user->meta_input('avatarurl', $avatarurl);
+			}
 
-			$nickname && (!$user->nickname || $user->nickname == $openid) && $user->update_nickname($nickname);
+			if(($nickname = $this->get_nickname($openid)) && $nickname !== $user->nickname){
+				$user->save(['nickname'=>$nickname, 'display_name'=>$nickname]);
+			}
 		}
 
 		return $result;
 	}
 
 	public function unbind($user_id=null){
-		$user_id	= $user_id ?? get_current_user_id();
-
-		return $this->unbind_openid($user_id);
+		return $this->unbind_openid($user_id ?? get_current_user_id());
 	}
 
 	public function get_fields($action='login', $for=''){
@@ -646,7 +512,7 @@ class WPJAM_User_Signup extends WPJAM_Register{
 		}
 
 		if($for != 'admin'){
-			$attr	= array_merge($attr, wpjam_get_ajax_data_attr($this->name.'-'.$action)->to_array());
+			$attr	= array_merge($attr, wpjam_ajax($this->name.'-'.$action)->to_array());
 			$fields	= wpjam_fields($fields)->render(['wrap_tag'=>'p']);
 		}
 
@@ -657,7 +523,7 @@ class WPJAM_User_Signup extends WPJAM_Register{
 		$action	= wpjam_pull($data, 'action');
 		$method	= $action == 'login' ? 'signup' : $action;
 		$args	= $method == 'unbind' ? [] : [$data];
-		$result = $this->catch($method, ...$args);
+		$result = wpjam_catch([$this, $method], ...$args);
 
 		return is_wp_error($result) ? $result : true;
 	}
@@ -681,7 +547,7 @@ class WPJAM_User_Signup extends WPJAM_Register{
 	// 		if(get_userdata($user_id)){
 	// 			return $this->bind($openid, $user_id);
 	// 		}else{
-	// 			return new WP_Error('invalid_user');
+	// 			return new WP_Error('invalid_user_id');
 	// 		}
 	// 	}else{
 	// 		return $this->unbind_by_openid($openid);
@@ -690,12 +556,12 @@ class WPJAM_User_Signup extends WPJAM_Register{
 
 	public function registered(){
 		foreach(['login', 'bind'] as $action){
-			wpjam_register_ajax($this->name.'-'.$action, [
+			wpjam_ajax($this->name.'-'.$action, [
 				'nopriv'	=> true,
 				'callback'	=> [$this, 'ajax_response']
 			]);
 
-			wpjam_register_ajax('get-'.$this->name.'-'.$action, [
+			wpjam_ajax('get-'.$this->name.'-'.$action, [
 				'nopriv'	=> true,
 				'verify'	=> false,
 				'callback'	=> fn()=> $this->get_attr($action)
@@ -705,8 +571,8 @@ class WPJAM_User_Signup extends WPJAM_Register{
 
 	public static function create($name, $args){
 		$model	= wpjam_pull($args, 'model');
-		$type	= array_get($args, 'type') ?: $name;
-		$appid	= array_get($args, 'appid');
+		$type	= wpjam_get($args, 'type') ?: $name;
+		$appid	= wpjam_get($args, 'appid');
 
 		if(!wpjam_get_bind_object($type, $appid) || !$model){
 			return null;
@@ -791,8 +657,6 @@ class WPJAM_User_Signup extends WPJAM_Register{
 				}else{
 					$data	= ['type'=>$name, 'action'=>'get-'.$name.'-'.$action];
 					$title	= $action == 'bind' ? '绑定'.$object->title : $object->login_title;
-
-					add_action('login_footer',	fn()=> wpjam_call([$object, $action.'_script']), 1000);
 				}
 
 				$append[]	= ['a', ['class'=>($type == $name ? 'current' : ''), 'data'=>$data], $title];
@@ -800,7 +664,7 @@ class WPJAM_User_Signup extends WPJAM_Register{
 
 			wp_enqueue_script('wpjam-login', wpjam_url(dirname(__DIR__).'/static/login.js'), ['wpjam-ajax']);
 
-			add_action('login_form', fn()=> wpjam_echo(wpjam_tag('p')->add_class('types')->data('action', $action)->append($append)));
+			wpjam_hook('echo', 'login_form', fn()=> wpjam_tag('p')->add_class('types')->data('action', $action)->append($append));
 		}
 
 		wp_add_inline_style('login', join("\n", [
@@ -832,7 +696,7 @@ class WPJAM_User_Qrcode_Signup extends WPJAM_User_Signup{
 			$user	= apply_filters('wpjam_user_signup', null, 'qrcode', $scene, $code);
 
 			if(!$user){
-				$args	= $args ?? (array_get($data, 'args') ?: []);
+				$args	= $args ?? (wpjam_get($data, 'args') ?: []);
 				$openid	= $this->verify_qrcode($scene, $code, 'openid');
 				$user	= is_wp_error($openid) ? $openid : parent::signup($openid, $args);
 			}
@@ -861,153 +725,34 @@ class WPJAM_User_Qrcode_Signup extends WPJAM_User_Signup{
 		return parent::bind($openid, $user_id);
 	}
 
-	public function qrcode_signup($scene, $code, $args=[]){
-		return $this->signup(compact('scene', 'code'), $args);
-	}
-
 	public function get_fields($action='login', $for='admin'){
 		if($action == 'bind'){
 			$user_id	= get_current_user_id();
-			$openid		= $this->get_openid($user_id);
+
+			if($openid = $this->get_openid($user_id)){
+				$view	= ($avatar = $this->get_avatarurl($openid)) ? '<img src="'.str_replace('/132', '/0', $avatar).'" width="272" />'."<br />" : '';
+				$view	.= ($nickname = $this->get_nickname($openid)) ? '<strong>'.$nickname.'</strong>' : '';
+
+				return [
+					'view'		=> ['type'=>'view',		'title'=>'绑定的微信账号',	'value'=>($view ?: $openid)],
+					'action'	=> ['type'=>'hidden',	'value'=>'unbind'],
+				];
+			}
+
+			$args	= [md5('bind_'.$user_id), ['id'=>$user_id]];
+			$title	= '一键绑定';
 		}else{
-			$openid		= null;
+			$args	= [wp_generate_password(32, false, false)];
+			$title	= '一键登录';
 		}
 
-		if($openid){
-			$avatar		= $this->get_avatarurl($openid);
-			$nickname 	= $this->get_nickname($openid);
+		$qrcode	= $this->create_qrcode(...$args);
 
-			$view	= $avatar ? '<img src="'.str_replace('/132', '/0', $avatar).'" width="272" />'."<br />" : '';
-			$view	.= $nickname ? '<strong>'.$nickname.'</strong>' : '';
-			$view	= $view ?: $openid;
-
-			return [
-				'view'		=> ['type'=>'view',		'title'=>'绑定的微信账号',	'value'=>$view],
-				'action'	=> ['type'=>'hidden',	'value'=>'unbind'],
-			];
-		}else{
-			if($action == 'bind'){
-				$qrcode	= $this->create_qrcode(md5('bind_'.$user_id), ['id'=>$user_id]);
-				$title	= '微信扫码，一键绑定';
-			}else{
-				$qrcode	= $this->create_qrcode(wp_generate_password(32, false, false));
-				$title	= '微信扫码，一键登录';
-			}
-
-			if(is_wp_error($qrcode)){
-				return $qrcode;
-			}
-
-			$img	= array_get($qrcode, 'qrcode_url') ?: array_get($qrcode, 'qrcode');
-
-			return [
-				'qrcode'	=> ['type'=>'view',		'title'=>$title,	'value'=>'<img src="'.$img.'" width="272" />'],
-				'code'		=> ['type'=>'number',	'title'=>'验证码',	'class'=>'input',	'required', 'size'=>20],
-				'scene'		=> ['type'=>'hidden',	'value'=>$qrcode['scene']],
-				'action'	=> ['type'=>'hidden',	'value'=>$action],
-			];
-		}
-	}
-}
-
-class WPJAM_Notice{
-	public static function add($item, $type='admin', $id=''){
-		if($type == 'admin'){
-			if(is_multisite() && $id && !get_site($id)){
-				return;
-			}
-		}else{
-			if($id && !get_userdata($id)){
-				return;
-			}
-		}
-
-		$item	= is_array($item) ? $item : ['notice'=>$item];
-		$item	+= ['type'=>'error', 'notice'=>'', 'time'=>time(), 'key'=>md5(serialize($item))];
-
-		return (self::get_instance($type, $id))->insert($item);
-	}
-
-	public static function ajax_delete(){
-		$type	= wpjam_get_data_parameter('notice_type');
-		$key	= wpjam_get_data_parameter('notice_key');
-
-		if($key){
-			$type == 'admin' && !current_user_can('manage_options') && wp_die('bad_authentication');
-
-			return (self::get_instance($type))->delete($key);
-		}
-	}
-
-	public static function init(){
-		wpjam_register_page_action('delete_notice', [
-			'button_text'	=> '删除',
-			'tag'			=> 'span',
-			'class'			=> 'hidden delete-notice',
-			'validate'		=> true,
-			'direct'		=> true,
-			'callback'		=> [self::class, 'ajax_delete'],
-		]);
-	}
-
-	public static function render($type=''){
-		if(!$type){
-			self::ajax_delete();
-			self::render('user');
-
-			current_user_can('manage_options') && self::render('admin');
-
-			return;
-		}
-
-		$object	= self::get_instance($type);
-
-		foreach($object->get_items() as $key => $item){
-			$item	+= ['class'=>'is-dismissible', 'title'=>'', 'modal'=>0];
-			$notice	= trim($item['notice']);
-			$notice	.= !empty($item['admin_url']) ? (($item['modal'] ? "\n\n" : ' ').'<a style="text-decoration:none;" href="'.add_query_arg(['notice_key'=>$key, 'notice_type'=>$type], home_url($item['admin_url'])).'">点击查看<span class="dashicons dashicons-arrow-right-alt"></span></a>') : '';
-
-			$notice	= wpautop($notice).wpjam_get_page_button('delete_notice', ['data'=>['notice_key'=>$key, 'notice_type'=>$type]]);
-
-			if($item['modal']){
-				if(empty($modal)){	// 弹窗每次只显示一条
-					$modal	= $notice;
-					$title	= $item['title'] ?: '消息';
-
-					echo '<div id="notice_modal" class="hidden" data-title="'.esc_attr($title).'">'.$modal.'</div>';
-				}
-			}else{
-				echo '<div class="notice notice-'.$item['type'].' '.$item['class'].'">'.$notice.'</div>';
-			}
-		}
-	}
-
-	public static function filter($items){
-		return array_filter(($items ?: []), fn($v)=> $v['time']>(time()-MONTH_IN_SECONDS*3) && trim($v['notice']));
-	}
-
-	public static function get_instance($type='admin', $id=0){
-		if($type == 'user'){
-			$id	= (int)$id ?: get_current_user_id();
-
-			return wpjam_get_handler('notice:user:'.$id, [
-				'meta_key'		=> 'wpjam_notices',
-				'user_id'		=> $id,
-				'primary_key'	=> 'key',
-				'get_items'		=> fn()=> WPJAM_Notice::filter(get_user_meta($this->user_id, $this->meta_key, true)),
-				'delete_items'	=> fn()=> delete_user_meta($this->user_id, $this->meta_key),
-				'update_items'	=> fn($items)=> update_user_meta($this->user_id, $this->meta_key, $items),
-			]);
-		}else{
-			$id	= (int)$id ?: get_current_blog_id();
-
-			return wpjam_get_handler('notice:admin:'.$id, [
-				'option_name'	=> 'wpjam_notices',
-				'blog_id'		=> $id,
-				'primary_key'	=> 'key',
-				'get_items'		=> fn()=> WPJAM_Notice::filter(wpjam_call_for_blog($this->blog_id, 'get_option', $this->option_name)),
-				'update_items'	=> fn($items)=> wpjam_call_for_blog($this->blog_id, 'update_option', $this->option_name, $items),
-			]);
-		}
+		return is_wp_error($qrcode) ? $qrcode : [
+			'qrcode'	=> ['type'=>'view',		'title'=>'微信扫码，'.$title,	'value'=>'<img src="'.(wpjam_get($qrcode, 'qrcode_url') ?: wpjam_get($qrcode, 'qrcode')).'" width="272" />'],
+			'code'		=> ['type'=>'number',	'title'=>'验证码',	'class'=>'input',	'required', 'size'=>20],
+			'scene'		=> ['type'=>'hidden',	'value'=>$qrcode['scene']],
+			'action'	=> ['type'=>'hidden',	'value'=>$action],
+		];
 	}
 }

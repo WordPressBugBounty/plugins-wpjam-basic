@@ -170,9 +170,9 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 
 	public static function add_hooks(){
 		if(self::get_setting('unique')){
-			add_filter('wpjam_html',	[self::class, 'filter_html']);
+			add_filter('wpjam_html', [self::class, 'filter_html']);
 		}else{
-			add_action('wp_head',		fn()=> wpjam_echo(implode(self::get_value('meta'))));
+			wpjam_hook('echo', 'wp_head', fn()=> implode(self::get_value('meta')));
 		}
 
 		add_filter('robots_txt',		fn($output, $public)=> $output.($public ? self::get_setting('robots') : ''), 10, 2);

@@ -3,7 +3,7 @@
 Name: 文章目录
 URI: https://mp.weixin.qq.com/s/vgNtvc1RcWyVCmnQdxAV0A
 Description: 自动根据文章内容里的子标题提取出文章目录，并显示在内容前。
-Version: 1.0
+Version: 2.0
 */
 class WPJAM_Toc extends WPJAM_Option_Model{
 	public static function get_fields(){
@@ -25,56 +25,46 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 		$index	= '';
 		$path	= [];
 
-		foreach(wpjam('toc') as $item){
+		foreach(self::get_items() as $item){
+			$depth	= $item['depth'];
+
 			if($path){
-				if(end($path) < $item['depth']){
+				if(array_last($path) < $depth){
 					$index	.= "\n<ul>\n";
-				}elseif(end($path) == $item['depth']){
-					$index	.= "</li>\n";
-
-					array_pop($path);
 				}else{
-					while(end($path) > $item['depth']){
-						$index	.= "</li>\n</ul>\n";
-
-						array_pop($path);
+					while(array_last($path) >= $depth){
+						$index	.= array_pop($path) == $depth ? "</li>\n" : "</li>\n</ul>\n";
 					}
 				}
 			}
 
-			$index	.= '<li class="toc-level'.$item['depth'].'"><a href="#'.$item['id'].'">'.$item['text'].'</a>';
-			$path[]	= $item['depth'];
+			$index	.= '<li class="toc-level'.$depth.'"><a href="#'.$item['id'].'">'.$item['text'].'</a>';
+			$path[]	= $depth;
 		}
 
-		if($path){
-			$index	.= "</li>\n".str_repeat("</li>\n</ul>\n", count($path)-1);
-			$index	= "<ul>\n".$index."</ul>\n";
-
-			return '<div id="toc">'."\n".'<p class="toc-title"><strong>文章目录</strong><span class="toc-controller toc-controller-show">[隐藏]</span></p>'."\n".$index.'</div>'."\n";
-		}
-
-		return '';
+		return $path ? '<div id="toc">'."\n".'<p class="toc-title"><strong>文章目录</strong><span class="toc-controller toc-controller-show">[隐藏]</span></p>'."\n"."<ul>\n".$index."</li>\n".str_repeat("</ul>\n</li>\n", count($path)-1)."</ul>\n".'</div>'."\n" : '';
 	}
 
-	public static function add_item($m, $index=false){
+	public static function callback($m, $index=false, $added=false){
 		$attr	= $m[2] ? shortcode_parse_atts($m[2]) : [];
 		$attr	= wp_parse_args($attr, ['class'=>'', 'id'=>'']);
 
 		if(!$attr['class'] || !str_contains($attr['class'], 'toc-noindex')){
-			$attr['class']	= wpjam_join(' ', $attr['class'] ,($index ? 'toc-index' : ''));
-			$attr['id']		= $attr['id'] ?: 'toc_'.(count(wpjam('toc'))+1);
-
-			wpjam('toc[]', ['text'=>trim(strip_tags($m[3])), 'depth'=>$m[1],	'id'=>$attr['id']]);
+			$attr['class']	= wpjam_join(' ', $attr['class'], ($index ? 'toc-index' : ''));
+			$attr['id']		= $attr['id'] ?: 'toc_'.(count(self::get_items())+1);
+			
+			$added || self::add_item(['text'=>trim(strip_tags($m[3])), 'depth'=>$m[1], 'id'=>$attr['id']]);
 		}
 
 		return wpjam_tag('h'.$m[1], $attr, $m[3]);
 	}
 
 	public static function filter_content($content){
-		$post_id	= get_the_ID();
-		$depth		= self::get_setting('depth', 6);
+		$depth	= self::get_setting('depth', 6);
 
 		if(self::get_setting('individual', 1)){
+			$post_id	= get_the_ID();
+
 			if(get_post_meta($post_id, 'toc_hidden', true)){
 				$depth	= 0;
 			}elseif(metadata_exists('post', $post_id, 'toc_depth')){
@@ -83,13 +73,13 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 		}
 
 		if($depth){
+			$added		= (bool)self::get_items();
 			$index		= str_contains($content, '[toc]');
-			$position	= self::get_setting('position', 'content');
-			$content	= wpjam_preg_replace('#<h([1-'.$depth.'])\b([^>]*)>(.*?)</h\1>#', fn($m)=> self::add_item($m, $index), $content);
+			$content	= wpjam_preg_replace('#<h([1-'.$depth.'])\b([^>]*)>(.*?)</h\1>#', fn($m)=> self::callback($m, $index, $added), $content);
 
 			if($index){
 				return str_replace('[toc]', self::render(), $content);
-			}elseif($position == 'content'){
+			}elseif(self::get_setting('position', 'content') == 'content'){
 				return self::render().$content;
 			}
 		}
@@ -105,10 +95,9 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 	}
 
 	public static function add_hooks(){
-		wpjam_add_filter('the_content', [
+		wpjam_hook('the_content', [
 			'callback'	=> [self::class, 'filter_content'],
-			'check'		=> fn()=> !doing_filter('get_the_excerpt') && wpjam_is('single', get_the_ID()),
-			'once'		=> true
+			'check'		=> fn()=> !doing_filter('get_the_excerpt') && wpjam_is('single', get_the_ID())
 		], 11);
 
 		self::get_setting('auto', 1) && add_action('wp_head', [self::class, 'on_head']);

@@ -118,7 +118,7 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 
 		if(time() - (int)self::get_setting('last') < DAY_IN_SECONDS){
 			if($submited == -1){
-				return ['notice_type'=>'info', 'errmsg'=>'所有页面都已提交'];
+				return ['notice'=>'所有页面都已提交'];
 			}else{
 				wp_die('批量提交的配额已用完，请稍后重试');
 			}
@@ -162,16 +162,11 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 			self::update_setting('last', time());
 			self::update_setting('submited', -1);
 
-			return [
-				'notice_type'	=> 'success',
-				'errmsg'		=> '提交成功，本次提交了'.$number.'个页面。',
-			];
+			return ['notice'	=> '提交成功，本次提交了'.$number.'个页面。'];
 		}else{
 			return [
-				'done'			=> 0,
-				'errmsg'		=> '批量提交中，请勿关闭浏览器，本次提交了'.$number.'个页面。',
-				'notice_type'	=> 'info',
-				'args'			=> http_build_query(['offset'=>$number])
+				'notice'	=> ['type'=>'info', 'message'=>'批量提交中，请勿关闭浏览器，本次提交了'.$number.'个页面。'],
+				'args'		=> ['offset'=>$number]
 			];
 		}
 	}

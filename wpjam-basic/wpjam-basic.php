@@ -3,22 +3,22 @@
 Plugin Name: WPJAM BASIC
 Plugin URI: https://blog.wpjam.com/project/wpjam-basic/
 Description: WPJAM 常用的函数和接口，屏蔽所有 WordPress 不常用的功能。
-Version: 6.8.3
-Requires at least: 6.6
-Tested up to: 6.8
+Version: 6.9.2.1
+Requires at least: 6.7
+Tested up to: 6.9
 Requires PHP: 7.4
 Author: Denis
 Author URI: http://blog.wpjam.com/
+Text Domain: wpjam
+Domain Path: /template
 */
 define('WPJAM_BASIC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WPJAM_BASIC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WPJAM_BASIC_PLUGIN_FILE', __FILE__);
 
-include __DIR__.'/includes/class-wpjam-args.php';
+include __DIR__.'/includes/class-wpjam-api.php';
 include __DIR__.'/includes/class-wpjam-model.php';
 include __DIR__.'/includes/class-wpjam-field.php';
-include __DIR__.'/includes/class-wpjam-setting.php';
-include __DIR__.'/includes/class-wpjam-api.php';
 include __DIR__.'/includes/class-wpjam-post.php';
 include __DIR__.'/includes/class-wpjam-term.php';
 include __DIR__.'/includes/class-wpjam-user.php';

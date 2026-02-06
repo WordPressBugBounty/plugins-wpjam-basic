@@ -26,9 +26,9 @@ wpjam_add_admin_load([
 				JS);
 			}
 
-			add_filter('wp_insert_post_data', fn($data)=> isset($_POST['the_excerpt']) ? wpjam_set($data, 'post_excerpt', $_POST['the_excerpt']) : $data);
+			isset($_POST['the_excerpt']) && add_filter('wp_insert_post_data', fn($data)=> wpjam_set($data, 'post_excerpt', $_POST['the_excerpt']));
 
-			add_action('add_inline_data', fn($post)=> wpjam_echo('<div class="post_excerpt">'.esc_textarea(trim($post->post_excerpt)).'</div>'));
+			wpjam_hook('echo', 'add_inline_data', fn($post)=> '<div class="post_excerpt">'.esc_textarea(trim($post->post_excerpt)).'</div>');
 		}
 	}
 ]);

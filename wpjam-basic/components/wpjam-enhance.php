@@ -3,7 +3,7 @@
 Name: 功能增强
 Version: 2.0
 */
-class WPJAM_Enhance{
+class WPJAM_Enhance extends WPJAM_Option_Model{
 	public static function get_section(){
 		$options	= array_column(get_taxonomies(['public'=>true, 'hierarchical'=>true], 'objects'), 'label', 'name');
 		$for_field	= count($options) <= 1 ? ['type'=>'hidden', 'value'=>'category'] : ['before'=>'分类模式：', 'options'=>$options];
@@ -22,16 +22,16 @@ class WPJAM_Enhance{
 		// 修正任意文件删除漏洞
 		add_filter('wp_update_attachment_metadata',	fn($data)=> (isset($data['thumb']) ? ['thumb'=>basename($data['thumb'])] : [])+$data);
 
-		$options	= wpjam_basic_get_setting('x-frame-options');
+		$options	= self::get_setting('x-frame-options');
 		$options	&& add_action('send_headers', fn()=> header('X-Frame-Options: '.$options));
 
 		// 防止重名造成大量的 SQL
-		if(wpjam_basic_get_setting('timestamp_file_name')){
+		if(self::get_setting('timestamp_file_name')){
 			wpjam_hooks('wp_handle_sideload_prefilter, wp_handle_upload_prefilter', fn($file)=> array_merge($file, empty($file['md5_filename']) ? ['name'=> time().'-'.$file['name']] : []));
 		}
 
-		if(wpjam_basic_get_setting('no_category_base')){
-			$tax	= wpjam_basic_get_setting('no_category_base_for', 'category');
+		if(self::get_setting('no_category_base')){
+			$tax	= self::get_setting('no_category_base_for', 'category');
 
 			$tax == 'category' && str_starts_with($_SERVER['REQUEST_URI'], '/category/') && add_action('template_redirect', fn()=> wp_redirect(site_url(substr($_SERVER['REQUEST_URI'], 10)), 301));
 
@@ -40,10 +40,10 @@ class WPJAM_Enhance{
 	}
 }
 
-class WPJAM_Gravatar{
+class WPJAM_Gravatar extends WPJAM_Option_Model{
 	public static function get_fields(){
 		return ['gravatar'=>['title'=>'Gravatar加速', 'label'=>true, 'type'=>'fieldset', 'fields'=>[
-			'gravatar'=>['after'=>'加速服务', 'options'=>wpjam_parse_options('gravatar')+['custom'=>[
+			'gravatar'=>['after'=>'加速服务', 'options'=>wpjam_options(self::get_items(), ['type'=>'select'])+['custom'=>[
 				'title'		=> '自定义',	
 				'fields'	=> ['gravatar_custom'=>['placeholder'=>'请输入 Gravatar 加速服务地址']]
 			]]]
@@ -76,8 +76,8 @@ class WPJAM_Gravatar{
 			return $args+['found_avatar'=>true, 'url'=>wpjam_get_thumbnail($avatarurl, $args)];
 		}
 
-		$name	= wpjam_basic_get_setting('gravatar');
-		$value	= $name == 'custom' ? wpjam_basic_get_setting('gravatar_custom') : ($name ? wpjam('gravatar', $name.'.url') : '');
+		$name	= self::get_setting('gravatar');
+		$value	= $name == 'custom' ? self::get_setting('gravatar_custom') : ($name ? self::get_item($name.'[url]') : '');
 
 		$value && add_filter('get_avatar_url', fn($url)=> str_replace(array_map(fn($v)=>$v.'gravatar.com/avatar/', ['https://secure.', 'http://0.', 'http://1.', 'http://2.']), $value, $url));
 
@@ -85,19 +85,19 @@ class WPJAM_Gravatar{
 	}
 
 	public static function add_hooks(){
-		wpjam_map([
+		self::add_items([
 			'geekzu'	=> ['title'=>'极客族',		'url'=>'https://sdn.geekzu.org/avatar/'],
 			'loli'		=> ['title'=>'loli',		'url'=>'https://gravatar.loli.net/avatar/'],
 			'sep_cc'	=> ['title'=>'sep.cc',		'url'=>'https://cdn.sep.cc/avatar/'],
 			'7ed'		=> ['title'=>'7ED',			'url'=>'https://use.sevencdn.com/avatar/'],
 			'cravatar'	=> ['title'=>'Cravatar',	'url'=>'https://cravatar.cn/avatar/'],
-		], fn($v, $k)=> wpjam('gravatar', $k, $v));
+		]);
 
 		add_filter('pre_get_avatar_data', [self::class, 'filter_pre_data'], 10, 2);
 	}
 }
 
-class WPJAM_Google_Font{
+class WPJAM_Google_Font extends WPJAM_Option_Model{
 	public static function get_search(){
 		return [
 			'googleapis_fonts'			=> '//fonts.googleapis.com',
@@ -109,7 +109,7 @@ class WPJAM_Google_Font{
 
 	public static function get_fields(){
 		return ['google_fonts'=>['title'=>'Google字体加速', 'type'=>'fieldset', 'label'=>true, 'fields'=>[
-			'google_fonts'=>['type'=>'select', 'after'=>'加速服务', 'options'=>wpjam_parse_options('google_font')+['custom'=>[
+			'google_fonts'=>['type'=>'select', 'after'=>'加速服务', 'options'=>wpjam_options(self::get_items(), ['type'=>'select'])+['custom'=>[
 				'title'		=> '自定义',
 				'fields'	=> wpjam_map(self::get_search(), fn($v)=> ['placeholder'=>'请输入'.str_replace('//', '', $v).'加速服务地址'])
 			]]]
@@ -117,7 +117,7 @@ class WPJAM_Google_Font{
 	}
 
 	public static function add_hooks(){
-		wpjam_map([
+		self::add_items([
 			'geekzu'	=> [
 				'title'		=> '极客族',
 				'replace'	=> ['//fonts.geekzu.org', '//gapis.geekzu.org/ajax', '//gapis.geekzu.org/g-themes', '//gapis.geekzu.org/g-fonts']
@@ -130,40 +130,40 @@ class WPJAM_Google_Font{
 				'title'		=> '中科大',
 				'replace'	=> ['//fonts.lug.ustc.edu.cn', '//ajax.lug.ustc.edu.cn', '//google-themes.lug.ustc.edu.cn', '//fonts-gstatic.lug.ustc.edu.cn']
 			]
-		], fn($v, $k)=> wpjam('google_font', $k, $v));
+		]);
 
 		$search	= self::get_search();
-		$name	= wpjam_basic_get_setting('google_fonts');
-		$value	= $name == 'custom' ? wpjam_map($search, fn($v, $k)=> str_replace(['http://','https://'], '//', wpjam_basic_get_setting($k) ?: $v)) : ($name ? wpjam('google_font', $name.'.replace') : '');
+		$name	= self::get_setting('google_fonts');
+		$value	= $name == 'custom' ? wpjam_map($search, fn($v, $k)=> str_replace(['http://','https://'], '//', self::get_setting($k) ?: $v)) : ($name ? self::get_item($name.'[replace]') : '');
 
 		$value && add_filter('wpjam_html', fn($html)=> str_replace($search, $value, $html));
 	}
 }
 
-class WPJAM_Static_CDN{
-	public static function get_setting(){
-		$hosts	= wpjam('static_cdn');
-		$host	= wpjam_basic_get_setting('static_cdn');
+class WPJAM_Static_CDN extends WPJAM_Option_Model{
+	public static function get_value(){
+		$hosts	= self::get_items();
+		$host	= self::get_setting('static_cdn');
 
 		return $host && in_array($host, $hosts) ? $host : $hosts[0];
 	}
 
 	public static function get_fields(){
-		return ['static_cdn'=>['title'=>'前端公共库', 'options'=>wpjam_fill(wpjam('static_cdn'), fn($v)=> parse_url($v, PHP_URL_HOST))]];
+		return ['static_cdn'=>['title'=>'前端公共库', 'options'=>wpjam_fill(self::get_items(), fn($v)=> parse_url($v, PHP_URL_HOST))]];
 	}
 
 	public static function add_hooks(){
-		wpjam_map([
+		self::add_items([
 			'https://cdnjs.cloudflare.com/ajax/libs',
 			'https://s4.zstatic.net/ajax/libs',
 			'https://cdnjs.snrat.com/ajax/libs',
 			'https://lib.baomitu.com',
 			'https://cdnjs.loli.net/ajax/libs',
 			'https://use.sevencdn.com/ajax/libs',
-		], fn($v)=> wpjam('static_cdn[]', $v));
+		]);
 
-		$host	= self::get_setting();
-		$hosts	= array_diff(wpjam('static_cdn'), [$host]);
+		$host	= self::get_value();
+		$hosts	= array_diff(self::get_items(), [$host]);
 
 		foreach(['style', 'script'] as $type){
 			add_filter($type.'_loader_src', fn($src)=> $src && !str_starts_with($src, $host) ? str_replace($hosts, $host, $src) : $src);
@@ -181,17 +181,17 @@ wpjam_map([
 ], fn($v)=> wpjam_add_option_section('wpjam-basic', 'enhance', $v+['plugin_page'=>'wpjam-basic']));
 
 function wpjam_register_gravatar($name, $args){
-	return wpjam('gravatar', $name, $args);
+	return WPJAM_Gravatar::add_item($name, $args);
 }
 
 function wpjam_register_google_font($name, $args){
-	return wpjam('google_font', $name, $args);
+	return WPJAM_Google_Font::add_item($name, $args);
 }
 
 function wpjam_add_static_cdn($host){
-	return wpjam('static_cdn[]', $host);
+	return WPJAM_Static_CDN::add_item($host);
 }
 
 function wpjam_get_static_cdn(){
-	return WPJAM_Static_CDN::get_setting();
+	return WPJAM_Static_CDN::get_value();
 }

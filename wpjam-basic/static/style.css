@@ -1,6 +1,8 @@
 .abscenter{left:50%; top:50%; transform:translate(-50%, -50%);}
 .ui-autocomplete{z-index:1000000 !important;} /*要超过 TB z-index 才行，不然弹窗不行*/
 
+.wp-menu-image[class*=" ri-"]:before{display:inline-block; line-height:1; font-size:20px;}
+
 .green{font-size:larger; font-weight:500; color:green;}
 .red{font-size:larger; font-weight:500; color:red;}
 
@@ -22,10 +24,15 @@ div.donut-chart-wrap .widefat thead td, div.donut-chart-wrap .widefat thead th{b
 
 .expandable-container{display:flex; flex-direction:column-reverse; align-items:flex-start;}
 .expandable-container .inner{max-height:12em; margin-bottom:1em; overflow:hidden; transition:max-height 1s ease;}
+.expandable-container .inner .row-actions{display:none;}
 .expandable-container input:checked + label + .inner{max-height:none; margin-bottom:0;}
+.expandable-container input:checked + label + .inner .row-actions{display:initial;}
 .expandable-container input{display:none;}
 .expandable-container label:before{font-family:remixicon !important; font-style:normal; content:"展开\f2e0";}
 .expandable-container input:checked + label:before{content:"收起\f2ea";}
+
+input.expandable{min-width:30px; field-sizing:content; width:unset !important;}
+textarea.expandable{field-sizing:content; width:40em; min-height:6em; max-width:100%;}
 
 span.all-options{width:250px;}
 span.large-text{width:99%;}
@@ -34,8 +41,13 @@ span.tiny-text{width:35px;}
 .nowrap-text{white-space:nowrap; word-wrap:normal; overflow-wrap:normal;}
 
 input:placeholder{font-size:13px;}
-input.medium-text{width:105px;}
-input.compact-text{width:85px;}
+input.medium-text{min-width:105px; width:105px;}
+input.compact-text{min-width:85px; width:85px;}
+input.small-text{min-width:50px;}
+input[type=number].small-text{min-width:65px;}
+input.tiny-text{min-width:35px;}
+input[type=number].tiny-text{min-width:45px;}
+
 input[type=checkbox]:indeterminate{position:relative;}
 input[type=checkbox]:indeterminate:before{content:''; border-top:2px solid grey; width: 65%; height: 2px; position: absolute; top: calc(50% + 1px); left: 50%; transform: translate(-50%, -50%);}
 input[type=number]{padding-right:0;}
@@ -44,6 +56,8 @@ input[type=date],
 input[type=datetime],
 input[type=datetime-local]{height:28px;}
 input[type=color]{display:none;}
+
+#TB_window textarea.expandable{width:30em;}
 
 details summary{cursor:pointer;}
 summary + .sub-field{margin-top:20px;}
@@ -77,16 +91,16 @@ span.query-label ~ .description{display:none !important;}
 input.button ~ span.query-label{margin-left:6px;}
 div.mu-text span.query-label{cursor:move;}
 div.mu-text span.query-label ~ *{display:none;}
-div.mu-text.tag-input span.query-label{display:flex; flex-direction:row-reverse; line-height:20px; padding:0 4px 0 8px; border-radius:1px;}
-div.mu-text.tag-input span.query-label span{line-height:20px; margin-right:0; margin-left:2px;}
-div.mu-text.tag-input span.query-label span:before{content:"\f335";}
+div.mu-text:has(.tag-input) span.query-label{display:flex; flex-direction:row-reverse; line-height:20px; padding:0 4px 0 8px; border-radius:1px;}
+div.mu-text:has(.tag-input) span.query-label span{line-height:20px; margin-right:0; margin-left:2px;}
+div.mu-text:has(.tag-input) span.query-label span:before{content:"\f335";}
 
 span.tag-label{padding:0 4px 0 8px; cursor:move;}
 span.tag-label .del-item{line-height:30px; margin-left:4px;}
 span.tag-label ~ *{display:none;}
-div.mu-fields.taggable > .mu-item > .del-item,
-div.mu-fields.taggable > .mu-item > .move-item,
-div.mu-fields.taggable > .mu-item:last-child{display:none;}
+div.mu-fields[data-tag_label] > .mu-item > .del-item,
+div.mu-fields[data-tag_label] > .mu-item > .move-item,
+div.mu-fields[data-tag_label] > .mu-item:last-child{display:none;}
 
 div.mu-select-wrap{position:relative; display:inline-block;}
 fieldset.mu-select{position:absolute; top:101%; left:-2px; overflow-y:scroll; background-color:#f0f0f0; border:1px solid #ccc; box-shadow:0 4px 8px rgba(0, 0, 0, 0.1); border-radius:6px; z-index:10000000000; padding:4px 0; gap:0;}
@@ -137,10 +151,10 @@ div.mu-text.direction-row > .mu-item input{padding-right:20px !important;}
 div.mu-text.direction-row > .mu-item input + .del-item{padding:0; border:0; margin-left:-24px; margin-right:4px;}
 div.mu-text.direction-row > .mu-item input + .button{margin-left:0px;}
 
-div.mu-text.tag-input{display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px; line-height:30px; padding:4px; box-shadow:0 0 0 transparent; border-radius:4px; border:1px solid #8c8f94; background-color:#fff; color:#2c3338;}
-div.mu-text.tag-input:hover{border-color:#2271b1; box-shadow:0 0 0 1px #2271b1; outline:2px solid transparent;}
-div.mu-text.tag-input input,
-div.mu-text.tag-input input:focus{border:0; box-shadow:none; height:20px; min-height:20px; padding:0; outline:0;}
+div.mu-text:has(.tag-input){display:inline-flex; flex-wrap:wrap; align-items:center; gap:4px; line-height:30px; padding:4px; box-shadow:0 0 0 transparent; border-radius:4px; border:1px solid #8c8f94; background-color:#fff; color:#2c3338;}
+div.mu-text:has(.tag-input):hover{border-color:#2271b1; box-shadow:0 0 0 1px #2271b1; outline:2px solid transparent;}
+div.mu-text input.tag-input,
+div.mu-text input.tag-input:focus{border:0; box-shadow:none; height:20px; min-height:20px; padding:0; outline:0;}
 
 div.mu-fields.direction-column > .mu-item{padding-bottom:6px;}
 div.mu-fields.direction-column > .mu-item:not(.field-group){border-bottom:1px solid #E5E5E5;}
@@ -269,6 +283,7 @@ table.wp-list-table th a{display:flex;}
 table.wp-list-table th.check-column .dashicons{margin-left:6px; color:#999; font-size:16px; width:16px; height:16px;}
 table.wp-list-table th.check-column .spinner{margin:4px 0 0 0;}
 table.wp-list-table th.check-column .spinner + input{display:none;}
+table.wp-list-table th.column-no{width:42px;}
 
 table.wp-list-table .pending th,
 table.wp-list-table .pending td{background-color:#f0f6fc;}
@@ -333,6 +348,10 @@ div#col-left .tablenav .tablenav-pages{float:none;}
 div#col-left .left-item.left-current{background-color:#f0f6fc; color:#3c434a;}
 div#col-left .left-item{cursor:pointer;}
 div#col-left span.left-pagination-links{display:flex; gap:4px; align-items:center;}
+div#col-left td{padding-left: 14px; padding-right: 20px;}
+div#col-left td a:focus{box-shadow: inherit;}
+div#col-left td span.time{font-size:smaller;}
+div#col-left td span.count{font-size:smaller; float:right; padding:2px 4px; margin-left:4px;}
 
 div.items span.row-actions > span{margin:0 3px;}
 div.items.image-list{display:flex; flex-wrap:wrap;}
@@ -343,28 +362,30 @@ div.items.image-list .add-item{margin:10px 0px 20px 0; background:#f9f9f966; bor
 .striped>tbody>:nth-child(odd) .add-item{background:#ffffff66;}
 
 div.items.text-list .item{display:flex; margin-bottom:10px; max-width:400px;}
-div.items.text-list .item > a{display:inline-block; width:130px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; margin-right:10px; vertical-align:middle;}
+div.items.text-list .item > a{display:inline-block; width:150px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; margin-right:10px; vertical-align:middle;}
 div.items.text-list .item a.del-icon{top:inherit; right:inherit;}
 
-[data-layout="calendar"] .tablenav.top{text-align:center;}
-[data-layout="calendar"] h2{font-size:2em; display:inline-block; margin:0 0 10px 0; line-height:30px;}
-[data-layout="calendar"] .tablenav-pages a.current-month{padding-left:20px; padding-right:20px;}
-[data-layout="calendar"] table{width:100%; margin:20px 0;}
-[data-layout="calendar"] table a{text-decoration:none;}
-[data-layout="calendar"] table .weekend{background:#f6f7f7;}
-[data-layout="calendar"] table th{font-size:larger; font-weight:bold;}
-[data-layout="calendar"] table td,
-[data-layout="calendar"] table th{border-right:1px solid #c3c4c7; border-bottom:1px solid #c3c4c7;}
-[data-layout="calendar"] table td:last-child,
-[data-layout="calendar"] table th:last-child{border-right:none;}
-[data-layout="calendar"] table tfoot th{border-bottom:none;}
+.layout-calendar .tablenav.top{text-align:center;}
+.layout-calendar h2{font-size:2em; display:inline-block; margin:0 0 10px 0; line-height:30px;}
+.layout-calendar .tablenav-pages a.current-month{padding-left:20px; padding-right:20px;}
+.layout-calendar table{width:100%; margin:20px 0;}
+.layout-calendar table a{text-decoration:none;}
+.layout-calendar table .column-day0,
+.layout-calendar table .column-day6{background:#f6f7f7;}
+.layout-calendar table.striped > tbody > tr {background-color:#ffffff;}
+.layout-calendar table th{font-size:larger; font-weight:bold;}
+.layout-calendar table td,
+.layout-calendar table th{border-right:1px solid #c3c4c7; border-bottom:1px solid #c3c4c7;}
+.layout-calendar table td:last-child,
+.layout-calendar table th:last-child{border-right:none;}
+.layout-calendar table tfoot th{border-bottom:none;}
 
-[data-layout="calendar"] table td .date-meta{min-height:24px;}
-[data-layout="calendar"] table td span.day{display:inline-block; width:20px; height:20px; line-height:20px; text-align:center;}
-[data-layout="calendar"] table td span.day.today{color:#fff; border-radius:10px; background:red;}
+.layout-calendar table td .date-meta{min-height:24px;}
+.layout-calendar table td span.day{display:inline-block; width:20px; height:20px; line-height:20px; text-align:center;}
+.layout-calendar table td span.day.today{color:#fff; border-radius:10px; background:red;}
 
-[data-layout="calendar"] table td a.list-table-action{display:none;}
-[data-layout="calendar"] table td:hover a.list-table-action{display:inline-block;}
+.layout-calendar table td a.list-table-action{display:none;}
+.layout-calendar table td:hover a.list-table-action{display:inline-block;}
 
 #TB_window #TB_title{height:40px;}
 #TB_window #TB_title #TB_ajaxWindowTitle{line-height:40px; font-size:1.3em; padding-left:20px;}
@@ -442,6 +463,9 @@ div.mu-select-wrap.hidden,
 }
 
 @media screen and (min-width:783px){
+	#col-left:has(table){width: 25%;}
+	#col-left:has(table) ~ #col-right{width: 75%}
+
 	#adminmenu .awaiting-mod,
 	#adminmenu .update-plugins{line-height:18px; transform:scale(0.92);}
 	.post-com-count-pending{line-height:20px !important; height:20px !important; left:-6px !important; border-radius:12px !important; min-width:10px !important; transform:scale(0.833333);}

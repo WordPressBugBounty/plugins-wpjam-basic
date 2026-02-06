@@ -107,11 +107,7 @@ class WPJAM_Role{
 		$user	= is_object($user) ? $user : get_userdata($user);
 		$caps	= array_keys(wpjam_filter($user->caps, fn($v, $k)=> $v && !$GLOBALS['wp_roles']->is_role($k)));
 
-		return $output == 'fields' ? wpjam_fields(['capabilities'=> [
-			'title'	=> '权限',
-			'type'	=> 'mu-text',
-			'value'	=> $caps
-		]]) : $caps;
+		return $output == 'fields' ? wpjam_fields(['capabilities'=>['title'=>'权限', 'type'=>'mu-text', 'value'=>$caps]]) : $caps;
 	}
 
 	public static function set_additional($user, $caps){
@@ -129,7 +125,7 @@ class WPJAM_Role{
 		if(current_user_can($capability)){
 			add_filter('additional_capabilities_display', '__return_false' );
 
-			wpjam_map(['show', 'edit'], fn($v)=> add_action($v.'_user_profile', fn($user)=> wpjam_echo('<h3>额外权限</h3>'.self::get_additional($user, 'fields'))));
+			wpjam_map(['show', 'edit'], fn($v)=> wpjam_hook('echo', $v.'_user_profile', fn($user)=> '<h3>额外权限</h3>'.self::get_additional($user, 'fields')));
 
 			wpjam_map(['personal_options_update', 'edit_user_profile_update'], fn($v)=> add_action($v, fn($id)=> self::set_additional($id, wpjam_get_post_parameter('capabilities') ?: [])));
 		}

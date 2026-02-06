@@ -7,60 +7,36 @@ Version: 2.0
 */
 class WPJAM_Rewrite{
 	public static function __callStatic($method, $args){
-		if(in_array($method, ['get_setting', 'update_setting'])){
-			$method != 'get_setting' && flush_rewrite_rules();
+		if(str_ends_with($method, '_setting')){
+			if($method == 'update_setting'){
+				flush_rewrite_rules();
+
+				$args	= array_slice($args, 0, 2);
+			}
 
 			return WPJAM_Basic::$method(...$args);
 		}
 	}
 
-	public static function get_all(){
-		return get_option('rewrite_rules') ?: [];
-	}
-
-	public static function validate_data($data, $id=''){
-		(empty($data['regex']) || empty($data['query'])) && wp_die('Rewrite 规则不能为空');
-
-		is_numeric($data['regex']) && wp_die('无效的 Rewrite 规则');
-
-		isset(self::get_all()[$data['regex']]) && wp_die('该 Rewrite 规则已存在');
-
-		return $data;
-	}
-
 	public static function query_items($args){
-		return wpjam_reduce(self::get_all(), fn($carry, $regex, $query)=> [...$carry, compact('regex', 'query')], []);
+		return wpjam_reduce(get_option('rewrite_rules') ?: [], fn($carry, $regex, $query)=> [...$carry, ['regex'=>wpautop($regex), 'query'=>wpautop($query)]], []);
 	}
 
 	public static function get_actions(){
-		$args	= ['value_callback'=>[self::class, 'get_setting'], 'callback'=>[self::class, 'update_setting']];
-
 		return [
-			'optimize'	=> $args+['title'=>'优化',	'response'=>'list',	'overall'=>true,	'class'=>'button-primary'],
-			'custom'	=> $args+['title'=>'自定义',	'response'=>'list',	'overall'=>true],
+			'optimize'	=> ['title'=>'优化',		'update_setting'=>true,	'class'=>'button-primary'],
+			'custom'	=> ['title'=>'自定义',	'update_setting'=>true],
 		];
 	}
 
 	public static function get_fields($action_key='', $id=0){
 		if($action_key == 'custom'){
-			return [
-				'rewrites'	=> ['type'=>'mu-fields',	'fields'=>[
-					'regex'	=> ['title'=>'正则',	'type'=>'text',	'show_admin_column'=>true],
-					'query'	=> ['title'=>'查询',	'type'=>'text',	'show_admin_column'=>true],
-				]],
-			];
+			return ['rewrites'=>['type'=>'mu-fields', 'fields'=>self::get_fields()]];
 		}elseif($action_key == 'optimize'){
-			return [
-				'remove_date_rewrite'		=> ['label'=>'移除日期 Rewrite 规则'],
-				'remove_comment_rewrite'	=> ['label'=>'移除留言 Rewrite 规则'],
-				'remove_feed=_rewrite'		=> ['label'=>'移除分类 Feed Rewrite 规则'],
-			];
+			return wpjam_array(['date'=>'日期', 'comment'=>'留言', 'feed='=>'分类 Feed'], fn($k, $v)=> ['remove_'.$k.'_rewrite', ['label'=>'移除'.$v.' Rewrite 规则']]);
 		}
 
-		return [
-			'regex'	=> ['title'=>'正则',	'type'=>'text',	'show_admin_column'=>true],
-			'query'	=> ['title'=>'查询',	'type'=>'text',	'show_admin_column'=>true],
-		];
+		return wpjam_map(['regex'=>'正则', 'query'=>'查询'], fn($v)=> ['title'=>$v, 'type'=>'text', 'show_admin_column'=>true, 'required']);
 	}
 
 	public static function cleanup(&$rules){
@@ -79,7 +55,7 @@ class WPJAM_Rewrite{
 				}
 
 				foreach($remove as $r){
-					if(strpos($key, $r) !== false || strpos($rule, $r) !== false){
+					if(str_contains($key, $r) || str_contains($rule, $r)){
 						unset($rules[$key]);
 					}
 				}
@@ -88,22 +64,13 @@ class WPJAM_Rewrite{
 	}
 
 	public static function add_hooks(){
-		if(self::get_setting('remove_date_rewrite')){
-			add_filter('date_rewrite_rules', fn()=> []);
-
-			add_action('init', fn()=> array_map('remove_rewrite_tag', ['%year%', '%monthnum%', '%day%', '%hour%', '%minute%', '%second%']));
-		}
-
 		self::get_setting('remove_comment_rewrite') && add_filter('comments_rewrite_rules', fn()=> []);
+		self::get_setting('remove_date_rewrite') && add_filter('date_rewrite_rules', fn()=> []) && add_action('init', fn()=> array_map('remove_rewrite_tag', ['%year%', '%monthnum%', '%day%', '%hour%', '%minute%', '%second%']));
+		
+		add_action('generate_rewrite_rules', fn($wp_rewrite)=> wpjam_map(['rules', 'extra_rules_top'], fn($k)=> self::cleanup($wp_rewrite->$k)));
 
-		add_action('generate_rewrite_rules', function($wp_rewrite){
-			self::cleanup($wp_rewrite->rules); 
-			self::cleanup($wp_rewrite->extra_rules_top);
-
-			if($rewrites = self::get_setting('rewrites')){
-				$wp_rewrite->rules = array_merge(array_column($rewrites, 'query', 'regex'), $wp_rewrite->rules);
-			}
-		});
+		$custom	= wpjam_array(self::get_setting('rewrites') ?: [], fn($k, $v)=> $v['regex'] && !is_numeric($v['regex']) ? [$v['regex'], $v['query']] : null);
+		$custom && add_filter('rewrite_rules_array', fn($rules)=> $custom+$rules);
 	}
 }
 

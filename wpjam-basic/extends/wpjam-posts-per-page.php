@@ -92,54 +92,43 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 			return;
 		}
 
-		$required	= isset($wp_query->query['post_type']) ? false : (bool)get_post_types(['exclude_from_search'=>false, '_builtin'=>false]);
-		$object		= $wp_query->get_queried_object();
+		$is			= wpjam_is($wp_query);
+		$queried	= $wp_query->get_queried_object();
 
-		if(is_front_page()){
-			$number	= self::get_setting('home');
-			
-			if($required){
-				$post_types	= self::get_setting('home_post_types');
-			}
-		}elseif(is_feed()){
-			if($required){
-				$post_types	= self::get_setting('feed_post_types');
-			}
-		}elseif(is_author()){
-			$number	= self::get_setting('author');
-
-			if($required){
-				$post_types	= array_intersect(get_post_types_by_support('author'), get_post_types(['public'=>true]));
-			}
-		}elseif(is_tax() || is_category() || is_tag()){
-			if($object){
-				$tax	= $object->taxonomy;
+		if(in_array($is, ['home', 'author', 'search', 'archive'], true)){
+			$number	= self::get_setting($is);
+		}elseif(in_array($is, ['category', 'tag', 'tax'], true)){
+			if($queried){
+				$tax	= $queried->taxonomy;
 				$number	= wpjam_get_taxonomy_setting($tax, 'posts_per_page') ?: self::get_setting($tax);
 
 				if(self::get_setting($tax.'_individual')){
-					$number	= get_term_meta($object->term_id, 'posts_per_page', true) ?: $number;
-				}
-
-				if($required && (is_category() || is_tag())){
-					$post_types	= array_intersect(get_taxonomy($tax)->object_type, get_post_types(['public'=>true]));
+					$number	= get_term_meta($queried->term_id, 'posts_per_page', true) ?: $number;
 				}
 			}
-		}elseif(is_post_type_archive()){
-			if($object){
-				$number	= wpjam_get_post_type_setting($object->name, 'posts_per_page') ?: self::get_setting($object->name);
-			}
-		}elseif(is_search()){
-			$number		= self::get_setting('search');
-		}elseif(is_archive()){
-			$number		= self::get_setting('archive');
-
-			if($required){
-				$post_types	= 'any';
+		}elseif($is === 'post_type_archive'){
+			if($queried){
+				$number	= wpjam_get_post_type_setting($queried->name, 'posts_per_page') ?: self::get_setting($queried->name);
 			}
 		}
 
-		!empty($number) && $wp_query->set('posts_per_page', $number);
-		!empty($post_types) && $wp_query->set('post_type', (is_array($post_types) && count($post_types) == 1) ? reset($post_types) : $post_types);
+		empty($number) || $wp_query->set('posts_per_page', $number);
+
+		if(!isset($wp_query->query['post_type']) && get_post_types(['exclude_from_search'=>false, '_builtin'=>false])){
+			if(in_array($is, ['home', 'feed'], true)){
+				$post_types	= self::get_setting($is.'_post_types');
+			}elseif(in_array($is, ['category', 'tag'], true)){
+				if($queried){
+					$post_types	= array_intersect(get_taxonomy($queried->taxonomy)->object_type, get_post_types(['public'=>true]));
+				}
+			}elseif($is === 'author'){
+				$post_types	= array_intersect(get_post_types_by_support('author'), get_post_types(['public'=>true]));
+			}elseif($is === 'archive'){
+				$post_types	= 'any';
+			}
+		
+			empty($post_types) || $wp_query->set('post_type', (is_array($post_types) && count($post_types) == 1) ? array_first($post_types) : $post_types);
+		}
 	}
 
 	public static function add_hooks(){

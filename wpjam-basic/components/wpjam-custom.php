@@ -46,7 +46,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 		if(in_array($name, ['head', 'footer']) && is_singular() && self::get_setting('custom_post')){
 			if($value = get_post_meta(get_the_ID(), 'custom_'.$name, true)){
 				if($name == 'head'){
-					add_action('wp_'.$name, fn()=> wpjam_echo($value), 99);
+					wpjam_hook('echo', 'wp_'.$name, fn()=> $value, 99);
 				}else{
 					echo $value;
 				}

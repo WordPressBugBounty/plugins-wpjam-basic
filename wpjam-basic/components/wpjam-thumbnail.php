@@ -46,27 +46,29 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 
 	public static function get_default(){
 		$default	= self::get_setting('default', []);
-		$default	= ($default && is_array($default)) ? $default[array_rand($default)] : '';
+		$default	= $default && is_array($default) ? $default[array_rand($default)] : '';
 
 		return apply_filters('wpjam_default_thumbnail_url', $default);
 	}
 
-	public static function get_post_thumbnail_url($post){
-		foreach(self::get_setting('post_thumbnail_orders') ?: [] as $order){
+	public static function get_post_thumbnail_url($post, $order=null){
+		if($order){
 			if($order['type'] == 'first'){
-				$url	= wpjam_get_post_first_image_url($post);
+				return wpjam_get_post_first_image_url($post);
 			}elseif($order['type'] == 'post_meta'){
 				if(!empty($order['post_meta'])){
-					$url	= get_post_meta($post->ID, $order['post_meta'], true);
+					return get_post_meta($post->ID, $order['post_meta'], true);
 				}
 			}elseif($order['type'] == 'term'){
 				if($order['taxonomy'] && is_object_in_taxonomy($post, $order['taxonomy'])){
-					$url	= wpjam_found(get_the_terms($post, $order['taxonomy']) ?: [], fn($term)=> wpjam_get_term_thumbnail_url($term));
+					return wpjam_find(get_the_terms($post, $order['taxonomy']) ?: [], fn($v)=> $v, fn($term)=> wpjam_get_term_thumbnail_url($term));
 				}
 			}
-
-			if(!empty($url)){
-				return $url;
+		}else{
+			foreach(self::get_setting('post_thumbnail_orders') ?: [] as $order){
+				if($order && ($url	= self::get_post_thumbnail_url($post, $order))){
+					return $url;
+				}
 			}
 		}
 	}
@@ -76,7 +78,7 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 			$src	= wpjam_get_post_thumbnail_url($post_id, wpjam_parse_size($size, 2));
 		}else{
 			$images	= wpjam_get_post_images($post_id, false);
-			$src	= $images ? wpjam_get_thumbnail(wpjam_at($images, 0), wpjam_parse_size($size, 2)) : ''; 
+			$src	= $images ? wpjam_get_thumbnail(array_first($images), wpjam_parse_size($size, 2)) : ''; 
 		}
 
 		if($src){
@@ -100,12 +102,12 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 
 		self::get_setting('auto') && add_filter('has_post_thumbnail', fn($has, $post)=> $has ?: (bool)wpjam_get_post_thumbnail_url($post), 10, 2);
 
-		wpjam_add_filter('wpjam_post_thumbnail_url', [
+		wpjam_hook('wpjam_post_thumbnail_url', [
 			'check'		=> fn($url, $post)=> is_object_in_taxonomy($post, 'category'),
 			'callback'	=> fn($url, $post)=> self::get_post_thumbnail_url($post) ?: ($url ?: self::get_default())
 		], 1, 2);
 
-		wpjam_add_filter('post_thumbnail_html',		[
+		wpjam_hook('post_thumbnail_html',		[
 			'check'		=> fn($html, $post_id)=> !post_type_supports(get_post_type($post_id), 'thumbnail') || empty($html),
 			'callback'	=> fn($html, $post_id, $post_thumbnail_id, $size, $attr)=> self::get_post_thumbnail_html($post_id, $size, $attr) ?: ''
 		], 10, 5);

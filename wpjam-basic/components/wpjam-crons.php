@@ -6,7 +6,7 @@ Description: 定时作业让你可以可视化管理 WordPress 的定时作业
 Version: 2.0
 */
 class WPJAM_Cron extends WPJAM_Args{
-	public function callback(){
+	public function __invoke(){
 		if(wpjam_lock($this->hook.'_lock', 10, true)){
 			return;
 		}
@@ -171,14 +171,13 @@ function wpjam_register_cron($hook, $args=[]){
 		return wpjam_register_job($hook, $args);
 	}
 
-	$cb		= $args['callback'] ?? '';
-	$object	= $cb ? null : wpjam_add_instance('cron', $hook, new WPJAM_Cron($args+['hook'=>$hook]));
+	$cb	= ($args['callback'] ?? '') ?: wpjam('cron', $hook, new WPJAM_Cron($args+['hook'=>$hook]));
 
-	add_action($hook, $cb ?: [$object, 'callback']);
+	add_action($hook, $cb);
 
 	wpjam_is_scheduled_event($hook) || wpjam_schedule_event($hook, $args);
 
-	return $object;
+	return is_object($cb) ? $cb : null;
 }
 
 function wpjam_register_job($job, $args=[]){
@@ -194,7 +193,7 @@ function wpjam_register_job($job, $args=[]){
 }
 
 function wpjam_get_cron($hook){
-	return wpjam_get_instance('cron', $hook);
+	return wpjam('cron', $hook);
 }
 
 function wpjam_schedule_event($hook, $data){

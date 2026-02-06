@@ -8,32 +8,30 @@ Version: 2.0
 class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 	public static function get_fields(){
 		return [
-			'excerpt'	=> ['title'=>'文章摘要',	'sep'=>'&emsp;',	'fields'=>[
-				'excerpt_optimization'		=> ['before'=>'未设时：', 'options'=>[
-					0	=> 'WordPress 默认方式截取',
-					1	=> ['label'=>'按照中文最优方式截取', 'fields'=>['excerpt_length'=>['before'=>'长度：', 'type'=>'number', 'class'=>'small-text', 'value'=>200, 'after'=>'中文算2个字节，英文算1个字节']]],
-					2	=> '直接不显示摘要'
-				]]
-			]],
+			'excerpt'	=> ['title'=>'文章摘要',	'sep'=>'&emsp;',	'fields'=>['excerpt_optimization'	=> ['before'=>'未设时：', 'options'=>[
+				0	=> 'WordPress 默认方式截取',
+				1	=> ['label'=>'按照中文最优方式截取', 'fields'=>['excerpt_length'=>['before'=>'长度：', 'type'=>'number', 'class'=>'small-text', 'value'=>200, 'after'=>'中文算2个字节，英文算1个字节']]],
+				2	=> '直接不显示摘要'
+			]]]],
 			'list'		=> ['title'=>'文章列表',	'fields'=>[
 				'support'	=> ['before'=>'支持：',	'sep'=>'&emsp;',	'type'=>'fields',	'fields'=>[
-					'post_list_ajax'			=> ['value'=>1,	'label'=>'全面 AJAX 操作'],
-					'upload_external_images'	=> ['value'=>0,	'label'=>'上传外部图片操作'],
+					'post_list_ajax'			=> ['label'=>'全面 AJAX 操作',	'value'=>1],
+					'upload_external_images'	=> ['label'=>'上传外部图片操作'],
 				]],	
 				'display'	=> ['before'=>'显示：',	'sep'=>'&emsp;',	'type'=>'fields',	'fields'=>[
-					'post_list_set_thumbnail'	=> ['value'=>1,	'label'=>'文章缩略图'],
-					'post_list_author_filter'	=> ['value'=>1,	'label'=>'作者下拉选择框'],
-					'post_list_sort_selector'	=> ['value'=>1,	'label'=>'排序下拉选择框']
+					'post_list_set_thumbnail'	=> ['label'=>'文章缩略图',	'value'=>1],
+					'post_list_author_filter'	=> ['label'=>'作者下拉选择框',	'value'=>1],
+					'post_list_sort_selector'	=> ['label'=>'排序下拉选择框',	'value'=>1]
 				]]
 			]],
 			'other'		=> ['title'=>'功能优化',	'fields'=>[
 				'remove'	=> ['before'=>'移除：',	'sep'=>'&emsp;',	'type'=>'fields',	'fields'=>[
-					'remove_post_tag'		=> ['value'=>0,	'label'=>'移除文章标签功能'],
-					'remove_page_thumbnail'	=> ['value'=>0,	'label'=>'移除页面特色图片'],
+					'remove_post_tag'		=> ['label'=>'移除文章标签功能'],
+					'remove_page_thumbnail'	=> ['label'=>'移除页面特色图片'],
 				]],
 				'add'		=> ['before'=>'增强：',	'sep'=>'&emsp;',	'type'=>'fields',	'fields'=>[
-					'add_page_excerpt'	=> ['value'=>0,	'label'=>'增加页面摘要功能'],
-					'404_optimization'	=> ['value'=>0,	'label'=>'增强404页面跳转'],
+					'add_page_excerpt'	=> ['label'=>'增加页面摘要功能'],
+					'404_optimization'	=> ['label'=>'增强404页面跳转'],
 				]]
 			]],
 		];
@@ -54,31 +52,21 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 	public static function find_by_name($post_name, $post_type='', $post_status='publish'){
 		$args		= array_filter(['post_status'=> $post_status]);
 		$with_type	= $post_type ? $args+['post_type'=>$post_type] : [];
+		$meta		= wpjam_get_by_meta('post', '_wp_old_slug', $post_name);
+		$posts		= $meta ? WPJAM_Post::get_by_ids(array_column($meta, 'post_id')) : [];
+		$for_meta	= $args+['post_type'=>array_values(array_diff(get_post_types(['public'=>true, 'exclude_from_search'=>false]), ['attachment']))];
+		$post		= $posts ? wpjam_find([$with_type, $for_meta], fn($v)=>$v, fn($v)=> $v ? wpjam_find($posts, $v) : '') : null;
 
-		if($meta	= wpjam_get_by_meta('post', '_wp_old_slug', $post_name)){
-			$posts		= WPJAM_Post::get_by_ids(array_column($meta, 'post_id'));
-			$for_meta	= $args+['post_type'=>array_values(array_diff(get_post_types(['public'=>true, 'exclude_from_search'=>false]), ['attachment']))];
-
-			foreach(array_filter([$with_type, $for_meta]) as $v){
-				if($post = wpjam_find($posts, $v)){
-					return $post->ID;
-				}
-			}
-		}	
-
-		$wpdb	= $GLOBALS['wpdb'];
-		$types	= array_map('esc_sql', array_diff(get_post_types(['public'=>true, 'hierarchical'=>false, 'exclude_from_search'=>false]), ['attachment']));
-		$where	= "post_type in ('".implode( "', '", $types)."') AND ".$wpdb->prepare("post_name LIKE %s", $wpdb->esc_like($post_name).'%');
-
-		if($ids	= $wpdb->get_col("SELECT ID FROM $wpdb->posts WHERE $where")){
-			$posts	= WPJAM_Post::get_by_ids($ids);
-
-			foreach(array_filter([$with_type, $args, fn()=>true]) as $v){
-				if($post = wpjam_find($posts, $v)){
-					return $post->ID;
-				}
-			}
+		if(!$post){
+			$wpdb	= $GLOBALS['wpdb'];
+			$types	= array_map('esc_sql', array_diff(get_post_types(['public'=>true, 'hierarchical'=>false, 'exclude_from_search'=>false]), ['attachment']));
+			$where	= "post_type in ('".implode( "', '", $types)."') AND ".$wpdb->prepare("post_name LIKE %s", $wpdb->esc_like($post_name).'%');
+			$ids	= $wpdb->get_col("SELECT ID FROM $wpdb->posts WHERE $where");
+			$posts	= $ids ? WPJAM_Post::get_by_ids($ids) : [];
+			$post	= $posts ? wpjam_find([$with_type, $args], fn($v)=>$v, fn($v)=> $v ? wpjam_find($posts, $v) : '') ?: array_first($posts) : null;
 		}
+
+		return $post ? $post->ID : null;
 	}
 
 	public static function upload_external_images($id){
@@ -165,10 +153,10 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 
 		if($base == 'edit-tags' || ($base == 'edit' && !$is_wc_shop)){
 			wpjam_admin('script', self::get_setting('post_list_ajax', 1) ? <<<'JS'
-			$(window).load(function(){
+			setTimeout(()=> {
 				wpjam.delegate('#the-list', '.editinline');
 				wpjam.delegate('#doaction');
-			});
+			}, 300);
 			JS : "wpjam.list_table.ajax 	= false;\n");
 
 			$base == 'edit' && wpjam_admin('script', <<<'JS'
@@ -239,7 +227,7 @@ class WPJAM_Posts_Widget extends WP_Widget{
 	}
 
 	public function form($instance){
-		$ptypes	= ['post'=>__('Post')]+array_reduce(get_post_types(['_builtin'=>false]), fn($c, $k)=> is_post_type_viewable($k) && get_object_taxonomies($k) ? wpjam_set($k, wpjam_get_post_type_setting($k, 'title')) : $c, []);
+		$ptypes	= ['post'=>__('Post')]+array_reduce(get_post_types(['_builtin'=>false]), fn($c, $k)=> is_post_type_viewable($k) && get_object_taxonomies($k) ? $c+[$k=>wpjam_get_post_type_setting($k, 'title')] : $c, []);
 
 		$fields	= [
 			'title'		=> ['type'=>'text',		'before'=>'列表标题：',	'class'=>'medium-text'],

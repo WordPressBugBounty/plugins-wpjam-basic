@@ -71,11 +71,7 @@ jQuery(function($){
 			{name: 'click',		selector: '.mu .new-item',	action: 'new_item'},
 			{name: 'click',		selector: '.mu .del-item',	action: 'del_item'}
 		]},
-		{name: 'depend',	selector: '.has-dependents',	events: ['change']},
-		{name: 'expend',	selector: '.expandable',	events: [
-			{name: 'input',		type: 'throttle'},
-			{name: 'change',	type: 'throttle'}
-		]}
+		{name: 'depend',	selector: '.has-dependents',	events: ['change']}
 	];
 
 	$.fn.wpjam_file	= function(action, e){
@@ -157,11 +153,11 @@ jQuery(function($){
 
 			$(e.target).closest('.mu-select-wrap').length || $('.mu-select').addClass('hidden');
 		}else{
-			this.hasClass('mu-select') && this.before($('<button>', {type:'button', class:'selectable', text: this.data('show_option_all')})).find('label').html((i, v)=> v.replace(/(<input[^>]*type="checkbox"[^>]*>)([\u2003]+)(.*)$/, (match, p1, p2, p3) => p2+p1+p3));
+			this.hasClass('mu-select') && this.wrap('<div class="mu-select-wrap" id="'+this.attr('id').replace('_options', '')+'_wrap"></div>').before($('<button>', {type:'button', class:'selectable', text: this.data('show_option_all')})).find('label').html((i, v)=> v.replace(/(<input[^>]*type="checkbox"[^>]*>)([\u2003]+)(.*)$/, (match, p1, p2, p3) => p2+p1+p3));
 
 			this.find(':checkbox').length && this.addClass('has-validator');
 
-			this.find([].concat(this.data('value') || []).map(v => `input[value="${v}"]`).join(',')).click();
+			this.find([].concat((v => v === undefined ? [] : v)(this.data('value'))).map(v => `input[value="${v}"]`).join(',')).click();
 		}
 	};
 
@@ -176,7 +172,7 @@ jQuery(function($){
 					$label.next('input').val('').change().end().fadeOut(300, ()=> $label.remove());
 				}
 			}else{
-				let label	= this.data('label') || (this.hasClass('plupload-input') ? this.val().split('/').pop() : this.val());
+				let label	= this.data('label') || (this.hasClass('plupload-input') ? this.val().split('/').pop() : '');
 
 				label && $('<span class="query-label">'+label+'</span>').prepend($('<span class="dashicons"></span>').on('click', ()=> this.trigger('query_label'))).addClass(this.closest('.tag-input').length ? '' : this.data('class')).insertBefore(this);
 			}
@@ -224,8 +220,7 @@ jQuery(function($){
 				console.log('请在页面加载 add_action(\'admin_footer\', \'wp_enqueue_editor\');');
 			}
 		}else if(!this.hasClass('wp-editor-area')){
-			this.attr('rows') || this.addClass('expandable').attr('rows', 4);
-			this.attr('cols') || this.css('max-width', '100%').attr('cols', (this.closest('#TB_window')[0] ? 52 : 72));
+			this.addClass('expandable');
 		}
 	};
 
@@ -427,7 +422,7 @@ jQuery(function($){
 	$.fn.wpjam_mu	= function(action, args){
 		let $mu		= this.closest('.mu');
 		let type	= $mu.attr('class').split(' ').find(v => v.startsWith('mu-')).substring(3);
-		let is_tag	= $mu.hasClass('tag-input');
+		let is_tag	= $mu.is('.mu-text') && $mu.find('input.tag-input').length > 0 && ($mu.removeClass('direction-row direction-column') , true);
 		let is_row	= $mu.hasClass('direction-row');
 		let	max		= parseInt($mu.data('max_items'));
 		let count	= $mu.children().length - (['img', 'fields', 'text'].includes(type) ? 1 : 0);
@@ -597,7 +592,9 @@ jQuery(function($){
 					}
 				}
 
-				return false;
+				if(!this.is('textarea')){
+					return false;
+				}
 			}
 		}else if(action == 'tag_label'){
 			let tag_label	= $mu.data('tag_label');
@@ -625,8 +622,6 @@ jQuery(function($){
 				let btn	= type == 'img' ? '' : ($mu.data('button_text') || null);
 
 				btn !== null && $mu.find('> .mu-item:last').append($('<a class="new-item button">'+btn+'</a>'));
-
-				type == 'fields' && $mu.data('tag_label') && $mu.addClass('taggable');
 
 				$mu.wpjam_each('> .mu-item', $el => {
 					$el.append([
@@ -671,18 +666,6 @@ jQuery(function($){
 				$field.data('show_if') && $field.wpjam_show_if(val);
 				$field.data('filter_key') && $field.wpjam_data_type('filter', val);
 			});
-		}
-	};
-
-	$.fn.wpjam_expend	= function(action){
-		if(this.is('input')){
-			this.is(':visible') && this.width('').width(Math.min(522, this.prop('scrollWidth')-(this.innerWidth()-this.width())));
-		}else if(this.is('textarea')){
-			if(action){
-				this.animate({height: Math.min(320, this.height('').prop('scrollHeight')+5)}, action == 'click' ? 300 : 0);
-			}else{
-				this.one('click', ()=> this.width(this.width()).wpjam_expend('click'));
-			}
 		}
 	};
 
@@ -779,7 +762,8 @@ jQuery(function($){
 		this[0].checkValidity() && this.find('.has-validator').trigger('validate.wpjam');
 
 		if(!this[0].checkValidity()){
-			let $field	= this.find(':invalid').first();
+			let $field	= this.find('input:invalid').first();
+			$field		= $field.length ? $field : this.find(':invalid').first();
 			let custom	= $field.data('custom_validity');
 
 			custom && $field.one('input', ()=> $field[0].setCustomValidity(''))[0].setCustomValidity(custom);

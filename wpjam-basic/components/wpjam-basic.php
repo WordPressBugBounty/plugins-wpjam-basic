@@ -12,7 +12,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 				'disable_revisions'			=>['label'=>'屏蔽文章修订功能，精简文章表数据。',		'value'=>1],
 				'disable_trackbacks'		=>['label'=>'彻底关闭Trackback，防止垃圾留言。',		'value'=>1],
 				'disable_xml_rpc'			=>['label'=>'关闭XML-RPC功能，只在后台发布文章。',	'value'=>1],
-				'disable_auto_update'		=>['label'=>'关闭自动更新功能，通过手动或SSH方式更新。'],
+				'disable_auto_update'		=>['label'=>'关闭自动更新功能，手动或SSH方式更新。'],
 				'disable_feed'				=>['label'=>'屏蔽站点Feed，防止文章被快速被采集。'],
 				'disable_admin_email_check'	=>['label'=>'屏蔽站点管理员邮箱定期验证功能。'],
 			]],
@@ -24,9 +24,9 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			'backend'	=>['title'=>'后台功能',	'fields'=>[
 				'disable_privacy'			=>['label'=>'移除为欧洲通用数据保护条例生成的页面。',	'value'=>1],
 				'disable_dashboard_primary'	=>['label'=>'移除仪表盘的「WordPress 活动及新闻」。'],
-				'disable_backend'			=>['sep'=>'&emsp;',	'before'=>'移除后台界面右上角：',	'fields'=>[
+				'disable_backend'			=>['before'=>'移除后台界面右上角：',	'sep'=>'&emsp;',	'type'=>'fields',	'fields'=>[
 					'disable_help_tabs'			=>['label'=>'帮助'],
-					'disable_screen_options'	=>['label'=>'选项。',],
+					'disable_screen_options'	=>['label'=>'选项',],
 				]]
 			]],
 			'page'		=>['title'=>'页面功能',	'fields'=>[
@@ -102,8 +102,9 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 		// 屏蔽古腾堡编辑器
 		if(self::disabled('block_editor')){
 			wpjam_hooks('remove', [
-				['wp_enqueue_scripts, admin_enqueue_scripts',	'wp_common_block_scripts_and_styles'],
-				['the_content', 								'do_blocks']
+				['admin_enqueue_scripts,
+				wp_enqueue_scripts',	'wp_common_block_scripts_and_styles'],
+				['the_content',			'do_blocks']
 			]);
 		}
 
@@ -125,10 +126,12 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			]));
 
 			wpjam_hooks('remove', [
-				['wp_head, embed_head',					'print_emoji_detection_script'],
-				['wp_print_styles',						'print_emoji_styles'],
-				['the_content_feed, comment_text_rss',	'wp_staticize_emoji'],
-				['wp_mail', 							'wp_staticize_emoji_for_email']
+				['wp_head,
+				embed_head',		'print_emoji_detection_script'],
+				['wp_print_styles',	'print_emoji_styles'],
+				['the_content_feed,
+				comment_text_rss',	'wp_staticize_emoji'],
+				['wp_mail', 		'wp_staticize_emoji_for_email']
 			]);
 
 			wpjam_hooks([
@@ -141,7 +144,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 		if(self::disabled('revisions', 1)){
 			defined('WP_POST_REVISIONS') || define('WP_POST_REVISIONS', false);
 
-			wpjam_remove_filter('pre_post_update', 'wp_save_post_revision');
+			wpjam_hooks('remove', 'pre_post_update', 'wp_save_post_revision');
 		}
 
 		// 屏蔽Trackbacks
@@ -159,8 +162,9 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 		//禁用 Auto OEmbed
 		if(self::disabled('autoembed')){
 			wpjam_hooks('remove', [
-				['edit_form_advanced, edit_page_form', 						[$GLOBALS['wp_embed'], 'maybe_run_ajax_cache']],
-				['the_content, widget_text_content, widget_block_content',	[$GLOBALS['wp_embed'], 'autoembed']]
+				['edit_form_advanced, edit_page_form', 		[$GLOBALS['wp_embed'], 'maybe_run_ajax_cache']],
+				['the_content,
+				widget_text_content, widget_block_content',	[$GLOBALS['wp_embed'], 'autoembed']]
 			]);
 		}
 
@@ -173,8 +177,10 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 		if(self::disabled('auto_update')){
 			add_filter('automatic_updater_disabled', fn()=> true);
 
-			wpjam_hooks('remove', array_map(fn($v)=> [$v, $v], ['wp_version_check', 'wp_update_plugins', 'wp_update_themes']));
-			wpjam_remove_filter('init', 'wp_schedule_update_checks');
+			wpjam_hooks('remove', [
+				['init', 'wp_schedule_update_checks'],
+				...array_map(fn($v)=> [$v, $v], ['wp_version_check', 'wp_update_plugins', 'wp_update_themes'])
+			]);
 		}
 
 		// 屏蔽后台隐私

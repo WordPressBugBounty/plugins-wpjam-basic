@@ -147,7 +147,11 @@ jQuery(function($){
 				type	= type == 'list' ? 'list-table' : type;	
 			}
 
-			if(!args){
+			if(args){
+				if(args.action_type == 'submit'){
+					$el	= $el.is(':submit') ? $el : this.find(':submit').first().focus();
+				}
+			}else{
 				args	= {
 					action_type:	this.is('form') ? 'submit' : (this.data('direct') ? 'direct' : 'form'),
 					_ajax_nonce:	this.data('nonce'),
@@ -180,7 +184,7 @@ jQuery(function($){
 						args.page_title	= this.data('title');
 					}
 
-					if(args.action_type == 'direct'){
+					if(args.action_type == 'direct' || args.action_type == 'form'){
 						args.form_data	= $.param(wpjam.parse_params(this.parents('form').serialize(), true));
 
 						if(this.data('confirm')){
@@ -297,16 +301,16 @@ jQuery(function($){
 					}
 
 					if(type == 'option'){
-						data.type == 'save' && wpjam.add_notice(data.errmsg, 'success');
+						data.type == 'save' && wpjam.add_notice(data.notice);
 
 						$('body').wpjam_form().trigger('option_action_success', data);
 					}else if(type == 'page'){
 						if(!['form', 'append', 'redirect'].includes(data.type)){
-							data.done === 0 && setTimeout(()=> this.wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
+							data.args && setTimeout(()=> this.wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
 
 							args.action_type == 'submit' && $('#wpjam_form').length && data.form && $('#wpjam_form').html(data.form);
 
-							wpjam.add_notice(data.errmsg || args.page_title+'成功', data.notice_type || 'success');
+							wpjam.add_notice(data.notice || args.page_title+'成功');
 						}
 
 						(data.type != 'form' || !data.modal_id || data.modal_id == 'tb_modal') && wpjam.state();
@@ -333,6 +337,8 @@ jQuery(function($){
 								$item.insertAfter($item.next());
 							}
 						}else if(!['form', 'append', 'redirect'].includes(data.type)){
+							data.args && setTimeout(()=> ($('#TB_window').length ? $('#list_table_action_form') : this).wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
+
 							data.type == 'list' && data.list_action == 'delete' && list_table.delete_row(args.id);
 
 							list_table.load(data);
@@ -388,7 +394,7 @@ jQuery(function($){
 				if(this.page_title_action){
 					$('a.page-title-action').remove();
 
-					$('.wp-heading-inline').last().after(this.page_title_action || '');
+					$('.wp-heading-inline').last().after(this.page_title_action);
 				}
 
 				list_table && list_table.load();
@@ -436,8 +442,13 @@ jQuery(function($){
 		},
 
 		add_notice: function(notice, type){
+			if(typeof notice === 'object'){
+				type	= notice.type;
+				notice	= notice.message;
+			}
+
 			if(notice){
-				let $notice	= $('<div class="notice notice-'+type+' is-replaceable is-dismissible"><p><strong>'+notice+'</strong></p></div>');
+				let $notice	= $('<div class="notice notice-'+(type || 'success')+' is-replaceable is-dismissible"><p><strong>'+notice+'</strong></p></div>');
 
 				if($('#TB_ajaxContent').length){
 					$('#TB_ajaxContent').find('.notice.is-replaceable').remove().end().animate({scrollTop: 0}, 300).prepend($notice);
@@ -764,7 +775,7 @@ jQuery(function($){
 		list_table	= Object.assign(wpjam.list_table, {
 			load: function(data){
 				let $views	= $('ul.subsubsub');
-				let $left	= $('[data-left_key]');
+				let $left	= $('#col-left form');
 				let $form	= $('form:has(.wp-list-table)');
 				let update	= {
 					views:		true,
@@ -795,8 +806,6 @@ jQuery(function($){
 					}
 
 					update	= _.mapObject(update, (v, k)=> data[k] ? v : false);
-
-					data.search_box && $('p.search-box').empty().append($('<div>').html(data.search_box).find('.search-box').html());
 				}else{
 					$form.attr('novalidate', 'novalidate').on('submit', _.debounce(function(){
 						let $el	= $(document.activeElement);
@@ -903,7 +912,7 @@ jQuery(function($){
 
 					if($left.length){
 						let $left_paged;
-						let left_key	= wpjam.left_key = $left.data('left_key');
+						let left_key	= wpjam.left_key = this.left_key;
 
 						$left.prop('novalidate', true).on('init', function(){
 							$left_paged	= $left.find('input.current-page').addClass('expandable');
@@ -947,6 +956,18 @@ jQuery(function($){
 					}
 				}
 
+				if(list_table.search){
+					if(list_table.search.box){
+						$('#list_table_form').find('p.search-box').remove().end().prepend(list_table.search.box);
+					}else{
+						$('p.search-box').find('input[type="search"]').val(list_table.search.term);
+					}
+
+					list_table.search.columns && $('p.search-box').find('#search_columns').remove().end().prepend(list_table.search.columns);
+				}
+
+				$('input[name="post_status"]').length || $('input[name="post_status"]').val(wpjam.params.post_status || 'all');
+
 				if(update.views){
 					this.view	= $views.find('li:has(a.current)').attr('class');
 				}
@@ -980,10 +1001,9 @@ jQuery(function($){
 					}).toArray().filter(column => column !== null);
 
 					Object.assign(this, {
-						$form:		$form,
+						$form:		$form.attr('data-layout', this.layout).addClass('layout-'+this.layout),
 						$tbody:		$tbody,
 						name:		($tbody.data('wp-lists') || ':post').split(':')[1],
-						layout:		$form.data('layout'),
 						columns:	[...columns, {selector:'.check-column', check: true, sticky: sticky, left: 0}],
 						sticky:		sticky,
 						nowrap:		$table.hasClass('nowrap')
@@ -1018,15 +1038,15 @@ jQuery(function($){
 
 					$left.length && $('a.page-title-action').length && this.overall_actions.unshift($('a.page-title-action').clone().toggleClass('page-title-action button').prop('outerHTML'));
 
-					this.overall_actions && $('<div class="actions overallactions"></div>').append(this.overall_actions).insertBefore('.tablenav.top div.tablenav-pages');
+					this.overall_actions && $('<div class="actions overallactions"></div>').append(this.overall_actions).appendTo('.tablenav.top').insertBefore($('.tablenav.top div.tablenav-pages, .tablenav.top br.clear').first());
 				}
 
 				update.left && $left.length && $left.trigger('init');
 
 				if(document.readyState === 'complete'){
-					$('body').trigger('list_table_load', data);
+					setTimeout(()=> $('body').trigger('list_table_load', data), 100);
 				}else{
-					$(window).on('load', () => $('body').trigger('list_table_load', data));
+					$(window).on('load', ()=> $('body').trigger('list_table_load', data));
 				}
 			},
 
@@ -1034,7 +1054,7 @@ jQuery(function($){
 				let modal	= $('#TB_window').length;
 
 				(modal && data.form) && wpjam.add_modal(data);
-				(modal || args.action_type != 'submit') && wpjam.add_notice(data.errmsg, 'success');
+				(modal || args.action_type != 'submit') && wpjam.add_notice(data.notice);
 
 				if(data.type == 'list'){
 					$('html').scrollTop(0);
@@ -1152,6 +1172,8 @@ jQuery(function($){
 	}, 300, true)).on('click', 'input[type=submit]', function(){	// On Mac, elements that aren't text input elements tend not to get focus assigned to them
 		$(document.activeElement).attr('id') || $(this).focus();
 	});
+
+	$(document).on('heartbeat-send', (e, data)=> wpjam.query_data && $.extend(data, wpjam.query_data));
 
 	wpjam.load();
 });
