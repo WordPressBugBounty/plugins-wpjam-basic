@@ -49,7 +49,7 @@ class WPJAM_Shortcode{
 	}
 
 	public static function query_items($args){
-		return wpjam_reduce($GLOBALS['shortcode_tags'], fn($carry, $callback, $tag)=> [...$carry, ['tag'=>wpautop($tag), 'callback'=>wpjam_render_callback($callback)]], []);
+		return wpjam_reduce($GLOBALS['shortcode_tags'], fn($carry, $callback, $tag)=> [...$carry, ['tag'=>wpautop($tag), 'callback'=>wpjam_callback($callback, 'render')]], []);
 	}
 
 	public static function get_actions(){

@@ -99,15 +99,6 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			remove_action('xmlrpc_rsd_apis', 'rest_output_rsd');
 		}
 
-		// 屏蔽古腾堡编辑器
-		if(self::disabled('block_editor')){
-			wpjam_hooks('remove', [
-				['admin_enqueue_scripts,
-				wp_enqueue_scripts',	'wp_common_block_scripts_and_styles'],
-				['the_content',			'do_blocks']
-			]);
-		}
-
 		// 屏蔽小工具区块编辑器模式
 		if(self::disabled('widgets_block_editor')){
 			wpjam_hooks('gutenberg_use_widgets_block_editor, use_widgets_block_editor', fn()=> false);

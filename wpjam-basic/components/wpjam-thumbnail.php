@@ -91,8 +91,8 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 
 	public static function init(){
 		foreach(self::get_setting('term_thumbnail_taxonomies') ?: [] as $tax){
-			if(is_object_in_taxonomy('post', $tax) && ($object = wpjam_get_taxonomy_object($tax))){
-				$object->add_support('thumbnail')->update_arg(wpjam_fill(['thumbnail_type', 'thumbnail_size'], fn($k)=> self::get_setting('term_'.$k)));
+			if(is_object_in_taxonomy('post', $tax) && ($object = wpjam_get_taxonomy($tax))){
+				$object->add_support('thumbnail')->update_args(wpjam_fill(['thumbnail_type', 'thumbnail_size'], fn($k)=> self::get_setting('term_'.$k)));
 			}
 		}
 	}

@@ -211,14 +211,16 @@ class WPJAM_API{
 			'priority'	=> 1
 		]);
 
-		wpjam_hook('tap', 'pre_do_shortcode_tag',	fn($pre, $tag)=> $this->push('shortcode', $tag), 1, 2);
-		wpjam_hook('tap', 'do_shortcode_tag',		fn($res, $tag)=> $this->pop('shortcode'), 999, 2);
-
 		add_action('loop_start',	fn($query)=> $this->push('query', $query), 1);
 		add_action('loop_end',		fn()=> $this->pop('query'), 999);
 
-		add_filter('register_post_type_args',	['WPJAM_Post_Type', 'filter_register_args'], 999, 3);
-		add_filter('register_taxonomy_args',	['WPJAM_Taxonomy', 'filter_register_args'], 999, 4);
+		wpjam_hook('tap', 'pre_do_shortcode_tag',	fn($pre, $tag)=> $this->push('shortcode', $tag), 1, 2);
+		wpjam_hook('tap', 'do_shortcode_tag',		fn($res, $tag)=> $this->pop('shortcode'), 999, 2);
+
+		wpjam_hooks('register_post_type_args, register_taxonomy_args', [
+			'check'		=> fn($args)=> empty($args['_jam']) && (did_action('init') || empty($args['_builtin'])),
+			'callback'	=> fn($args, $name, $object_type=null)=> ('wpjam_'.wpjam_remove_suffix(current_filter(), '_args'))($name, ['_jam'=>false]+array_filter(compact('object_type'))+$args)->to_array()
+		], 999, 3);
 
 		add_filter('root_rewrite_rules', fn($rewrite)=> $GLOBALS['wp_rewrite']->root ? $rewrite : array_merge(['([^/]+\.txt)?$'=>'index.php?module=txt&action=$matches[1]'], $rewrite));
 	}
@@ -379,7 +381,7 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 		return $value ?? $default;
 	}
 
-	public function update_arg($key, $value=null){
+	public function update_arg($key, $value){
 		$this->args	= wpjam_set($this->get_args(), $key, $value);
 
 		return $this;
@@ -438,51 +440,53 @@ class WPJAM_Register extends WPJAM_Args{
 	use WPJAM_Items_Trait;
 
 	public function __construct($name, $args=[]){
-		$this->args	= array_merge($args, ['name'=>$name]);
-		$this->args	= $this->preprocess_args($this->args);
-	}
+		$this->args	= $args	= ['name'=>$name]+$args;
 
-	protected function preprocess_args($args){
-		if(!$this->is_active() && empty($args['active'])){
-			return $args;
-		}
-
-		$config	= get_class($this) == self::class ? [] : static::call_group('get_config');
-		$model	= empty($config['model']) ? null : ($args['model'] ?? '');
-
-		if($model || !empty($args['hooks']) || !empty($args['init'])){
-			$file	= wpjam_pull($args, 'file');
+		if($this->is_active() || !empty($args['active'])){
+			$config	= static::group('get_arg', 'config') ?: [];
+			$model	= empty($config['model']) ? '' : ($args['model'] ?? '');
+			$file	= ($model || !empty($args['hooks']) || !empty($args['init'])) ? wpjam_pull($args, 'file') : '';
 
 			$file && is_file($file) && include_once $file;
-		}
 
-		if($model){
-			is_subclass_of($model, self::class) && trigger_error('「'.(is_object($model) ? get_class($model) : $model).'」是 WPJAM_Register 子类');
+			if($model){
+				is_subclass_of($model, self::class) && trigger_error('「'.(is_object($model) ? get_class($model) : $model).'」是 '.self::class.' 子类');
 
-			if($config['model'] === 'object' && !is_object($model)){
-				if(class_exists($model, true)){
-					$model = $args['model']	= new $model(array_merge($args, ['object'=>$this]));
-				}else{
-					trigger_error('model 无效');
+				if($config['model'] === 'object' && !is_object($model)){
+					if(class_exists($model, true)){
+						$model = $args['model']	= new $model(array_merge($args, ['object'=>$this]));
+					}else{
+						trigger_error('model 无效');
+					}
+				}
+
+				foreach(['hooks'=>'add_hooks', 'init'=>'init'] as $k => $m){
+					($args[$k] ?? ($k == 'hooks' || ($config[$k] ?? false))) === true && method_exists($model, $m) && ($args[$k] = [$model, $m]);
 				}
 			}
 
-			foreach(['hooks'=>'add_hooks', 'init'=>'init'] as $k => $m){
-				($args[$k] ?? ($k == 'hooks' || ($config[$k] ?? false))) === true && method_exists($model, $m) && ($args[$k] = [$model, $m]);
-			}
+			$this->args	= $args;
+		}
+	}
+
+	public function builtin($key='', ...$args){
+		$type	= wpjam_remove_prefix(get_class($this), 'WPJAM_');
+
+		if(!$args && $key == 'title'){
+			return ($labels	= $this->builtin('labels')) ? $labels->singular_name : $this->builtin('label');
 		}
 
-		return $args;
+		if($key != 'name' && property_exists('WP_'.$type, $key)){
+			$cb	= 'get_'.strtolower($type).($type == 'Post_Type' ? '_object' : '');
+
+			if($object = $cb($this->name)){
+				return $args ? ($object->$key = $args[0]) : $object->$key;
+			}
+		}
 	}
 
 	protected function filter_args(){
-		if(get_class($this) != self::class && !in_array(($name	= $this->args['name']), static::call_group('get_arg', 'filtered[]'))){
-			static::call_group('update_arg', 'filtered[]', $name);
-
-			$this->args	= apply_filters(static::call_group('get_arg', 'name').'_args', $this->args, $name);
-		}
-
-		return $this->args;
+		return $this->args	= static::group('filter_args', $this->args, $this->args['name']);
 	}
 
 	public function get_arg($key, $default=null, $should_callback=true){
@@ -513,30 +517,108 @@ class WPJAM_Register extends WPJAM_Args{
 		return true;
 	}
 
-	public static function get_group($args){
-		return WPJAM_Register_Group::instance($args);
-	}
-
-	public static function call_group($method, ...$args){
-		if(static::class != self::class){
-			$group	= static::get_group(['called'=>static::class, 'name'=>strtolower(static::class)]);
-
-			$group->defaults	??= method_exists(static::class, 'get_defaults') ? static::get_defaults() : [];
-
-			return wpjam_catch([$group, $method], ...$args);
+	public static function group($method, ...$args){
+		if(is_array($method)){
+			[$args, $method]	= [$method, ''];
 		}
+
+		if($part = str_contains($method, ':')){
+			[$name, $method]	= explode(':', $method);
+		}
+
+		$called	= static::class;
+		$name	= strtolower($name ?? $called);
+		$group	= wpjam('registered', $name);
+
+		if(!$group && !wpjam('registered')){
+			add_action('wpjam_api', function($json){
+				foreach(wpjam('registered') as $group){
+					$group->get_arg('config[register_json]') && [$group->called, 'call_active']('register_json', $json);
+				}
+			});
+
+			add_action('wpjam_admin_init', function(){
+				foreach(wpjam('registered') as $group){
+					foreach(['menu_page', 'admin_load'] as $key){
+						$group->get_arg('config['.$key.']') && array_map('wpjam_add_'.$key, [$group->called, 'get_active']($key));
+					}
+				}
+			});
+		}
+
+		$group	??= wpjam('registered', $name, new WPJAM_Args(['name'=>$name]+($method ? ($part ? [] : [
+			'called'	=> $called,
+			'config'	=> wpjam_get_annotation($called, 'config')+['model'=>true],
+			'defaults'	=> method_exists($called, 'get_defaults') ? static::get_defaults() : []
+		]) : $args)));
+
+		if($method == 'add_object'){
+			$count	= count($group->get_arg('objects[]'));
+			$args	= is_object($args[0]) ? [$args[0]->name ?? null, $args[0]] : (is_array($args[0]) ? [wpjam_pull($args[0], 'name') ?: ($args[1] ?: '__'.$count), $args[0]] : $args);
+
+			[$key, $object]	= $args;
+
+			if($e = $key ? (is_numeric($key) ? '「'.$key.'」为纯数字' : (is_string($key) ? '' : '「'.var_export($key, true).'」不为字符串')) : '为空'){
+				return trigger_error($name.'的注册 name'.$e) && false;
+			}
+
+			$group->get_arg('objects['.$key.']') && trigger_error($name.'「'.$key.'」已经注册。');
+
+			if(is_array($object)){
+				if(!empty($object['admin']) && !is_admin()){
+					return;
+				}
+
+				$object	= new $called(...$args);
+			}
+
+			$group->update_arg('objects['.$key.']', $object);
+
+			if($object->is_active() || $object->active){
+				wpjam_hooks(maybe_callback($object->pull('hooks')));
+
+				wpjam_init($object->pull('init'));
+
+				method_exists($object, 'registered') && $object->registered();
+
+				$group->called && $count == 0 && wpjam_hooks(wpjam_call($called.'::add_hooks'));
+			}
+
+			return $object;
+		}elseif($method == 'remove_object'){
+			return $group->delete_arg('objects['.$args[0].']');
+		}elseif($method == 'get_object'){
+			return $group->get_arg('objects['.$args[0].']');
+		}elseif($method == 'get_objects'){
+			$objects	= wpjam_filter($group->get_arg('objects[]'), ...$args);
+			$orderby	= $group->get_arg('config[orderby]');
+
+			return $orderby ? wpjam_sort($objects, ($orderby === true ? 'order' : $orderby), ($group->get_arg('config[order]') ?? 'DESC'), 10) : $objects;
+		}elseif($method == 'filter_args'){
+			if($name !== $called && !in_array($args[1], $group->get_arg('filtered[]'))){
+				$group->update_arg('filtered[]', $args[1]);
+
+				return apply_filters($name.'_args', ...$args);
+			}
+
+			return $args[0];
+		}
+
+		return $method ? wpjam_catch([$group, $method], ...$args) : $group;
 	}
 
 	public static function register($name, $args=[]){
-		return static::call_group('add_object', $name, $args);
+		return static::group('add_object', $name, $args);
 	}
 
 	public static function unregister($name, $args=[]){
-		static::call_group('remove_object', $name, $args);
+		static::group('remove_object', $name, $args);
 	}
 
 	public static function get_registereds($args=[], $output='objects', $operator='and'){
-		$objects	= static::call_group('get_objects', $args, $operator);
+		wpjam_map(static::group('get_arg', 'defaults'), fn($k)=> static::get($k, 'default'), 'k');
+
+		$objects	= static::group('get_objects', $args, $operator);
 
 		return $output == 'names' ? array_keys($objects) : $objects;
 	}
@@ -546,7 +628,17 @@ class WPJAM_Register extends WPJAM_Args{
 	}
 
 	public static function get($name, $by='', $top=''){
-		return static::call_group('get_object', $name, $by, $top);
+		if($name && !$by){
+			return static::group('get_object', $name) ?: static::get($name, 'default');
+		}
+
+		if($name && $by == 'default'){
+			return is_null($args = static::group('pull', 'defaults['.$name.']')) ? null : static::register($name, $args);
+		}
+
+		if($name && $by == 'model' && strcasecmp($name, $top) !== 0){
+			return array_find(static::get_registereds(), fn($v)=> is_string($v->model) && strcasecmp($name, $v->model) === 0) ?: static::get( get_parent_class($name), $by, $top);
+		}
 	}
 
 	public static function exists($name){
@@ -554,118 +646,31 @@ class WPJAM_Register extends WPJAM_Args{
 	}
 
 	public static function get_setting_fields($args=[]){
-		return static::call_group('get_fields', $args);
+		$objects	= array_filter(static::get_registereds(wpjam_pull($args, 'filter_args')), fn($v)=> !isset($v->active));
+		$options	= wpjam_options($objects, $args);
+
+		if(wpjam_get($args, 'type') == 'select'){
+			$name	= wpjam_pull($args, 'name');
+			$args	+= ['options'=>$options];
+
+			return $name ? [$name => $args] : $args;
+		}
+
+		return $options;
 	}
 
 	public static function get_active($key=null){
-		return static::call_group('get_active', $key);
-	}
-
-	public static function call_active($method, ...$args){
-		return static::call_group('call_active', $method, ...$args);
+		return wpjam_array(static::get_registereds(), fn($k, $v)=> ($v->active ?? $v->is_active()) ? [$k, $key ? $v->get_arg($key) : $v] : null, true);
 	}
 
 	public static function by_active(...$args){
-		$name	= current_filter();
-		$method = (did_action($name) ? 'on_' : 'filter_').substr($name, str_starts_with($name, 'wpjam_') ? 6 : 0);
-
-		return self::call_active($method, ...$args);
-	}
-}
-
-class WPJAM_Register_Group extends WPJAM_Args{
-	public function get_objects($args=[], $operator='AND'){
-		$this->defaults && wpjam_map($this->defaults, [$this, 'by_default'], 'k');
-
-		$objects	= wpjam_filter($this->get_arg('objects[]'), $args, $operator);
-		$orderby	= $this->get_config('orderby');
-
-		return $orderby ? wpjam_sort($objects, ($orderby === true ? 'order' : $orderby), ($this->get_config('order') ?? 'DESC'), 10) : $objects;
+		return self::call_active((did_action(current_filter()) ? 'on_' : 'filter_').wpjam_remove_suffix(current_filter(), 'wpjam_'), ...$args);
 	}
 
-	public function get_object($name, $by='', $top=''){
-		if($name && !$by){
-			return $this->get_arg('objects['.$name.']') ?: $this->by_default($name);
-		}
-
-		if($name && $by == 'model' && strcasecmp($name, $top) !== 0){
-			return array_find($this->get_objects(), fn($v)=> is_string($v->model) && strcasecmp($name, $v->model) === 0) ?: $this->get_object(get_parent_class($name), $by, $top);
-		}
-	}
-
-	public function add_object($name, $object){
-		$called	= $this->called ?: 'WPJAM_Register';
-		$count	= count($this->get_arg('objects[]'));
-
-		if(is_object($name)){
-			$object	= $name;
-			$name	= $object->name ?? null;
-		}elseif(is_array($name)){
-			[$object, $name]	= [$name, $object];
-
-			$name	= wpjam_pull($object, 'name') ?: ($name ?: '__'.$count);
-		}
-
-		if(empty($name)){
-			$e	= '为空';
-		}elseif(is_numeric($name)){
-			$e	= '「'.$name.'」'.'为纯数字';
-		}elseif(!is_string($name)){
-			$e	= '「'.var_export($name, true).'」不为字符串';
-		}
-
-		if(!empty($e)){
-			return trigger_error(self::class.'的注册 name'.$e) && false;
-		}
-
-		$this->get_arg('objects['.$name.']') && trigger_error($this->name.'「'.$name.'」已经注册。');
-
-		if(is_array($object)){
-			if(!empty($object['admin']) && !is_admin()){
-				return;
-			}
-
-			$object	= new $called($name, $object);
-		}
-
-		$this->update_arg('objects['.$name.']', $object);
-
-		if($object->is_active() || $object->active){
-			wpjam_hooks(maybe_callback($object->pull('hooks')));
-			wpjam_init($object->pull('init'));
-
-			method_exists($object, 'registered') && $object->registered();
-
-			$count == 0 && wpjam_hooks(wpjam_call($called.'::add_hooks'));
-		}
-
-		return $object;
-	}
-
-	public function remove_object($name){
-		return $this->delete_arg('objects['.$name.']');
-	}
-
-	public function by_default($name){
-		$args = $this->pull('defaults['.$name.']');
-
-		return is_null($args) ? null : $this->add_object($name, $args);
-	}
-
-	public function get_config($key=''){
-		$this->config	??= $this->called ? wpjam_get_annotation($this->called, 'config')+['model'=>true] : [];
-
-		return $this->get_arg('config['.($key ?: '').']');
-	}
-
-	public function get_active($key=''){
-		return wpjam_array($this->get_objects(), fn($k, $v)=> ($v->active ?? $v->is_active()) ? [$k, $key ? $v->get_arg($key) : $v] : null, true);
-	}
-
-	public function call_active($method, ...$args){
+	public static function call_active($method, ...$args){
 		$type	= array_find(['filter', 'get'], fn($t)=> str_starts_with($method, $t.'_'));
 
-		foreach($this->get_active() as $object){
+		foreach(static::get_active() as $object){
 			$result	= $object->call_method($method, ...$args);
 
 			if($type == 'filter'){
@@ -680,43 +685,6 @@ class WPJAM_Register_Group extends WPJAM_Args{
 		}elseif($type == 'get'){
 			return $return ?? [];
 		}
-	}
-
-	public function get_fields($args=[]){
-		$objects	= array_filter($this->get_objects(wpjam_pull($args, 'filter_args')), fn($v)=> !isset($v->active));
-		$options	= wpjam_options($objects, $args);
-
-		if(wpjam_get($args, 'type') == 'select'){
-			$name	= wpjam_pull($args, 'name');
-			$args	+= ['options'=>$options];
-
-			return $name ? [$name => $args] : $args;
-		}
-
-		return $options;
-	}
-
-	public static function __callStatic($method, $args){
-		foreach(self::instance() as $group){
-			if($method == 'register_json'){
-				$group->get_config($method) && $group->call_active($method, $args[0]);
-			}elseif($method == 'on_admin_init'){
-				foreach(['menu_page', 'admin_load'] as $key){
-					$group->get_config($key) && array_map('wpjam_add_'.$key, $group->get_active($key));
-				}
-			}
-		}
-	}
-
-	public static function instance($args=[]){
-		static $groups	= [];
-
-		if(!$groups){
-			add_action('wpjam_api',			[self::class, 'register_json']);
-			add_action('wpjam_admin_init',	[self::class, 'on_admin_init']);
-		}
-
-		return $args ? (!empty($args['name']) ? ($groups[$args['name']] ??= new self($args)) : null) : $groups;
 	}
 }
 
@@ -1026,15 +994,11 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 		if($this->name == 'post'){
 			if(isset($args['post_type'])){
 				$object = wpjam_get_post_type_object($args['post_type']);
-				$object	&& $object->register_option();
-
 				$keys[]	= 'post_type';
 			}
 		}elseif($this->name == 'term'){
 			if(isset($args['taxonomy'])){
-				$object = wpjam_get_taxonomy_object($args['taxonomy']);
-				$object	&& $object->register_option();
-
+				$object = wpjam_get_taxonomy($args['taxonomy']);
 				$keys[]	= 'taxonomy';
 			}
 
@@ -1042,6 +1006,17 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 				$keys[]	= 'action';
 			}
 		}
+
+		empty($object) || $this->call_option('get', $object->name.'_base') || $this->call_option('register', $object->name.'_base', [
+			$keys[0]		=> $object->name,
+			'title'			=> $this->name == 'post' ? '基础信息' : '快速编辑',
+			'page_title'	=> '设置'.$object->title,
+			'fields'		=> [$object, 'get_fields'],
+			'list_table'	=> $object->show_ui,
+			'action_name'	=> 'set',
+			'row_action'	=> $this->name == 'term',
+			'order'			=> 99,
+		]);
 
 		foreach($keys ?? [] as $k){
 			$args[$k]	= ['value'=>$args[$k], 'if_null'=>true, 'callable'=>true];
@@ -1081,18 +1056,6 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 		}else{
 			return $this->get_arg($key);
 		}
-	}
-
-	protected function preprocess_args($args){
-		$wpdb	= $GLOBALS['wpdb'];
-		$global	= $args['global'] ?? false;
-		$table	= $args['table_name'] ?? $this->name.'meta';
-
-		$wpdb->$table ??= $args['table'] ?? ($global ? $wpdb->base_prefix : $wpdb->prefix).$this->name.'meta';
-
-		$global && wp_cache_add_global_groups($this->name.'_meta');
-
-		return parent::preprocess_args($args);
 	}
 
 	public function get_table(){
@@ -1391,8 +1354,8 @@ class WPJAM_JSON extends WPJAM_Register{
 
 	public static function get_defaults(){
 		return array_fill_keys(['post.list', 'post.calendar', 'post.get'], ['modules'=>['WPJAM_JSON_Module', 'callback']])+[
-			'media.upload'	=> ['modules'=>['callback'=>['WPJAM_JSON_Module', 'media']]],
-			'site.config'	=> ['modules'=>['type'=>'config']],
+			'media.upload'		=> ['modules'=>['callback'=>['WPJAM_JSON_Module', 'media']]],
+			'site.config'		=> ['modules'=>['type'=>'config']],
 		];
 	}
 
@@ -1582,7 +1545,7 @@ class WPJAM_JSON_Module{
 	}
 
 	public static function taxonomy($args){
-		$object		= wpjam_get_taxonomy_object(wpjam_get($args, 'taxonomy')) ?: wpjam_throw('invalid_taxonomy');
+		$object		= wpjam_get_taxonomy(wpjam_get($args, 'taxonomy')) ?: wpjam_throw('invalid_taxonomy');
 		$mapping	= wpjam_array(wp_parse_args(wpjam_pull($args, 'mapping') ?: []), fn($k, $v)=> [$k, wpjam_get_parameter($v)], true);
 		$args		= array_merge($args, $mapping);
 		$number		= (int)wpjam_pull($args, 'number');

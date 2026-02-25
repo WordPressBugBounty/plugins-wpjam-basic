@@ -160,56 +160,49 @@ class WPJAM_Server_Status{
 	}
 
 	public static function get_tabs(){
-		$parse	= fn($items)=> array_map(fn($v)=> $v+['callback'=>[self::class, 'callback']], $items);
-		$tabs	= ['server'=>['title'=>'服务器', 'function'=>'dashboard', 'widgets'=>$parse([
-			'server'	=> ['title'=>'信息'],
-			'php'		=> ['title'=>'PHP扩展'],
-			'version'	=> ['title'=>'版本',			'context'=>'side'],
-			'apache'	=> ['title'=>'Apache模块',	'context'=>'side']
-		])]];
-
-		if(strtoupper(substr(PHP_OS,0,3)) === 'WIN'){
-			unset($tabs['server']['widgets']['server']);
-		}
-
-		if(!$GLOBALS['is_apache'] || !function_exists('apache_get_modules')){
-			unset($tabs['server']['widgets']['apache']);
-		}
-
-		if(function_exists('opcache_get_status')){
-			$tabs['opcache']	= ['title'=>'Opcache',	'function'=>'dashboard',	'widgets'=>$parse([
+		return wpjam_map(['server'=>[
+			'title'		=> '服务器',
+			'function'	=> 'dashboard',
+			'widgets'	=> (strtoupper(substr(PHP_OS,0,3)) === 'WIN' ? [] : [
+				'server'	=> ['title'=>'信息'],
+			])+[
+				'php'		=> ['title'=>'PHP扩展'],
+				'version'	=> ['title'=>'版本',			'context'=>'side']
+			]+((!$GLOBALS['is_apache'] || !function_exists('apache_get_modules')) ? [] : [
+				'apache'	=> ['title'=>'Apache模块',	'context'=>'side']
+			])
+		]]+(function_exists('opcache_get_status') ? ['opcache'=>[
+			'title'		=> 'Opcache',
+			'function'	=> 'dashboard',
+			'widgets'	=> [
 				'usage'			=> ['title'=>'使用率'],
 				'status'		=> ['title'=>'状态'],
 				'configuration'	=> ['title'=>'配置信息',	'context'=>'side']
-			])];
-
-			wpjam_register_page_action('reset_opcache', [
+			],
+			'actions'	=> ['reset_opcache'=>[
 				'title'			=> '重置缓存',
 				'button_text'	=> '重置缓存',
 				'direct'		=> true,
 				'confirm'		=> true,
-				'callback'		=> fn() => opcache_reset() ? ['notice'=>'缓存重置成功'] : wp_die('缓存重置失败')
-			]);
-		}
-
-		if(method_exists('WP_Object_Cache', 'get_mc')){
-			$tabs['memcached']	= ['title'=>'Memcached',	'function'=>'dashboard',	'widgets'=>$parse([
+				'callback'		=> fn()=> opcache_reset() ? ['notice'=>'缓存重置成功'] : wp_die('缓存重置失败')
+			]]
+		]] : [])+(method_exists('WP_Object_Cache', 'get_mc') ? ['memcached'=>[
+			'title'		=> 'Memcached',
+			'function'	=> 'dashboard',
+			'widgets'	=> [
 				'usage'			=> ['title'=>'使用率'],
 				'efficiency'	=> ['title'=>'效率'],
 				'options'		=> ['title'=>'选项', 'context'=>'side'],
 				'status'		=> ['title'=>'状态']
-			])];
-
-			wpjam_register_page_action('flush_mc', [
+			],
+			'actions'	=> ['flush_mc'=>[
 				'title'			=> '刷新缓存',
 				'button_text'	=> '刷新缓存',
 				'direct'		=> true,
 				'confirm'		=> true,
 				'callback'		=> fn() => wp_cache_flush() ? ['notice'=>'缓存刷新成功'] : wp_die('缓存刷新失败')
-			]);
-		}
-
-		return $tabs;
+			]]
+		]] : []), fn($tab)=> ['widgets'=> array_map(fn($v)=> $v+['callback'=>[self::class, 'callback']], $tab['widgets'])]+$tab);
 	}
 }
 

@@ -14,7 +14,7 @@ wpjam_add_admin_load([
 	'callback'	=> function($screen){
 		if(post_type_supports($screen->post_type, 'excerpt')){
 			if(!wp_doing_ajax()){
-				wpjam_admin('script', <<<'JS'
+				wpjam_script(<<<'JS'
 				$('body').on('quick_edit', '#the-list', function(event, id){
 					let $edit	= $('#edit-'+id);
 

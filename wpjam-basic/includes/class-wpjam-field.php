@@ -41,7 +41,7 @@ class WPJAM_Attr extends WPJAM_Args{
 	}
 
 	public function class($action='', ...$args){
-		$args	= array_map('wp_parse_list', [$this->class ?: [], ...$args]);
+		$args	= array_map('wp_parse_list', [$this->class ?: [], ...wpjam_filter($args)]);
 		$cb		= $action ? ['add'=>'array_merge', 'remove'=>'array_diff', 'toggle'=>'wpjam_toggle'][$action] : '';
 
 		return $cb ? $this->attr('class', $cb(...$args)) : $args[0];
@@ -726,21 +726,6 @@ class WPJAM_Field extends WPJAM_Attr{
 	}
 
 	public static function parse($field, ...$args){
-		if(is_object($field)){
-			$object	= $field;
-			$key	= array_shift($args);
-
-			if(is_array($key)){
-				return wpjam_reduce($key, fn($c, $v, $k)=> wpjam_field($object, $k, $v), $object);
-			}
-
-			if(!$args && is_callable($key)){
-				[$args, $key]	= [[$key], ''];
-			}
-
-			return [$object, $args ? 'update_arg' : 'delete_arg']('_fields['.$key.']', ...$args);
-		}
-
 		$field	= is_string($field) ? ['type'=>'view', 'value'=>$field, 'wrap_tag'=>''] : parent::parse($field);
 		$field	= ['options'=>(($field['options'] ?? []) ?: [])]+$field;
 		$type	= $field['type'] = ($field['type'] ?? '') ?: (array_find(['options'=>'select', 'label'=>'checkbox', 'fields'=>'fieldset'], fn($v, $k)=> !empty($field[$k])) ?: 'text');
@@ -1012,27 +997,6 @@ class WPJAM_Fields extends WPJAM_Attr{
 	}
 
 	public static function parse($fields, ...$args){
-		if(is_object($fields)){
-			$object	= $fields;
-			$fields	= [];
-
-			foreach($object->get_arg('_fields[]') as $key => $field){
-				if(is_callable($field)){
-					$result	= wpjam_try($field, ...$args);
-
-					if(is_numeric($key)){
-						$fields	= array_merge($fields, $result);
-					}else{
-						$fields[$key]	= $result;
-					}
-				}elseif(wpjam_is_assoc_array($field)){
-					$fields[$key]	= $field;
-				}
-			}
-
-			return $fields;
-		}
-
 		[$flat, $prefix]	= $args+[false, ''];
 
 		foreach($fields as $key => $field){

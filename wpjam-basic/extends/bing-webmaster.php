@@ -18,13 +18,18 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 	}
 
 	public static function get_menu_page(){
-		$tab_page	= [
+		return [
 			'tab_slug'	=> 'bing-webmaster',
 			'summary'	=> __FILE__,
-		];
-
-		if(self::submittable()){
-			$object	= wpjam_register_page_action('set_bing_webmaster', [
+		]+(self::submittable() ? [
+			'function'		=> 'form',
+			'submit_text'	=> '批量提交',
+			'callback'		=> [self::class, 'batch_submit'],
+			'fields'		=> fn()=> ['view'=>[
+				'type'	=> 'view',
+				'value'	=> '已设置 Bing Webmaster 的站点和密钥（'.wpjam_get_page_button('set_bing_webmaster', ['button_text' => '修改', 'class'=>'']).'），可以使用 Bing 站长工具更新内容接口批量将博客中的所有内容都提交给 Bing 站长平台。'
+			]],
+			'actions'		=> ['set_bing_webmaster'=>[
 				'title' 			=> '设置',
 				'submit_text'		=> '设置',
 				'validate'			=> true,
@@ -33,20 +38,8 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 				'fields'			=> [self::class, 'get_fields'],
 				'value_callback'	=> [self::class, 'get_setting'],
 				'callback'			=> [self::class, 'update_setting']
-			]);
-
-			$tab_page += [
-				'function'		=> 'form',
-				'submit_text'	=> '批量提交',
-				'callback'		=> [self::class, 'batch_submit'],
-				'fields'		=> fn()=> ['view'=>[
-					'type'	=> 'view',
-					'value'	=> '已设置 Bing Webmaster 的站点和密钥（'.$object->get_button(['button_text' => '修改', 'class'=>'']).'），可以使用 Bing 站长工具更新内容接口批量将博客中的所有内容都提交给 Bing 站长平台。'
-				]],
-			];
-		}
-
-		return $tab_page;
+			]]
+		] : []);
 	}
 
 	public static function submit($urls){

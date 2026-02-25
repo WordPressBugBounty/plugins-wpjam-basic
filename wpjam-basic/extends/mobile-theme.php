@@ -24,7 +24,7 @@ class WPJAM_Mobile_Stylesheet extends WPJAM_Option_Model{
 			'callback'		=> fn()=> self::update_setting('mobile_stylesheet', wpjam_get_data_parameter('stylesheet'))
 		])->get_button(['data'=>['stylesheet'=>'slug']]);
 
-		wpjam_admin('script', sprintf(<<<'JS'
+		wpjam_script(sprintf(<<<'JS'
 		if(wp && wp.Backbone && wp.themes && wp.themes.view.Theme){
 			let render	= wp.themes.view.Theme.prototype.render;
 
@@ -36,7 +36,7 @@ class WPJAM_Mobile_Stylesheet extends WPJAM_Option_Model{
 		}
 		JS, wpjam_json_encode($mobile), wpjam_json_encode($button)));
 
-		// wpjam_admin('style', '.mobile-theme{position: absolute; top: 45px; right: 18px;}');
+		// wpjam_style('.mobile-theme{position: absolute; top: 45px; right: 18px;}');
 	}
 
 	public static function add_hooks(){

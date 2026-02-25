@@ -109,7 +109,7 @@ class WPJAM_Cron extends WPJAM_Args{
 		}else{
 			return wpjam_map(wpjam_get_cron('wpjam_scheduled')->get_jobs(), fn($item)=> $item+[
 				'job_id'	=> wpjam_build_callback_unique_id($item['callback']),
-				'function'	=> wpjam_render_callback($item['callback'])
+				'function'	=> wpjam_callback($item['callback'], 'render')
 			]);
 		}
 	}

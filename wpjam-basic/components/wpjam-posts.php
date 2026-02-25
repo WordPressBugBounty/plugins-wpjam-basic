@@ -85,11 +85,11 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 
 	public static function load($screen){
 		$base	= $screen->base;
-		$object	= wpjam_admin(in_array($base, ['post', 'edit', 'upload']) ? 'type_object' : 'tax_object');
+		$object	= wpjam_admin((in_array($base, ['post', 'edit', 'upload']) ? 'type' : 'tax').'_object');
 
 		if($base == 'post'){
-			self::get_setting('disable_trackbacks') && wpjam_admin('style', 'label[for="ping_status"]{display:none !important;}');
-			self::get_setting('disable_autoembed') && $screen->is_block_editor && wpjam_admin('script', "wp.domReady(()=> wp.blocks.unregisterBlockType('core/embed'));\n");
+			self::get_setting('disable_trackbacks') && wpjam_style('label[for="ping_status"]{display:none !important;}');
+			self::get_setting('disable_autoembed') && $screen->is_block_editor && wpjam_script("wp.domReady(()=> wp.blocks.unregisterBlockType('core/embed'));\n");
 		}elseif(in_array($base, ['edit', 'upload'])){
 			$ptype		= $screen->post_type;
 			$is_wc_shop	= defined('WC_PLUGIN_FILE') && str_starts_with($ptype, 'shop_');
@@ -130,10 +130,10 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 					'callback'		=> [self::class, $action]
 				]);
 
-				wpjam_admin('style', '#bulk-titles, ul.cat-checklist{height:auto; max-height: 14em;}');
+				wpjam_style('#bulk-titles, ul.cat-checklist{height:auto; max-height: 14em;}');
 
 				if($ptype == 'page'){
-					wpjam_admin('style', '.fixed .column-template{width:15%;}');
+					wpjam_style('.fixed .column-template{width:15%;}');
 
 					wpjam_register_posts_column('template', '模板', 'get_page_template_slug');
 				}
@@ -142,24 +142,24 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			$width_columns	= wpjam_map($object->get_taxonomies(['show_admin_column'=>true]), fn($v)=> '.fixed .column-'.$v->column_name);
 			$width_columns	= array_merge($width_columns, $object->supports('author') ? ['.fixed .column-author'] : []);
 
-			$width_columns && wpjam_admin('style', implode(',', $width_columns).'{width:'.(['14', '12', '10', '8', '7'][count($width_columns)-1] ?? '6').'%}');
+			$width_columns && wpjam_style(implode(',', $width_columns).'{width:'.(['14', '12', '10', '8', '7'][count($width_columns)-1] ?? '6').'%}');
 
-			wpjam_admin('style', '.fixed .column-date{width:100px;}');
+			wpjam_style('.fixed .column-date{width:100px;}');
 		}elseif(in_array($base, ['edit-tags', 'term'])){
-			$base == 'edit-tags' && wpjam_admin('style', ['.fixed th.column-slug{width:16%;}', '.fixed th.column-description{width:22%;}']);
+			$base == 'edit-tags' && wpjam_style(['.fixed th.column-slug{width:16%;}', '.fixed th.column-description{width:22%;}']);
 
-			array_map(fn($v)=> $object->supports($v) ? '' : wpjam_admin('style', '.form-field.term-'.$v.'-wrap{display: none;}'), ['slug', 'description', 'parent']);	
+			array_map(fn($v)=> $object->supports($v) ? '' : wpjam_style('.form-field.term-'.$v.'-wrap{display: none;}'), ['slug', 'description', 'parent']);	
 		}
 
 		if($base == 'edit-tags' || ($base == 'edit' && !$is_wc_shop)){
-			wpjam_admin('script', self::get_setting('post_list_ajax', 1) ? <<<'JS'
+			wpjam_script(self::get_setting('post_list_ajax', 1) ? <<<'JS'
 			setTimeout(()=> {
 				wpjam.delegate('#the-list', '.editinline');
 				wpjam.delegate('#doaction');
 			}, 300);
 			JS : "wpjam.list_table.ajax 	= false;\n");
 
-			$base == 'edit' && wpjam_admin('script', <<<'JS'
+			$base == 'edit' && wpjam_script(<<<'JS'
 			wpjam.add_extra_logic(inlineEditPost, 'setBulk', ()=> $('#the-list').trigger('bulk_edit'));
 
 			wpjam.add_extra_logic(inlineEditPost, 'edit', function(id){

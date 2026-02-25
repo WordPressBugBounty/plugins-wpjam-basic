@@ -139,7 +139,7 @@ class WPJAM_Basic_Admin{
 				}
 			]]]))->page_load();
 
-			wpjam_admin('style', [
+			wpjam_style([
 				'#dashboard_wpjam .inside{margin:0; padding:0;}',
 				'a.jam-post {border-bottom:1px solid #eee; margin: 0 !important; padding:6px 0; display: block; text-decoration: none; }',
 				'a.jam-post:last-child{border-bottom: 0;}',
@@ -148,7 +148,7 @@ class WPJAM_Basic_Admin{
 				'a.jam-post span{display: table-cell; height: 40px; vertical-align: middle;}'
 			]);
 		}elseif($base	= array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base))){
-			wpjam_admin('script', "
+			wpjam_script("
 			$('tr.plugin-update-tr').each(function(){
 				let detail_link	= $(this).find('a.open-plugin-details-modal');
 				let detail_href	= detail_link.attr('href');
@@ -248,7 +248,7 @@ class WPJAM_Verify{
 	}
 
 	public static function get_form(){
-		wpjam_admin('style', '.form-table th{width: 100px;}');
+		wpjam_style('.form-table th{width: 100px;}');
 
 		$qrcode	= wpjam_tag('img', ['src'=>'https://open.weixin.qq.com/qr/code?username=wpjamcom', 'style'=>'max-width:250px;'])->wrap('p')->before('p', [], '使用微信扫描下面的二维码：');
 

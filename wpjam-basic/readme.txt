@@ -251,7 +251,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 新增 Class WPJAM_AJAX - 统一所有（包括后台） AJAX 处理
 * 新增函数 wpjam_register_meta_type
 * 新增函数 wpjam_register_bind
-* 新增函数 wpjam_get_bind_object
+* 新增函数 wpjam_get_bind
 * 新增函数 wpjam_zh_urlencode
 
 = 5.7 =

@@ -12,11 +12,13 @@ class WPJAM_List_Table extends WP_List_Table{
 		wp_doing_ajax() && wpjam_get_post_parameter('action_type') == 'query_items' && ($_REQUEST = $this->get_data()+$_REQUEST);
 
 		$this->screen	= $screen = get_current_screen();
-		$this->_args	= $args+['screen'=>$screen];
+		$this->_args	= $args+['screen'=>$screen, 'shortcodes'=>['filter', 'row_action']];
 
 		array_map([$this, 'component'], ['action', 'view', 'column']);
 		array_map(fn($k)=> add_filter('manage_'.$screen->id.'_'.$k, [$this, 'filter_'.$k]), ['columns', 'sortable_columns']);
 		array_map(fn($k, $s)=> add_filter($k.$s.$screen->id, [$this, 'filter_'.$k]), ['views', 'bulk_actions'], ['_', '-']);
+
+		array_map(fn($v)=> add_shortcode($v, [$this, $v.'_shortcode']), ['filter', 'row_action']);
 
 		wpjam_admin([
 			'style'						=> $this->style,
@@ -114,6 +116,12 @@ class WPJAM_List_Table extends WP_List_Table{
 			return $args[0];
 		}elseif(try_remove_suffix($method, '_by_model')){
 			return ($cb = wpjam_callback([$this->model, $method])) ? wpjam_catch($cb, ...$args) : null;
+		}elseif(try_remove_suffix($method, '_shortcode')){
+			if($method === 'filter'){
+				return $this->get_filter_link($args[0], $args[1], wpjam_pull($args[0], 'class'));
+			}else{
+				return $this->get_row_action($this->row_id, (is_blank($args[1]) ? [] : ['title'=>$args[1]])+$args[0])."\n";
+			}
 		}elseif(try_remove_suffix($method, '_row_actions')){
 			[$value, $id]	= $method == 'get' ? [[], $args[0]] : [$args[0], $this->parse_id($args[1])];
 
@@ -132,10 +140,9 @@ class WPJAM_List_Table extends WP_List_Table{
 			if($method == 'table'){
 				return wpjam_preg_replace('#<tr id=".+?-(\d+)"[^>]*>.+?</tr>#is', fn($m)=> $this->filter_single_row(...$m), $args[0]);
 			}elseif($method == 'single_row'){
-				return wpjam_do_shortcode(apply_filters('wpjam_single_row', ...$args), [
-					'filter'		=> fn($attr, $title)=> $this->get_filter_link($attr, $title, wpjam_pull($attr, 'class')),
-					'row_action'	=> fn($attr, $title)=> $this->get_row_action($args[1], (is_blank($title) ? [] : compact('title'))+$attr)."\n"
-				]);
+				$this->row_id	= $args[1];
+
+				return wpjam_do_shortcode(apply_filters('wpjam_single_row', ...$args), $this->shortcodes);
 			}elseif($method == 'columns'){
 				return $this->columns	= wpjam_except(wpjam_add_at($args[0], $args[0] ? -1 : 0, $this->columns ?: []), wpjam_admin('removed_columns[]'));
 			}
@@ -271,7 +278,7 @@ class WPJAM_List_Table extends WP_List_Table{
 
 				$object->sortable && $this->add('sortable_columns', $key, [$key, true]);
 
-				wpjam_admin('style', $object->style);
+				wpjam_style($object->style);
 			}
 		}
 	}
@@ -378,7 +385,7 @@ class WPJAM_List_Table extends WP_List_Table{
 
 				if($type == 'image'){
 					$ar	= wpjam_pick($data, ['width', 'height']);
-					$v	= wpjam_tag('img', ['src'=>wpjam_get_thumbnail($v, array_map(fn($s)=> $s*2), $ar)]+$ar)->after('span', ['item-title'], $item['title'] ?? '');
+					$v	= wpjam_tag('img', ['src'=>wpjam_get_thumbnail($v, array_map(fn($s)=> $s*2, $ar))]+$ar)->after('span', ['item-title'], $item['title'] ?? '');
 				}
 
 				$args['i']	= $args['data']['i']	= $i;
@@ -545,12 +552,87 @@ class WPJAM_List_Table extends WP_List_Table{
 	}
 }
 
+class WPJAM_Builtin_List_Table extends WPJAM_List_Table{
+	public function __construct($args){
+		$data_type	= wpjam_admin(wpjam_pick($args, ['data_type', 'meta_type']))['data_type'];
+
+		if($data_type == 'post_type'){
+			$echo		= 'echo';
+			$builtin	= $args['post_type'] == 'attachment' ? 'Media' : 'Posts';
+			$callback	= 'get_post';
+			$parts		= $builtin == 'Media' ? ['media', 'media'] : ($args['hierarchical'] ? ['pages', 'page', 'posts'] : ['posts', 'post', 'posts']);
+		}elseif($data_type == 'taxonomy'){
+			$builtin	= 'Terms';
+			$callback	= ['get_term', 'get_term_level'];
+			$parts		= [$args['taxonomy'], $args['taxonomy']];
+		}elseif($data_type == 'user'){
+			$builtin	= 'Users';
+			$callback	= 'get_userdata';
+			$parts		= ['users', 'user', 'users'];
+		}elseif($data_type == 'comment'){
+			$echo		= 'echo';
+			$builtin	= 'Comments';
+			$callback	= 'get_comment';
+			$parts		= ['comments', 'comment'];
+		}
+
+		wpjam_hook(($echo ?? ''), 'manage_'.$parts[0].'_custom_column', fn(...$args)=> $this->column_default(...array_pad($args, -3, [])), 10, 3);
+
+		add_filter($parts[1].'_row_actions', [$this, 'filter_row_actions'], 1, 2);
+
+		isset($parts[2]) && add_action('manage_'.$parts[2].'_extra_tablenav', [$this, 'extra_tablenav']);
+
+		wp_is_json_request() || add_filter('wpjam_html', [$this, 'filter_table']);
+
+		in_array($data_type, ['post_type', 'taxonomy']) && add_action('parse_term_query', function($query){
+			if(array_any(debug_backtrace(), fn($v)=> wpjam_get($v, 'class') == $this->builtin)){
+				$vars	= &$query->query_vars;
+				$by		= $vars['orderby'] ?? '';
+				$object	= ($by && is_string($by)) ? $this->component('column', $by) : null;
+				$type	= $object ? ($object->sortable === true ? 'meta_value' : $object->sortable) : '';
+				$vars	= array_merge($vars, ['list_table_query'=>true], in_array($type, ['meta_value_num', 'meta_value']) ? ['orderby'=>$type, 'meta_key'=>$by] : []);
+			}
+		}, 0);
+
+		parent::__construct($args+['builtin'=>'WP_'.$builtin.'_List_Table', 'item_callback'=>$callback]);
+	}
+
+	public function prepare_items(){
+		if($this->screen->base == 'edit'){
+			$_GET['post_type']	= $this->post_type;
+		}
+
+		$_GET	= array_merge($_GET, $this->get_data());
+		$_POST	= array_merge($_POST, $this->get_data());
+
+		$this->builtin_prepare_items();
+	}
+
+	public function single_row($item){
+		$cb	= (array)$this->item_callback;
+
+		if($item = is_numeric($item) ? (array_shift($cb))($item) : $item){
+			if($this->data_type == 'post_type' && $item->post_type == 'attachment'){
+				$GLOBALS['authordata'] = get_userdata($item->post_author);
+
+				echo wpjam_tag('tr', ['id'=>'post-'.$item->ID], $this->ob_get_single_row_columns($item))->add_class(['author-'.(get_current_user_id() == $item->post_author ? 'self' : 'other'), 'status-'.$item->post_status]);
+			}else{
+				$this->builtin_single_row($item, ...array_map(fn($v)=> $v($item), $cb));
+			}
+		}
+	}
+
+	public static function load($args){
+		return new static($args);
+	}
+}
+
 class WPJAM_List_Table_Component extends WPJAM_Register{
-	public static function call_group($method, ...$args){
-		$group	= static::get_group(['name'=>strtolower(static::class), 'config'=>['orderby'=>'order']]);
-		$part	= str_replace('wpjam_list_table_', '', $group->name);
+	public static function group($method, ...$args){
+		$group	= parent::group(['config'=>['orderby'=>'order']]);
 
 		if(in_array($method, ['add_object', 'remove_object'])){
+			$part		= str_replace('wpjam_list_table_', '', $group->name);
 			$args[0]	= ($name = $args[0]).WPJAM_Data_Type::prepare($args[1], 'key');
 
 			if($method == 'add_object'){
@@ -561,7 +643,7 @@ class WPJAM_List_Table_Component extends WPJAM_Register{
 					}
 
 					if(!empty($args[1]['overall']) && $args[1]['overall'] !== true){
-						static::call_group($method, $name.'_all', ['overall'=>true, 'title'=>wpjam_pull($args[1], 'overall')]+$args[1]);
+						static::group($method, $name.'_all', ['overall'=>true, 'title'=>wpjam_pull($args[1], 'overall')]+$args[1]);
 					}
 				}elseif($part == 'column'){
 					$args[1]['_field']	= wpjam_field(wpjam_pick($args[1], ['name', 'options'])+['type'=>'view', 'wrap_tag'=>'', 'key'=>$name]);
@@ -575,7 +657,7 @@ class WPJAM_List_Table_Component extends WPJAM_Register{
 			}
 		}
 
-		return [$group, $method](...$args);
+		return parent::group($method, ...$args);
 	}
 }
 
@@ -1023,80 +1105,5 @@ class WPJAM_List_Table_View extends WPJAM_List_Table_Component{
 
 			self::register($name, $view);
 		}
-	}
-}
-
-class WPJAM_Builtin_List_Table extends WPJAM_List_Table{
-	public function __construct($args){
-		$data_type	= wpjam_admin(wpjam_pick($args, ['data_type', 'meta_type']))['data_type'];
-
-		if($data_type == 'post_type'){
-			$echo		= 'echo';
-			$builtin	= $args['post_type'] == 'attachment' ? 'Media' : 'Posts';
-			$callback	= 'get_post';
-			$parts		= $builtin == 'Media' ? ['media', 'media'] : ($args['hierarchical'] ? ['pages', 'page', 'posts'] : ['posts', 'post', 'posts']);
-		}elseif($data_type == 'taxonomy'){
-			$builtin	= 'Terms';
-			$callback	= ['get_term', 'get_term_level'];
-			$parts		= [$args['taxonomy'], $args['taxonomy']];
-		}elseif($data_type == 'user'){
-			$builtin	= 'Users';
-			$callback	= 'get_userdata';
-			$parts		= ['users', 'user', 'users'];
-		}elseif($data_type == 'comment'){
-			$echo		= 'echo';
-			$builtin	= 'Comments';
-			$callback	= 'get_comment';
-			$parts		= ['comments', 'comment'];
-		}
-
-		wpjam_hook(($echo ?? ''), 'manage_'.$parts[0].'_custom_column', fn(...$args)=> $this->column_default(...array_pad($args, -3, [])), 10, 3);
-
-		add_filter($parts[1].'_row_actions', [$this, 'filter_row_actions'], 1, 2);
-
-		isset($parts[2]) && add_action('manage_'.$parts[2].'_extra_tablenav', [$this, 'extra_tablenav']);
-
-		wp_is_json_request() || add_filter('wpjam_html', [$this, 'filter_table']);
-
-		in_array($data_type, ['post_type', 'taxonomy']) && add_action('parse_term_query', function($query){
-			if(array_any(debug_backtrace(), fn($v)=> wpjam_get($v, 'class') == $this->builtin)){
-				$vars	= &$query->query_vars;
-				$by		= $vars['orderby'] ?? '';
-				$object	= ($by && is_string($by)) ? $this->component('column', $by) : null;
-				$type	= $object ? ($object->sortable === true ? 'meta_value' : $object->sortable) : '';
-				$vars	= array_merge($vars, ['list_table_query'=>true], in_array($type, ['meta_value_num', 'meta_value']) ? ['orderby'=>$type, 'meta_key'=>$by] : []);
-			}
-		}, 0);
-
-		parent::__construct($args+['builtin'=>'WP_'.$builtin.'_List_Table', 'item_callback'=>$callback]);
-	}
-
-	public function prepare_items(){
-		if($this->screen->base == 'edit'){
-			$_GET['post_type']	= $this->post_type;
-		}
-
-		$_GET	= array_merge($_GET, $this->get_data());
-		$_POST	= array_merge($_POST, $this->get_data());
-
-		$this->builtin_prepare_items();
-	}
-
-	public function single_row($item){
-		$cb	= (array)$this->item_callback;
-
-		if($item = is_numeric($item) ? (array_shift($cb))($item) : $item){
-			if($this->data_type == 'post_type' && $item->post_type == 'attachment'){
-				$GLOBALS['authordata'] = get_userdata($item->post_author);
-
-				echo wpjam_tag('tr', ['id'=>'post-'.$item->ID], $this->ob_get_single_row_columns($item))->add_class(['author-'.(get_current_user_id() == $item->post_author ? 'self' : 'other'), 'status-'.$item->post_status]);
-			}else{
-				$this->builtin_single_row($item, ...array_map(fn($v)=> $v($item), $cb));
-			}
-		}
-	}
-
-	public static function load($args){
-		return new static($args);
 	}
 }

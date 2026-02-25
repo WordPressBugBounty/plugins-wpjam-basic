@@ -8,6 +8,32 @@ abstract class WPJAM_Instance{
 		$this->id	= $id;
 	}
 
+	public function __isset($key){
+		return $this->$key !== null;
+	}
+
+	public function builtin($key){
+		$class		= get_class($this);
+		$class		= wpjam_at(class_parents($class, false), -2) ?: $class;
+		$type		= strtolower(wpjam_remove_prefix($class, 'WPJAM_'));
+		$cb			= 'get_'.$type;
+		$builtin	= function_exists($cb) ? $cb($this->id) : null;
+
+		if(!$builtin || !$key || $key === $type){
+			return $builtin;
+		}
+
+		if($key === 'data'){
+			return $builtin->to_array();
+		}
+
+		if(!str_starts_with($key, $type.'_') && isset($builtin->{$type.'_'.$key})){
+			return $builtin->{$type.'_'.$key};
+		}
+
+		return $builtin->$key ?? $this->meta_get($key);
+	}
+
 	abstract protected static function call_method($method, ...$args);
 
 	public function meta_get($key){
@@ -386,7 +412,7 @@ class WPJAM_Query{
 			return $parsed;
 		}elseif($type == 'term'){
 			$tax	= ($tax	= $vars['taxonomy'] ?? '') && is_string($tax) ? $tax : null;
-			$object	= wpjam_get_taxonomy_object($tax);
+			$object	= wpjam_get_taxonomy($tax);
 			$depth	= $args['depth'] ?? ($object ? $object->max_depth : null);
 
 			if($depth != -1){

@@ -18,13 +18,18 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 	}
 
 	public static function get_menu_page(){
-		$tab_page	= [
+		return [
 			'tab_slug'	=> 'baidu-zz',
 			'summary'	=> __FILE__,
-		];
-
-		if(self::submittable()){
-			$object	= wpjam_register_page_action('set_baidu_zz', [
+		]+(self::submittable() ? [
+			'function'		=> 'form',
+			'submit_text'	=> '批量提交',
+			'callback'		=> [self::class, 'batch_submit'],
+			'fields'		=> fn()=> ['view'=> [
+				'type'	=> 'view',
+				'value'	=> '已设置百度站长的站点和密钥（'.wpjam_get_page_button('set_baidu_zz', ['button_text'=>'修改', 'class'=>'']).'），可以使用百度站长更新内容接口批量将博客中的所有内容都提交给百度搜索资源平台。'
+			]],
+			'actions'		=> ['set_baidu_zz'=>[
 				'title' 			=> '设置',
 				'submit_text'		=> '设置',
 				'validate'			=> true,
@@ -33,20 +38,8 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 				'fields'			=> [self::class, 'get_fields'],
 				'value_callback'	=> [self::class, 'get_setting'],
 				'callback'			=> [self::class, 'update_setting']
-			]);
-
-			$tab_page	+= [
-				'function'		=> 'form',
-				'submit_text'	=> '批量提交',
-				'callback'		=> [self::class, 'batch_submit'],
-				'fields'		=> fn()=> ['view'=> [
-					'type'	=> 'view',
-					'value'	=> '已设置百度站长的站点和密钥（'.$object->get_button(['button_text'=>'修改', 'class'=>'']).'），可以使用百度站长更新内容接口批量将博客中的所有内容都提交给百度搜索资源平台。'
-				]],
-			];
-		}
-
-		return $tab_page;
+			]]
+		] : []);
 	}
 
 	public static function submit($urls, $type=''){
@@ -189,7 +182,7 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 				add_action('wp_after_insert_post',			[self::class, 'on_after_insert_post'], 10, 2);
 				add_action('post_submitbox_misc_actions',	[self::class, 'on_post_submitbox_misc_actions'],11);
 
-				wpjam_admin('style', '#post-body #baidu_zz_section:before{content: "\f103"; color:#82878c; font: normal 20px/1 dashicons; speak: none; display: inline-block; margin-left: -1px; padding-right: 3px; vertical-align: top; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }');
+				wpjam_style('#post-body #baidu_zz_section:before{content: "\f103"; color:#82878c; font: normal 20px/1 dashicons; speak: none; display: inline-block; margin-left: -1px; padding-right: 3px; vertical-align: top; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }');
 			}
 		}
 	}

@@ -460,7 +460,7 @@ function wpjam_compare($value, $compare, ...$args){
 	[$a, $b]= [$value, $value2];
 
 	switch($compare){
-		case '=': return $a == $b;
+		case '=': return $strict ? $a === $b : $a == $b;
 		case '>': return $a > $b;
 		case '<': return $a < $b;
 		case 'IN': return is_array($a) ? array_all($a , fn($v)=> in_array($v, $b, $strict)) : in_array($a, $b, $strict);
@@ -769,21 +769,25 @@ function wpjam_pick($arr, $args){
 	return wpjam_array($args, fn($i, $k)=> [$k, wpjam_get($arr, $k)], true);
 }
 
-function wpjam_entries($arr, $key=null, $value=null){
+function wpjam_entries($items, $key=null, $value=null){
 	$key	??= 0;
 	$value	??= (int)($key === 0);
 
-	return wpjam_array($arr, fn($k, $v)=> [null, [$key=>$k, $value=>$v]]);
+	return wpjam_array($items, fn($k, $v)=> [null, [$key=>$k, $value=>$v]]);
 }
 
-function wpjam_column($arr, $key=null, $index=null){
-	return wpjam_array($arr, fn($k, $v)=> [
+function wpjam_column($items, $key=null, $index=null){
+	return wpjam_array($items, fn($k, $v)=> [
 		is_null($index) || $index === false ? null : ($index === true ? $k : $v[$index]),
-		is_array($key) ? wpjam_array($key, fn($k, $v)=> [wpjam_is_assoc_array($key) ? $k : $v, wpjam_get($arr, $v)], true) : wpjam_get($v, $key)
+		is_array($key) ? wpjam_array($key, fn($i, $j)=> [wpjam_is_assoc_array($key) ? $i : $j, wpjam_get($v, $j)], true) : wpjam_get($v, $key)
 	]);
 }
 
 function wpjam_map($arr, $cb, $args=[]){
+	if(!$arr){
+		return $arr;
+	}
+
 	$args	= (is_bool($args) || $args === 'deep' ? ['deep'=>(bool)$args] : (is_string($args) ?  ['mode'=>$args] : $args))+['deep'=>false];
 	$mode	= in_array($args['mode'] ?? '', ['vk', 'kv', 'k', 'v']) ? $args['mode'] : 'vk';
 

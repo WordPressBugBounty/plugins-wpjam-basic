@@ -79,7 +79,7 @@ class WPJAM_Admin extends WPJAM_Args{
 					return;
 				}
 			}elseif(in_array($screen->base, ['term', 'edit-tags'])){
-				if(!($this->tax_object = wpjam_get_taxonomy_object($GLOBALS['taxnow']))){
+				if(!($this->tax_object = wpjam_get_taxonomy($GLOBALS['taxnow']))){
 					return;
 				}
 			}
@@ -287,18 +287,16 @@ class WPJAM_Page_Action extends WPJAM_Args{
 class WPJAM_Dashboard extends WPJAM_Args{
 	public function page_load(){
 		if($this->name != 'dashboard'){
-			require_once ABSPATH.'wp-admin/includes/dashboard.php';
 			// wp_dashboard_setup();
+
+			require_once ABSPATH.'wp-admin/includes/dashboard.php';
 
 			wp_enqueue_script('dashboard');
 
 			wp_is_mobile() && wp_enqueue_script('jquery-touch-punch');
 		}
 
-		$widgets	= maybe_callback($this->widgets, $this->name) ?: [];
-		$widgets	= array_merge($widgets, array_filter(wpjam_admin('widgets[]'), [$this, 'is_available']));
-
-		foreach($widgets as $id => $w){
+		foreach(array_merge(maybe_callback($this->widgets, $this->name) ?: [], array_filter(wpjam_admin('widgets[]'), [$this, 'is_available'])) as $id => $w){
 			add_meta_box(
 				$w['id'] ?? $id,
 				$w['title'],
@@ -462,6 +460,7 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 			in_array($data_type, ['post_type', 'taxonomy']) && $this->$data_type && !wpjam_admin('screen', $data_type) && wpjam_admin('screen', $data_type, $this->$data_type);
 		}
 
+		$this->actions	&& wpjam_map($this->actions, 'wpjam_register_page_action', 'kv');	
 		$this->chart	&& wpjam_chart(is_array($this->chart) ? $this->chart : []);
 		$this->editor	&& add_action('admin_footer', 'wp_enqueue_editor');
 
@@ -874,7 +873,8 @@ class WPJAM_Chart extends WPJAM_Args{
 		$data	+= ($args['show_table'] ?? true) && $data ? ['total' => array_fill_keys($ykeys, 0)] : [];
 
 		foreach($data as $day => &$item){
-			$item	= isset($cbs) ? array_merge((array)$item, array_map(fn($cb)=> $cb($item), $cbs)) : $item;
+			$item	= (array)$item;
+			$item	= array_merge($item, isset($cbs) ? array_map(fn($cb)=> $cb($item), $cbs) : []);
 
 			if($day !== 'total'){
 				$item[$xkey] ??= $day;
