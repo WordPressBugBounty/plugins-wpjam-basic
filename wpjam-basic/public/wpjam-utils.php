@@ -1437,7 +1437,7 @@ function wpjam_expandable($str, $num=10, $name=null){
 
 		$name	= 'expandable_'.($name ?? (++$index));
 
-		return '<div class="expandable-container"><input type="checkbox" id="'.esc_attr($name).'" /><label for="'.esc_attr($name).'" class="button"></label><div class="inner">'.$str.'</div></div>';
+		return '<div class="expandable-container"><input type="checkbox" class="button" id="'.esc_attr($name).'" /><div class="inner">'.$str.'</div></div>';
 	}
 
 	return $str;

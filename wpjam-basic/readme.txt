@@ -53,13 +53,14 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.9.2 =
+= 6.9.4 =
 * 开启多语言和新增函数 wpjam_translate
 * 新增函数 wpjam_column 支持获取多列
 * 新增函数 wpjam_entries 可以将关联数组转换成索引数组
 * 增强函数 wpjam_chart 支持图表各种操作
 * 新增函数 wpjam_formula 解析数学表达式
 * 新增函数 wpjam_calc 计算数学表达式
+* 其他优化和bug修复
 
 = 6.9 =
 * 新增函数 get_term_level
@@ -79,7 +80,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * WPJAM_Taxonomy 和 WPJAM_Meta_Option 新增 show_in_posts_rest 属性
 * 后台 JS 新增 list_table_load 事件
 * wpjam_set 支持 [] 模式新增元素
-* 其他优化和bug修复
 
 = 6.8 =
 * 全面优化 wpjam_try / wpjam_catch 等高阶函数

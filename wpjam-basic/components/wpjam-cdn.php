@@ -41,7 +41,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 			$remote_fields	= ['external'=>['title'=>'外部图片',	'type'=>'view',	'description'=>($external ? '已在' : '请先到').'「文章设置」中开启「支持在文章列表页上传外部图片」']];
 		}
 
-		$remote_fields	+= ['exceptions'=>['title'=>'例外',	'type'=>'textarea',	'class'=>'',	'description'=>'如果外部图片的链接中包含以上字符串或域名，就不会被保存并镜像到云存储。']];
+		$remote_fields	+= ['exceptions'=>['title'=>'例外',	'type'=>'textarea',	'description'=>'如果外部图片的链接中包含以上字符串或域名，就不会被保存并镜像到云存储。']];
 
 		$image_fields	= [
 			'thumb'	=> ['title'=>'缩图设置',	'fields'=>[

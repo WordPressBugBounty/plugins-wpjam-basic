@@ -553,7 +553,7 @@ jQuery(function($){
 			let $tb		= $('#TB_window');
 
 			if($tb.length){
-				$tb.addClass('abscenter');
+				$tb.addClass('modal');
 
 				if(width < 761){
 					style.width	= width - 50;

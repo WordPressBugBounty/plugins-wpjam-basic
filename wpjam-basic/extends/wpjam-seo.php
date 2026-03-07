@@ -178,25 +178,27 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		add_filter('robots_txt',		fn($output, $public)=> $output.($public ? self::get_setting('robots') : ''), 10, 2);
 		add_filter('document_title',	fn($title)=> self::get_value('title') ?: $title);
 
-		if(self::get_setting('sitemap') == 0){
-			wpjam_route('sitemap', self::class);
-		}
+		self::get_setting('sitemap') || wpjam_route('sitemap', self::class);
 
-		if(is_admin() && self::get_setting('individual')){
-			$args	= [
-				'title'			=> 'SEO设置',
-				'page_title'	=> 'SEO设置',
-				'submit_text'	=> '设置',
-				'list_table'	=> self::get_setting('list_table', 1),
-				'fields'		=> [
-					'seo_title'			=> ['title'=>'SEO标题',	'class'=>'large-text',	'placeholder'=>'不填则使用标题'],
-					'seo_description'	=> ['title'=>'SEO描述',	'type'=>'textarea'],
-					'seo_keywords'		=> ['title'=>'SEO关键字','class'=>'large-text']
-				]
-			];
+		if(self::get_setting('individual')){
+			if(is_admin()){
+				$args	= [
+					'title'			=> 'SEO设置',
+					'page_title'	=> 'SEO设置',
+					'submit_text'	=> '设置',
+					'list_table'	=> self::get_setting('list_table', 1),
+					'fields'		=> [
+						'seo_title'			=> ['title'=>'SEO标题',	'class'=>'large-text',	'placeholder'=>'不填则使用标题'],
+						'seo_description'	=> ['title'=>'SEO描述',	'class'=>'large-text',	'type'=>'textarea'],
+						'seo_keywords'		=> ['title'=>'SEO关键字','class'=>'large-text']
+					]
+				];
 
-			wpjam_register_post_option('seo', $args+['context'=>'side',	'post_type'=>fn($v)=> $v != 'attachment' && is_post_type_viewable($v) ]);
-			wpjam_register_term_option('seo', $args+['action'=>'edit',	'taxonomy'=>fn($v)=> is_taxonomy_viewable($v)]);
+				wpjam_register_post_option('seo', $args+['context'=>'side',	'post_type'=>fn($v)=> $v != 'attachment' && is_post_type_viewable($v) ]);
+				wpjam_register_term_option('seo', $args+['action'=>'edit',	'taxonomy'=>fn($v)=> is_taxonomy_viewable($v)]);
+			}
+
+			wpjam_map(['seo_description', 'seo_keywords'], fn($k)=> register_meta('post', $k, ['type'=>'string', 'single'=>true, 'show_in_rest'=>true]));
 		}
 	}
 }

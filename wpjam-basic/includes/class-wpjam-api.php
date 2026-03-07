@@ -211,6 +211,12 @@ class WPJAM_API{
 			'priority'	=> 1
 		]);
 
+		wpjam_style('wpjam-static', [
+			'src'		=> '',
+			'method'	=> 'register',
+			'priority'	=> 1
+		]);
+
 		add_action('loop_start',	fn($query)=> $this->push('query', $query), 1);
 		add_action('loop_end',		fn()=> $this->pop('query'), 999);
 
@@ -1354,8 +1360,8 @@ class WPJAM_JSON extends WPJAM_Register{
 
 	public static function get_defaults(){
 		return array_fill_keys(['post.list', 'post.calendar', 'post.get'], ['modules'=>['WPJAM_JSON_Module', 'callback']])+[
-			'media.upload'		=> ['modules'=>['callback'=>['WPJAM_JSON_Module', 'media']]],
-			'site.config'		=> ['modules'=>['type'=>'config']],
+			'media.upload'	=> ['modules'=>['callback'=>['WPJAM_JSON_Module', 'media']]],
+			'site.config'	=> ['modules'=>['type'=>'config']],
 		];
 	}
 
@@ -1643,9 +1649,9 @@ class WPJAM_AJAX extends WPJAM_Args{
 	}
 
 	public static function create($name, $args){
-		if(!is_admin() && !wpjam('ajax')){
+		if(!wpjam('ajax')){
 			wpjam_script('wpjam-ajax', [
-				'for'		=> 'wp, login',
+				'for'		=> 'wp,login',
 				'src'		=> wpjam_url(dirname(__DIR__).'/static/ajax.js'),
 				'deps'		=> ['jquery'],
 				'data'		=> 'var ajaxurl	= "'.admin_url('admin-ajax.php').'";',
@@ -1654,7 +1660,7 @@ class WPJAM_AJAX extends WPJAM_Args{
 			]);
 
 			if(!is_login()){
-				add_filter('script_loader_tag', fn($tag, $handle)=> $handle == 'wpjam-ajax' && current_theme_supports('script', $handle) ? '' : $tag, 10, 2);
+				add_filter('script_loader_src', fn($src, $handle)=> $handle == 'wpjam-ajax' && current_theme_supports('script', $handle) ? '' : $src, 10, 2);
 			}
 		}
 
@@ -1681,7 +1687,7 @@ class WPJAM_Notice{
 			$data	= ['notice_key'=>$key, 'notice_type'=>$type];
 			$item	+= ['class'=>'is-dismissible', 'title'=>'', 'modal'=>0];
 			$notice	= trim($item['notice']);
-			$notice	.= !empty($item['admin_url']) ? (($item['modal'] ? "\n\n" : ' ').'<a style="text-decoration:none;" href="'.add_query_arg($data, home_url($item['admin_url'])).'">点击查看<span class="dashicons dashicons-arrow-right-alt"></span></a>') : '';
+			$notice	.= !empty($item['admin_url']) ? (($item['modal'] ? "\n\n" : ' ').'<a href="'.add_query_arg($data, home_url($item['admin_url'])).'">点击查看<span class="dashicons dashicons-arrow-right-alt"></span></a>') : '';
 
 			$notice	= wpautop($notice).wpjam_get_page_button('delete_notice', ['data'=>$data]);
 

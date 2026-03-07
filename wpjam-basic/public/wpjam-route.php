@@ -33,14 +33,10 @@ function wpjam_load($hook, $cb, ...$args){
 		return;
 	}
 
-	$hook	= array_filter((array)$hook, fn($h)=> !did_action($h));
-
-	if(!$hook){
-		$cb();
-	}elseif(count($hook) == 1){
-		add_action(array_first($hook), $cb, ...$args);
+	if($hook = array_filter((array)$hook, fn($h)=> !did_action($h))){
+		add_action(array_shift($hook), $hook ? fn()=> wpjam_load($hook, $cb, ...$args) : $cb, ...$args);
 	}else{
-		array_walk($hook, fn($h)=> add_action($h, fn()=> array_all($hook, 'did_action') && $cb(), ...$args));
+		$cb();
 	}
 }
 
@@ -763,11 +759,13 @@ function wpjam_error($code, $msg='', ...$args){
 			$code	= $code == 'id' ? 'ID' : str_replace(['_id', '_'], [' ID', ' '], $code);
 			$msg	= 'Invalid '.$code.($args ? ': %s.' : '.');
 
-			if(($trans = __($msg, 'wpjam')) != $msg){
-				$msg	= $trans;
-			}else{
-				$msg	= __('Invalid %s'.($args ? ': %s.': '.'), 'wpjam');
-				$args	= [__($code, 'wpjam'), ...$args];
+			if(did_action('init')){
+				if(($trans = __($msg, 'wpjam')) != $msg){
+					$msg	= $trans;
+				}else{
+					$msg	= __('Invalid %s'.($args ? ': %s.': '.'), 'wpjam');
+					$args	= [__($code, 'wpjam'), ...$args];
+				}
 			}
 		}elseif(try_remove_suffix($code, '_required')){
 			$msg	= __('%s is empty or invalid.', 'wpjam');
@@ -906,24 +904,20 @@ function wpjam_updater($type, $hostname, ...$args){
 
 // Extend
 function wpjam_load_extends($dir, $args=[]){
-	[$dir, $type]	= explode(':', $dir)+['', ''];
+	[$dir, $type]	= explode('::', $dir)+['', ''];
 
 	if(!is_dir($dir)){
 		return;
 	}
 
 	if($type){
-		if($type == 'fields'){
-			$object	= $args;
-		}else{
-			$data	= $args;
-		}
+		[$object, $data]	= $type == 'fields' ? [$args, null] : [null, $args];
 	}elseif($option = wpjam_pull($args, 'option')){
 		$object	= wpjam_register_option($option, $args+[
 			'ajax'				=> false,
 			'site_default'		=> is_multisite() && ($args['sitewide'] ?? false),
-			'fields'			=> fn()=> wpjam_sort(wpjam_load_extends($dir.':fields', $this), ['value'=>'DESC']),
-			'sanitize_callback'	=> fn($data)=> wpjam_load_extends($dir.':sanitize', $data)
+			'fields'			=> fn()=> wpjam_sort(wpjam_load_extends($dir.'::fields', $this), ['value'=>'DESC']),
+			'sanitize_callback'	=> fn($data)=> wpjam_load_extends($dir.'::sanitize', $data)
 		]);
 
 		$data	= array_merge(...array_map(fn($k)=> array_filter($object->{'get_'.($k == 'site' ? 'site_' : '').'option'}()), $object->site_default ? ['data', 'site'] : ['data']));
@@ -985,16 +979,16 @@ function wpjam_asset($type, $handle, $args=[], $load=false){
 	$args	= is_array($args) ? $args : ['src'=>$args];
 
 	if($load || array_any(['wp', 'admin', 'login'], fn($part)=> doing_action($part.'_enqueue_scripts'))){
-		$method	= wpjam_pull($args, 'method') ?: 'enqueue';
+		$method	= ($args['method'] ?? '') ?: 'enqueue';
+		$if		= $args[$method.'_if'] ?? '';
 
-		if(empty($args[$method.'_if']) || $args[$method.'_if']($handle, $type)){
-			$args	= wp_parse_args($args, ['src'=>'', 'deps'=>[], 'ver'=>false, 'media'=>'all', 'position'=>'after']);
-			$src	= maybe_closure($args['src'], $handle);
+		if(!$if || $if($handle, $type)){
+			$src	= maybe_closure($args['src'] ?? '', $handle);
 			$data	= $args['data'] ?? '';
 
-			($src || !$data) && wpjam_call('wp_'.$method.'_'.$type, $handle, $src, $args['deps'], $args['ver'], ($type == 'script' ? wpjam_pick($args, ['in_footer', 'strategy']) : $args['media']));
+			($src || !$data) && wpjam_call('wp_'.$method.'_'.$type, $handle, $src, ($args['deps'] ?? []), ($args['ver'] ?? false), ($type == 'script' ? wpjam_pick($args, ['in_footer', 'strategy']) : ($args['media'] ?? 'all')));
 
-			$data && wpjam_call('wp_add_inline_'.$type, $handle, $data, $args['position']);
+			$data && wpjam_call('wp_add_inline_'.$type, $handle, $data, $args['position'] ?? 'after');
 		}
 	}else{
 		$parts	= is_admin() ? ['admin', 'wp'] : (is_login() ? ['login'] : ['wp']);

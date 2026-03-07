@@ -1734,8 +1734,6 @@ class WPJAM_User_Signup extends WPJAM_Register{
 	}
 
 	public static function on_login_init(){
-		wp_enqueue_script('wpjam-ajax');
-
 		$action		= wpjam_get_request_parameter('action', ['default'=>'login']);
 		$objects	= in_array($action, ['login', 'bind']) ? self::get_registereds([$action=>true]) : [];
 

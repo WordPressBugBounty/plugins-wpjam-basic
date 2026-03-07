@@ -207,8 +207,11 @@ class WPJAM_Field extends WPJAM_Attr{
 
 	public function __call($method, $args){
 		if(in_array($method, ['input', 'select', 'textarea'])){
-			$tag	= wpjam_tag($method, $this->get_args())->attr($args[0] ?? [])->add_class('field-key field-key-'.$this->key);
-			$data	= ($this->_data ?: [])+['name'=>array_last($this->_names)]+$tag->pull(['key', 'data_type', 'query_args', 'custom_validity']);
+			$tag	= wpjam_tag($method, $this->get_args())->attr($args[0] ?? []);
+
+			$tag->class	??= $method == 'textarea' ? 'wide-text' : (in_array($tag->type, ['text', 'password', 'url', 'email']) ? 'regular-text' : '');
+
+			$data	= ($this->_data ?: [])+['name'=>array_last($this->_names)]+$tag->add_class('field-key field-key-'.$this->key)->pull(['key', 'data_type', 'query_args', 'custom_validity']);
 
 			return $tag->data($data)->remove_attr(['default', 'options', 'multiple', 'title', 'label', 'render', 'before', 'after', 'description', 'wrap_class', 'wrap_tag', 'item_type', 'direction', 'group', 'buttons', 'button_text', 'size', 'post_type', 'taxonomy', 'sep', 'fields', 'parse_required', 'show_if', 'show_in_rest', 'column', 'custom_input', ...($tag->is('input') ? [] : ['type', 'value'])]);
 		}
@@ -585,7 +588,6 @@ class WPJAM_Field extends WPJAM_Attr{
 
 	public function render($args=[]){
 		$this->value	= $this->value_callback($args);
-		$this->class	??= $this->is('text, password, url, email, image, file, mu-image, mu-file') ? 'regular-text' : null;
 		$this->_data	= $this->pull(['filterable', 'summarization', 'show_option_all', 'show_option_none', 'option_all_value', 'option_none_value', 'max_items', 'min_items', 'unique_items']);
 
 		if($this->render){
