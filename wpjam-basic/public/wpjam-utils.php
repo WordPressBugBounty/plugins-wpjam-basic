@@ -153,6 +153,17 @@ function wpjam_send_json($data=[], $code=null){
 	echo $jsonp ? '/**/'.$_GET['_jsonp'].'('.$data.')' : $data; exit;
 }
 
+// Compress
+function wpjam_compress($data, $base64=true, $level=6){
+	$text	= gzcompress(wpjam_json_encode($data), $level);
+
+	return $base64 ? base64_encode($text) : $text;
+}
+
+function wpjam_uncompress($text, $base64=true){
+	return wpjam_json_decode(gzuncompress($base64 ? base64_decode($text) : $text));
+}
+
 // User agent
 function wpjam_get_user_agent(){
 	return $_SERVER['HTTP_USER_AGENT'] ?? '';
@@ -414,7 +425,7 @@ function wpjam_export($file, $data, $columns=[]){
 }
 
 function wpjam_between($value, $min, $max=null){
-	return $value >= $min && $value <= ($max ?? $mix);
+	return $value >= $min && $value <= ($max ?? $min);
 }
 
 function wpjam_get_operator(...$args){
@@ -928,6 +939,14 @@ function wpjam_pull(&$arr, $key, ...$args){
 	$arr	= wpjam_except($arr, $key);
 
 	return $value;
+}
+
+function wpjam_assoc($arr){
+	if(!wp_is_numeric_array($arr) && (!($sub = wpjam_filter($arr, fn($v, $k) => is_int($k))) || !array_is_list($sub))){
+		return $arr;
+	}
+
+	return wpjam_array($arr, fn($k, $v)=> is_int($k) ? $v : $k);
 }
 
 function wpjam_except($arr, $key){

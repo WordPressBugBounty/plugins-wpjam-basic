@@ -105,46 +105,23 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 	}
 
 	public static function redirect($action){
-		$sitemap	= '';
-
 		if(!$action){
-			$last_mod	= str_replace(' ', 'T', get_lastpostmodified('GMT')).'+00:00';
-			$sitemap	.= "\t<url>\n";
-			$sitemap	.="\t\t<loc>".home_url()."</loc>\n";
-			$sitemap	.="\t\t<lastmod>".$last_mod."</lastmod>\n";
-			$sitemap	.="\t\t<changefreq>daily</changefreq>\n";
-			$sitemap	.="\t\t<priority>1.0</priority>\n";
-			$sitemap	.="\t</url>\n";
-
-			$taxonomies = array_diff(array_keys(get_taxonomies(['public' => true])), ['post_format']);
-			$terms		= get_terms(['taxonomy'=>$taxonomies]);
-
-			foreach($terms as $term){
-				$priority	= $term->taxonomy == 'category' ? 0.6 : 0.4;
-				$sitemap	.="\t<url>\n";
-				$sitemap	.="\t\t<loc>".get_term_link($term)."</loc>\n";
-				$sitemap	.="\t\t<lastmod>".$last_mod."</lastmod>\n";
-				$sitemap	.="\t\t<changefreq>daily</changefreq>\n";
-				$sitemap	.="\t\t<priority>".$priority."</priority>\n";
-				$sitemap	.="\t</url>\n";
-			}
+			$items		= array_merge([[home_url(), str_replace(' ', 'T', get_lastpostmodified('GMT')).'+00:00', 'daily', '1.0']], get_terms(['taxonomy'=>array_diff(array_keys(get_taxonomies(['public' => true])), ['post_format'])]));
 		}elseif(is_numeric($action)){
-			$ptypes = array_diff(array_keys(get_post_types(['public' => true])), ['page', 'attachment']);
-			$posts	= wpjam_get_posts(['posts_per_page'=>1000, 'paged'=>$action, 'post_type'=>$ptypes]);
-
-			foreach($posts as $post){
-				$permalink	= get_permalink($post->ID); //$siteurl.$post->post_name.'/';
-				$last_mod	= str_replace(' ', 'T', $post->post_modified_gmt).'+00:00';
-				$sitemap	.="\t<url>\n";
-				$sitemap	.="\t\t<loc>".$permalink."</loc>\n";
-				$sitemap	.="\t\t<lastmod>".$last_mod."</lastmod>\n";
-				$sitemap	.="\t\t<changefreq>weekly</changefreq>\n";
-				$sitemap	.="\t\t<priority>0.8</priority>\n";
-				$sitemap	.="\t</url>\n";
-			}
+			$items		= wpjam_get_posts(['posts_per_page'=>1000, 'paged'=>$action, 'post_type'=>array_diff(array_keys(get_post_types(['public' => true])), ['page', 'attachment'])]);
 		}else{
-			$sitemap = apply_filters('wpjam_'.$action.'_sitemap', '');
+			$sitemap	= apply_filters('wpjam_'.$action.'_sitemap', '');
 		}
+
+		$sitemap	??= implode(wpjam_map($items, function($item){
+			if(is_a($item, 'WP_Post')){
+				$item	= [get_permalink($item->ID), str_replace(' ', 'T', $item->post_modified_gmt).'+00:00', 'weekly', 0.8];
+			}elseif(is_a($item, 'WP_Term')){
+				$item	= [get_term_link($item), str_replace(' ', 'T', get_lastpostmodified('GMT')).'+00:00', 'daily', $item->taxonomy == 'category' ? 0.6 : 0.4];
+			}
+
+			return "\t<url>\n".implode(wpjam_map(['loc', 'lastmod', 'changefreq', 'priority'], fn($k, $i)=> "\t\t<{$k}>{$item[$i]}</{$k}>\n"))."\t</url>\n";
+		}));
 
 		header("Content-Type:text/xml");
 
@@ -181,24 +158,19 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		self::get_setting('sitemap') || wpjam_route('sitemap', self::class);
 
 		if(self::get_setting('individual')){
-			if(is_admin()){
-				$args	= [
-					'title'			=> 'SEO设置',
-					'page_title'	=> 'SEO设置',
-					'submit_text'	=> '设置',
-					'list_table'	=> self::get_setting('list_table', 1),
-					'fields'		=> [
-						'seo_title'			=> ['title'=>'SEO标题',	'class'=>'large-text',	'placeholder'=>'不填则使用标题'],
-						'seo_description'	=> ['title'=>'SEO描述',	'class'=>'large-text',	'type'=>'textarea'],
-						'seo_keywords'		=> ['title'=>'SEO关键字','class'=>'large-text']
-					]
-				];
-
-				wpjam_register_post_option('seo', $args+['context'=>'side',	'post_type'=>fn($v)=> $v != 'attachment' && is_post_type_viewable($v) ]);
-				wpjam_register_term_option('seo', $args+['action'=>'edit',	'taxonomy'=>fn($v)=> is_taxonomy_viewable($v)]);
-			}
-
-			wpjam_map(['seo_description', 'seo_keywords'], fn($k)=> register_meta('post', $k, ['type'=>'string', 'single'=>true, 'show_in_rest'=>true]));
+			wpjam_map([
+				'post'	=> ['context'=>'side',	'post_type'=>fn($v)=> $v != 'attachment' && is_post_type_viewable($v)],
+				'term'	=> ['action'=>'edit',	'taxonomy'=>fn($v)=> is_taxonomy_viewable($v)]
+			], fn($v, $t)=> wpjam_register_meta_option($t, 'seo', $v+[
+				'title'			=> 'SEO设置',
+				'page_title'	=> 'SEO设置',
+				'submit_text'	=> '设置',
+				'list_table'	=> self::get_setting('list_table', 1),
+				'fields'		=> [
+					'seo_description'	=> ['title'=>'SEO描述',	'class'=>'large-text',	'default'=>'',	'type'=>'textarea'],
+					'seo_keywords'		=> ['title'=>'SEO关键字','class'=>'large-text',	'default'=>'']
+				]
+			]));
 		}
 	}
 }

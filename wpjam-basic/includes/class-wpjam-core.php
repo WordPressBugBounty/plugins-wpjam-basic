@@ -10,7 +10,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		if($key == 'model'){
 			return $value ?: 'WPJAM_Post';
 		}elseif($key == 'plural'){
-			return $value ?? $this->name.'s';
+			return $value ?: $this->name.'s';
 		}
 
 		return $value;
@@ -63,7 +63,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 	}
 
 	public function get_menu_slug(){
-		return $this->menu_slug	?? (($menu_page = $this->get_arg('menu_page')) && is_array($menu_page) ? (wp_is_numeric_array($menu_page) ? array_first($menu_page) : $menu_page)['menu_slug'] : null);
+		return $this->menu_slug ?? (($menu = $this->get_arg('menu_page')) && is_array($menu) ? (wp_is_numeric_array($menu) ? array_first($menu) : $menu)['menu_slug'] : null);
 	}
 
 	public function get_fields($id=0, $action_key=''){
@@ -117,27 +117,18 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		if($filter || $output == 'objects'){
 			$data	= wpjam_fill($data, 'wpjam_get_taxonomy');
 			$data	= $filter ? wpjam_filter($data, $filter) : $data;
-			$data	= $output == 'objects' ? $data : array_keys($data);
+
+			return $output == 'objects' ? $data : array_keys($data);
 		}
 
 		return $data;
-	}
-
-	public function in_taxonomy($taxonomy){
-		return is_object_in_taxonomy($this->name, $taxonomy);
-	}
-
-	public function is_viewable(){
-		return is_post_type_viewable($this->name);
 	}
 
 	public function reset_invalid_parent($value=0){
 		$wpdb	= $GLOBALS['wpdb'];
 		$ids	= $wpdb->get_col($wpdb->prepare("SELECT p1.ID FROM {$wpdb->posts} p1 LEFT JOIN {$wpdb->posts} p2 ON p1.post_parent = p2.ID WHERE p1.post_type=%s AND p1.post_parent > 0 AND p2.ID is null", $this->name)) ?: [];
 
-		array_walk($ids, fn($id)=> wp_update_post(['ID'=>$id, 'post_parent'=>$value]));
-
-		return count($ids);
+		return count(array_map(fn($id)=> wp_update_post(['ID'=>$id, 'post_parent'=>$value]), $ids));
 	}
 
 	public function registered(){
@@ -246,10 +237,6 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		return parent::__set($key, $value);
 	}
 
-	public function __call($method, $args){
-		return $this->call_dynamic_method($method, ...$args);
-	}
-
 	public function to_array(){
 		$this->filter_args();
 
@@ -289,14 +276,6 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		}
 
 		return $this->args;
-	}
-
-	public function is_object_in($object_type){
-		return is_object_in_taxonomy($object_type, $this->name);
-	}
-
-	public function is_viewable(){
-		return is_taxonomy_viewable($this->name);
 	}
 
 	public function add_support($feature, $value=true){
@@ -465,7 +444,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 			if($GLOBALS['wp_rewrite']->use_verbose_page_rules){
 				if(!empty($vars['error']) && $vars['error'] == '404'){
 					$key	= 'error';
-				}elseif(str_starts_with($structure, '/%postname%')){
+				}elseif(str_contains($structure, '/%postname%')){
 					$key	= !empty($vars['name']) ? 'name' : '';
 				}elseif(!str_contains($request, '/')){
 					$type	= array_find(['author', 'category'], fn($k)=> str_starts_with($structure, '/%'.$k.'%'));
@@ -525,8 +504,6 @@ class WPJAM_Post extends WPJAM_Instance{
 		}elseif($method === 'in_taxonomy'){
 			return is_object_in_taxonomy($this->post, ...$args);
 		}
-
-		return $this->call_dynamic_method($method, ...$args);
 	}
 
 	public function save($data){
@@ -663,13 +640,9 @@ class WPJAM_Post extends WPJAM_Instance{
 	}
 
 	public static function update($post_id, $data, $validate=true){
-		$result	= $validate ? wpjam_catch(fn()=> static::validate($post_id)) : null;
+		$result	= $validate ? static::validate($post_id) : null;
 
 		return is_wp_error($result) ? $result : parent::update($post_id, $data);
-	}
-
-	public static function delete($post_id, $force=true){
-		return wpjam_catch(fn()=> static::before_delete($post_id) || true ? (wp_delete_post($post_id, $force) ?: wpjam_throw('delete_error', '删除失败')) : null);
 	}
 
 	protected static function call_method($method, ...$args){
@@ -685,9 +658,11 @@ class WPJAM_Post extends WPJAM_Instance{
 			$data['post_author']	??= get_current_user_id();
 			$data['post_date']		??= wpjam_date('Y-m-d H:i:s');
 
-			return wpjam_try('wp_insert_post', wp_slash($data), true, true);
+			return wp_insert_post(wp_slash($data), true, true);
 		}elseif($method == 'update'){
-			return wpjam_try('wp_update_post', wp_slash(array_merge($args[1], ['ID'=>$args[0]])), true, true);
+			return wp_update_post(wp_slash(array_merge($args[1], ['ID'=>$args[0]])), true, true);
+		}elseif($method == 'delete'){
+			return wp_delete_post($args[0], true) ?: wpjam_throw('delete_error', '删除失败');
 		}
 	}
 
@@ -784,16 +759,17 @@ class WPJAM_Post extends WPJAM_Instance{
 	}
 
 	public static function query_calendar($args){
-		$args['posts_per_page']	= -1;
-		$args['post_status']	= wpjam_pull($args, 'status') ?: 'any';
-		$args['post_type']		??= static::get_current_post_type();
-		$args['monthnum']		= $args['month'];
-
-		return array_reduce($GLOBALS['wp_query']->query($args), fn($carry, $post)=> wpjam_set($carry, wpjam_at($post->post_date, ' ', 0).'[]', $post), []);
+		return array_reduce($GLOBALS['wp_query']->query([
+			'posts_per_page'	=> -1,
+			'post_status'		=> wpjam_pull($args, 'status') ?: 'any'
+		]+$args+[
+			'post_type'			=> static::get_current_post_type(),
+			'monthnum'			=> $args['month']
+		]), fn($c, $p)=> wpjam_set($c, wpjam_at($p->post_date, ' ', 0).'[]', $p), []);
 	}
 
 	public static function get_views(){
-		if(get_current_screen()->base != 'edit'){
+		if(!in_array(get_current_screen()->base, ['edit', 'upload'])){
 			$counts	= array_filter((array)wp_count_posts(static::get_current_post_type()));
 			$views	= ['all'=>['filter'=>['status'=>null, 'show_sticky'=>null], 'label'=>'全部', 'count'=>array_sum($counts)]];
 
@@ -805,13 +781,11 @@ class WPJAM_Post extends WPJAM_Instance{
 		return ($id && !is_array($id) && !isset($fields['title']) && !isset($fields['post_title']) ? ['title'=>['title'=>wpjam_get_post_type_setting(get_post_type($id), 'title').'标题', 'type'=>'view', 'value'=>get_the_title($id)]] : [])+$fields;
 	}
 
-	public static function get_meta($post_id, ...$args){
-		// _deprecated_function(__METHOD__, 'WPJAM Basic 6.0', 'wpjam_get_metadata');
+	public static function get_meta($post_id, ...$args){	// deprecated
 		return wpjam_get_metadata('post', $post_id, ...$args);
 	}
 
-	public static function update_meta($post_id, ...$args){
-		// _deprecated_function(__METHOD__, 'WPJAM Basic 6.0', 'wpjam_update_metadata');
+	public static function update_meta($post_id, ...$args){	// deprecated
 		return wpjam_update_metadata('post', $post_id, ...$args);
 	}
 
@@ -851,8 +825,6 @@ class WPJAM_Term extends WPJAM_Instance{
 		}elseif($method == 'is_object_in'){
 			return is_object_in_term($args[0], $this->taxonomy, $this->id);
 		}
-
-		return $this->call_dynamic_method($method, ...$args);
 	}
 
 	public function value_callback($field){
@@ -860,8 +832,7 @@ class WPJAM_Term extends WPJAM_Instance{
 	}
 
 	public function update_callback($data, $defaults){
-		$keys	= ['name', 'parent', 'slug', 'description', 'alias_of'];
-		$result	= $this->save(wpjam_pull($data, $keys));
+		$result	= $this->save(wpjam_pull($data, ['name', 'parent', 'slug', 'description', 'alias_of']));
 
 		return (!is_wp_error($result) && $data) ? $this->meta_input($data, $defaults) : $result;
 	}
@@ -886,8 +857,8 @@ class WPJAM_Term extends WPJAM_Instance{
 		return apply_filters('wpjam_term_json', array_reduce(wpjam_get_term_options($tax), fn($c, $v)=> array_merge($c, $v->prepare($id)), $json), $id);
 	}
 
-	public static function get_instance($term, $taxonomy=null, $wp_error=false){
-		$term	= self::validate($term, $taxonomy);
+	public static function get_instance($term, $tax=null, $wp_error=false){
+		$term	= self::validate($term, $tax);
 
 		if(is_wp_error($term)){
 			return $wp_error ? $term : null;
@@ -903,7 +874,7 @@ class WPJAM_Term extends WPJAM_Instance{
 	}
 
 	public static function update($term_id, $data, $validate=true){
-		$result	= $validate ? wpjam_catch(fn()=> static::validate($term_id)) : null;
+		$result	= $validate ? static::validate($term_id) : null;
 
 		return is_wp_error($result) ? $result : parent::update($term_id, $data);
 	}
@@ -916,29 +887,26 @@ class WPJAM_Term extends WPJAM_Instance{
 			$tax	= array_unique(array_filter([wpjam_pull($data, 'taxonomy'), static::get_current_taxonomy()]));
 			$tax	= count($tax) == 1 ? array_first($tax) : null;
 
-			return wpjam_try('wp_insert_term', wp_slash(wpjam_pull($data, 'name')), $tax, wp_slash($data))['term_id'];
+			return wp_insert_term(wp_slash(wpjam_pull($data, 'name')), $tax, wp_slash($data))['term_id'];
 		}elseif($method == 'update'){
 			$data	= $args[1];
 			$tax	= wpjam_pull($data, 'taxonomy') ?: get_term_field('taxonomy', $args[0]);
 
-			return wpjam_try('wp_update_term', $args[0], $tax, wp_slash($data));
+			return wp_update_term($args[0], $tax, wp_slash($data));
 		}elseif($method == 'delete'){
-			return wpjam_try('wp_delete_term', $args[0], get_term_field('taxonomy', $args[0]));
+			return wp_delete_term($args[0], get_term_field('taxonomy', $args[0]));
 		}
 	}
 
-	public static function get_meta($term_id, ...$args){
-		// _deprecated_function(__METHOD__, 'WPJAM Basic 6.0', 'wpjam_get_metadata');
+	public static function get_meta($term_id, ...$args){	// deprecated
 		return wpjam_get_metadata('term', $term_id, ...$args);
 	}
 
-	public static function update_meta($term_id, ...$args){
-		// _deprecated_function(__METHOD__, 'WPJAM Basic 6.0', 'wpjam_update_metadata');
+	public static function update_meta($term_id, ...$args){	// deprecated
 		return wpjam_update_metadata('term', $term_id, ...$args);
 	}
 
-	public static function update_metas($term_id, $data, $meta_keys=[]){
-		// _deprecated_function(__METHOD__, 'WPJAM Basic 6.0', 'wpjam_update_metadata');
+	public static function update_metas($term_id, $data, $meta_keys=[]){	// deprecated
 		return self::update_meta($term_id, $data, $meta_keys);
 	}
 
@@ -960,8 +928,8 @@ class WPJAM_Term extends WPJAM_Instance{
 		return [];
 	}
 
-	public static function get_term($term, $taxonomy='', $output=OBJECT, $filter='raw'){
-		return wpjam_tap(get_term($term, $taxonomy, $output, $filter), fn($v)=> $term && is_numeric($term) && !$v && do_action('wpjam_deleted_ids', 'term', $term));
+	public static function get_term($term, $tax='', $output=OBJECT, $filter='raw'){
+		return wpjam_tap(get_term($term, $tax, $output, $filter), fn($v)=> $term && is_numeric($term) && !$v && do_action('wpjam_deleted_ids', 'term', $term));
 	}
 
 	public static function get_current_taxonomy(){
@@ -992,51 +960,53 @@ class WPJAM_Term extends WPJAM_Instance{
 		$title	= $args['title'] ??= $object ? $object->title : null;
 		$args	+= ['data_type'=>'taxonomy'];
 
-		if($object && ($object->hierarchical || ($type == 'select' || $type == 'mu-select'))){
-			if(is_admin() && !$type && $object->levels > 1 && $object->selectable){
-				$field	= ['type'=>'number']+self::parse_option_args($args);
-
-				return array_merge($args, [
-					'sep'		=> ' ',
-					'fields'	=> wpjam_array(range(0, $object->levels-1), fn($k, $v)=> ['level_'.$v, $field]),
-					'render'	=> function($args){
-						$tax	= $this->taxonomy;
-						$values	= $this->value ? array_reverse([$this->value, ...get_ancestors($this->value, $tax, 'taxonomy')]) : [];
-						$terms	= get_terms(['taxonomy'=>$tax, 'hide_empty'=>0]);
-						$fields	= $this->fields;
-						$parent	= 0;
-
-						for($level=0; $level < count($fields); $level++){
-							$options	= is_null($parent) ? [] : array_column(wp_list_filter($terms, ['parent'=>$parent]), 'name', 'term_id');
-							$value		= $values[$level] ?? 0;
-							$parent		= $value ?: null;
-
-							$fields['level_'.$level]	= array_merge(
-								$fields['level_'.$level],
-								['type'=>'select', 'data_type'=>'taxonomy', 'taxonomy'=>$tax, 'value'=>$value, 'options'=>$options],
-								($level > 0 ? ['show_if'=>['level_'.($level-1), '!=', 0], 'data-filter_key'=>'parent'] : [])
-							);
-						}
-
-						return $this->update_arg('fields', $fields)->render_by_fields($args);
-					}
-				]);
-			}
-
-			if(!$type || ($type == 'mu-text' && empty($args['item_type']))){
-				if(!is_admin() || $object->selectable){
-					$type	= $type ? 'mu-select' : 'select';
-				}
+		if($object && $object->hierarchical){
+			if(!$type && is_admin() && $object->levels > 1 && $object->selectable){
+				$type	= 'levels';
+			}elseif(!$type || ($type == 'mu-text' && empty($args['item_type']))){
+				$type	= (!is_admin() || $object->selectable) ? ($type ? 'mu-' : '').'select' : $type;
 			}elseif($type == 'mu-text' && $args['item_type'] == 'select'){
 				$type	= 'mu-select';
 			}
+		}
 
-			if($type == 'select' || $type == 'mu-select'){
-				return array_merge($args, self::parse_option_args($args), [
-					'type'		=> $type,
-					'options'	=> fn()=> $object->get_options()
-				]);
+		if(in_array($type, ['select', 'mu-select']) || $type == 'levels'){
+			$key	= 'show_option_all';
+			$field	= [$key=>($args[$key] ?? '请选择')];
+
+			if(isset($args['option_all'])){	// 兼容
+				$v		= $args['option_all'];
+				$field	= $v === false ? [] : ($v === true ? $field : [$key=>$v]);
 			}
+
+			return array_merge($args, $type == 'levels' ? [
+				'sep'		=> ' ',
+				'fields'	=> wpjam_array(range(0, $object->levels-1), fn($k, $v)=> ['level_'.$v, ['type'=>'number']+$field]),
+				'render'	=> function($args){
+					$tax	= $this->taxonomy;
+					$values	= $this->value ? array_reverse([$this->value, ...get_ancestors($this->value, $tax, 'taxonomy')]) : [];
+					$terms	= get_terms(['taxonomy'=>$tax, 'hide_empty'=>0]);
+					$fields	= $this->fields;
+					$parent	= 0;
+
+					for($level=0; $level < count($fields); $level++){
+						$options	= is_null($parent) ? [] : array_column(wp_list_filter($terms, ['parent'=>$parent]), 'name', 'term_id');
+						$value		= $values[$level] ?? 0;
+						$parent		= $value ?: null;
+
+						$fields['level_'.$level]	= array_merge(
+							$fields['level_'.$level],
+							['type'=>'select', 'data_type'=>'taxonomy', 'taxonomy'=>$tax, 'value'=>$value, 'options'=>$options],
+							($level > 0 ? ['show_if'=>['level_'.($level-1), '!=', 0], 'data-filter_key'=>'parent'] : [])
+						);
+					}
+
+					return $this->update_arg('fields', $fields)->render_by_fields($args);
+				}
+			] : $field+[
+				'type'		=> $type,
+				'options'	=> fn()=> $object->get_options()
+			]);
 		}
 
 		return $args+['type'=>'text', 'class'=>'all-options', 'placeholder'=>'请输入'.$title.'ID或者输入关键字筛选'];
@@ -1063,47 +1033,26 @@ class WPJAM_Term extends WPJAM_Instance{
 		}
 	}
 
-	public static function parse_option_args($args){
-		$parsed	= ['show_option_all'=>'请选择'];
-
-		if(isset($args['option_all'])){	// 兼容
-			$v	= $args['option_all'];
-
-			return $v === false ? [] : ($v === true ? [] : ['show_option_all'=>$v])+$parsed;
-		}
-
-		return wpjam_map($parsed, fn($v, $k)=> $args[$k] ?? $v);
-	}
-
 	public static function query_items($args){
 		if(wpjam_pull($args, 'data_type')){
-			return array_values(get_terms($args+[
-				'number'		=> (isset($args['parent']) ? 0 : 10),
-				'hide_empty'	=> false
-			]));
+			return array_values(get_terms($args+['number'=>(isset($args['parent']) ? 0 : 10), 'hide_empty'=>false]));
 		}
 
-		$defaults	= [
-			'hide_empty'	=> false,
-			'taxonomy'		=> static::get_current_taxonomy()
-		];
+		$defaults	= ['hide_empty'=>false, 'taxonomy'=>static::get_current_taxonomy()];
 
-		return [
-			'items'	=> get_terms($args+$defaults),
-			'total'	=> wp_count_terms($defaults)
-		];
+		return ['items'=>get_terms($args+$defaults), 'total'=>wp_count_terms($defaults)];
 	}
 
-	public static function validate($id, $taxonomy=null){
-		$term		= self::get_term($id);
-		$taxonomy	??= self::get_current_taxonomy();
+	public static function validate($id, $tax=null){
+		$term	= self::get_term($id);
+		$tax	??= self::get_current_taxonomy();
 
-		if(is_wp_error($term)){
-			return $term;
-		}elseif(!$term || !($term instanceof WP_Term)){
-			return new WP_Error('invalid_term_id');
-		}elseif(!taxonomy_exists($term->taxonomy) || ($taxonomy && $taxonomy !== 'any' && !in_array($term->taxonomy, (array)$taxonomy))){
-			return new WP_Error('invalid_taxonomy');
+		if(!is_wp_error($term)){
+			if(!$term || !($term instanceof WP_Term)){
+				return new WP_Error('invalid_term_id');
+			}elseif($tax && $tax !== 'any' && !in_array($term->taxonomy, (array)$tax)){
+				return new WP_Error('invalid_taxonomy');
+			}
 		}
 
 		return $term;

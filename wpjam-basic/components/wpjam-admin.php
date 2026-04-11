@@ -62,7 +62,7 @@ class WPJAM_Basic_Admin{
 			$('body').on('click', 'div.wpjam-icons p', function(){
 				let dashicon	= $(this).data('dashicon');
 				
-				wpjam.add_modal({page_title: dashicon, data: '<div style="display:flex;"><p><span style="font-size:100px; width: 100px; height: 100px;" class="dashicons '+dashicon+'"></span></p><p style="margin-left:20px; font-size:20px;">'+dashicon+'<br /><br />HTML：<br /><code>&lt;span class="dashicons '+dashicon+'"&gt;&lt;/span&gt;</code></p></dov>'});
+				wpjam.dialog({page_title: dashicon, data: '<div style="display:flex;"><p><span style="font-size:100px; width: 100px; height: 100px;" class="dashicons '+dashicon+'"></span></p><p style="margin-left:20px; font-size:20px;">'+dashicon+'<br /><br />HTML：<br /><code>&lt;span class="dashicons '+dashicon+'"&gt;&lt;/span&gt;</code></p></dov>'});
 			});
 		});
 		</script>
@@ -129,7 +129,7 @@ class WPJAM_Basic_Admin{
 
 			add_action('pre_get_comments', fn($query)=> $query->query_vars	= array_merge($query->query_vars, $args+['type'=>'comment']));
 
-			(new WPJAM_Dashboard(['name'=>'dashboard', 'widgets'=>['wpjam_update'=>[
+			wpjam_dashboard('load', ['name'=>'dashboard', 'widgets'=>['wpjam_update'=>[
 				'title'		=> 'WordPress资讯及技巧',
 				'context'	=> 'side',
 				'callback'	=> function(){
@@ -137,7 +137,7 @@ class WPJAM_Basic_Admin{
 
 					echo is_array($posts) ? '<div class="rss-widget">'.implode(array_map(fn($p)=> '<a class="jam-post" target="_blank" href="http://blog.wpjam.com'.$p['post_url'].'"><p>'.'<img src="'.str_replace('imageView2/1/w/200/h/200/', 'imageView2/1/w/100/h/100/', $p['thumbnail']).'" /><span>'.$p['title'].'</span></p></a>', array_slice($posts, 0, 5))).'</div>' : '';
 				}
-			]]]))->page_load();
+			]]]);
 
 			wpjam_style([
 				'#dashboard_wpjam .inside{margin:0; padding:0;}',

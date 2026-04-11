@@ -1154,11 +1154,11 @@ if(is_admin()){
 	}
 
 	function wpjam_register_page_action($name, $args){
-		return WPJAM_Page_Action::create($name, $args);
+		return wpjam_admin('page_actions['.$name.']', new WPJAM_Page_Action(['name'=>$name]+$args));
 	}
 
 	function wpjam_get_page_action($name){
-		return WPJAM_Page_Action::get($name);
+		return $name ? wpjam_admin('page_actions['.$name.']') : null;
 	}
 
 	function wpjam_get_page_button($name, $args=[]){
@@ -1185,8 +1185,43 @@ if(is_admin()){
 		return WPJAM_List_Table_View::register($name, $view);
 	}
 
-	function wpjam_register_dashboard_widget($name, $args){
-		WPJAM_Dashboard::add_widget($name, $args);
+	function wpjam_dashboard($action, ...$args){
+		if($action == 'add_widget'){
+			return wpjam_admin('widgets['.array_shift($args).']', ...$args);
+		}
+
+		if(is_array($action)){
+			$args	= [$action];
+			$action	= '';
+		}
+
+		$object	= wpjam_admin('dashboard', ...($args ? [new WPJAM_Args(...$args)] : []));
+
+		if(!$action || !$object){
+			return $object;
+		}
+
+		$name	= $object->name;
+
+		if($action == 'load'){
+			$name != 'dashboard' && require_once ABSPATH.'wp-admin/includes/dashboard.php';
+
+			wp_enqueue_script('dashboard');
+
+			foreach(array_merge(maybe_callback($object->widgets, $name) ?: [], array_filter(wpjam_admin('widgets[]'), fn($v)=> ($v['dashboard'] ?? 'dashboard') == $name)) as $id => $w){
+				add_meta_box(
+					$w['id'] ?? $id,
+					$w['title'],
+					$w['callback'] ?? wpjam_get_filter_name($w['id'] ?? $id, 'dashboard_widget_callback'),
+					get_current_screen(),
+					$w['context'] ?? 'normal',
+					$w['priority'] ?? 'core',
+					$w['args'] ?? []
+				);
+			}
+		}elseif($action == 'render'){
+			return wpjam_tag('div', ['id'=>'dashboard-widgets-wrap'], wpjam_ob('wp_dashboard'))->before(($panel = wpjam_ob($object->welcome_panel, $name)) ? wpjam_tag('div', ['id'=>'welcome-panel', 'class'=>'welcome-panel wpjam-welcome-panel'], $panel) : '');
+		}
 	}
 }
 

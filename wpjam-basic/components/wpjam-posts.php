@@ -48,6 +48,27 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		return $thumb ?: '<span class="no-thumbnail">暂无图片</span>';
 	}
 
+	public static function get_widget(){
+		return [
+			'classname'		=> 'widget_posts',
+			'widget'		=> fn($instance)=> ('wpjam_get_'.(wpjam_pull($instance, 'type') ?: 'new').'_posts')(wpjam_except($instance, 'title')),
+			'fields'		=> function(){
+				$types	= ['post'=>__('Post')]+array_reduce(get_post_types(['_builtin'=>false]), fn($c, $k)=> is_post_type_viewable($k) && get_object_taxonomies($k) ? $c+[$k=>wpjam_get_post_type_setting($k, 'title')] : $c, []);
+
+				$fields	= [
+					'title'		=> ['type'=>'text',		'before'=>'列表标题：',	'class'=>'medium-text'],
+					'type'		=> ['type'=>'select',	'before'=>'列表类型：',	'options'=>['new'=>'最新', 'top_viewd'=>'最高浏览']],
+					'number'	=> ['type'=>'number',	'before'=>'文章数量：',	'class'=>'tiny-text',	'step'=>1,	'min'=>1],
+					'class'		=> ['type'=>'text',		'before'=>'列表样式：',	'class'=>'',	'after'=>'请输入 ul 的 class'],
+					'post_type'	=> ['type'=>'checkbox',	'before'=>'文章类型：',	'options'=>$types],
+					'thumb'		=> ['type'=>'checkbox',	'class'=>'checkbox',	'label'=>'显示缩略图'],
+				];
+
+				return count($types) <= 1 ? wpjam_except($fields, 'post_type') : $fields;
+			}
+		];
+	}
+
 	// 解决文章类型改变之后跳转错误的问题，原始函数：'wp_old_slug_redirect' 和 'redirect_canonical'
 	public static function find_by_name($post_name, $post_type='', $post_status='publish'){
 		$args		= array_filter(['post_status'=> $post_status]);
@@ -203,45 +224,6 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				add_filter('get_the_excerpt', fn($text='', $post=null)=> $text ?: wpjam_get_post_excerpt($post, (self::get_setting('excerpt_length') ?: 200)), 9, 2);
 			}
 		}
-	}
-}
-
-class WPJAM_Posts_Widget extends WP_Widget{
-	public function __construct() {
-		parent::__construct('wpjam-posts', 'WPJAM - 文章列表', [
-			'classname'						=> 'widget_posts',
-			'customize_selective_refresh'	=> true,
-			'show_instance_in_rest'			=> false,
-		]);
-
-		$this->alt_option_name = 'widget_wpjam_posts';
-	}
-
-	public function widget($args, $instance){
-		$args	= ['widget_id'=>$this->id]+$args;
-		$type	= wpjam_pull($instance, 'type') ?: 'new';
-		$title	= wpjam_pull($instance, 'title');
-		$output	= $title ? $args['before_title'].$title.$args['after_title'] : '';
-
-		echo $args['before_widget'].$output.('wpjam_get_'.$type.'_posts')($instance).$args['after_widget'];
-	}
-
-	public function form($instance){
-		$ptypes	= ['post'=>__('Post')]+array_reduce(get_post_types(['_builtin'=>false]), fn($c, $k)=> is_post_type_viewable($k) && get_object_taxonomies($k) ? $c+[$k=>wpjam_get_post_type_setting($k, 'title')] : $c, []);
-
-		$fields	= [
-			'title'		=> ['type'=>'text',		'before'=>'列表标题：',	'class'=>'medium-text'],
-			'type'		=> ['type'=>'select',	'before'=>'列表类型：',	'options'=>['new'=>'最新', 'top_viewd'=>'最高浏览']],
-			'number'	=> ['type'=>'number',	'before'=>'文章数量：',	'class'=>'tiny-text',	'step'=>1,	'min'=>1],
-			'class'		=> ['type'=>'text',		'before'=>'列表样式：',	'class'=>'',	'after'=>'请输入 ul 的 class'],
-			'post_type'	=> ['type'=>'checkbox',	'before'=>'文章类型：',	'options'=>$ptypes],
-			'thumb'		=> ['type'=>'checkbox',	'class'=>'checkbox',	'label'=>'显示缩略图'],
-		];
-
-		$fields	= count($ptypes) <= 1 ? wpjam_except($fields, 'post_type') : $fields;
-		$fields	= wpjam_map($fields, fn($field, $key)=> $field+['id'=>$this->get_field_id($key), 'name'=>$this->get_field_name($key)]+(isset($instance[$key]) ? ['value'=>$instance[$key]] : []));
-
-		echo str_replace('fieldset', 'span', wpjam_fields($fields)->render(['wrap_tag'=>'p']));
 	}
 }
 

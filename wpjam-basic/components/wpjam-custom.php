@@ -91,8 +91,8 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 			]);
 		}else{
 			wpjam_hooks([
-				['wp_head',	fn()=> self::echo('head'), 1],
-				['wp_footer', fn()=> self::echo('footer'), 99]
+				['wp_head',		fn()=> self::echo('head'), 99],
+				['wp_footer',	fn()=> self::echo('footer'), 99]
 			]);
 		}
 

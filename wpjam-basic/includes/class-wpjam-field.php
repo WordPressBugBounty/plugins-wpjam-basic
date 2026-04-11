@@ -96,7 +96,7 @@ class WPJAM_Attr extends WPJAM_Args{
 	}
 
 	public static function is_bool($key){
-		return in_array($key, ['allowfullscreen', 'allowpaymentrequest', 'allowusermedia', 'async', 'autofocus', 'autoplay', 'checked', 'controls', 'default', 'defer', 'disabled', 'download', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted', 'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected', 'typemustmatch']);
+		return in_array($key, ['allowfullscreen', 'allowpaymentrequest', 'allowusermedia', 'async', 'autofocus', 'autoplay', 'checked', 'controls', 'defer', 'disabled', 'download', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted', 'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected', 'typemustmatch']);
 	}
 
 	public static function parse($attr){
@@ -194,10 +194,8 @@ class WPJAM_Field extends WPJAM_Attr{
 	public function __get($key){
 		$value	= parent::__get($key);
 
-		if($key == 'multiple'){
-			return ($this->is('checkbox') && $this->options) || ($this->is('select') && $value);
-		}elseif($key == 'fieldset'){
-			return $this->is('fieldset') ? $value : '';
+		if($key == 'fieldset' && !$this->is('fieldset')){
+			return '';
 		}elseif($key == '_title'){
 			return $value ?? $this->title.'「'.$this->key.'」';
 		}
@@ -308,9 +306,10 @@ class WPJAM_Field extends WPJAM_Attr{
 				$step	= $this->step ?: '';
 				$value	+= ['type'=>($step == 'any' || strpos($step, '.')) ? 'number' : 'integer'];
 				$value	+= $value['type'] == 'integer' && $step > 1 ? ['multipleOf'=>$step] : [];
+			}elseif($this->is('toggle')){
+				$value	+= ['type'=>'boolean'];
 			}elseif($this->is('radio, select, checkbox')){
-				$switch	= $this->is('checkbox') && !$this->options;
-				$value	+= $switch ? ['type'=>'boolean'] : ['type'=>'string']+($this->custom_input ? [] : ['enum'=>array_keys($this->options())]);
+				$value	+= ['type'=>'string']+($this->custom_input ? [] : ['enum'=>array_keys($this->options())]);
 				$value	= $this->multiple ? ['type'=>'array', 'items'=>$value] : $value;
 			}
 
@@ -319,7 +318,6 @@ class WPJAM_Field extends WPJAM_Attr{
 				'array'		=> ['maxItems'=>'max_items', 'minItems'=>'min_items', 'uniqueItems'=>'unique_items'],
 				'string'	=> ['minLength'=>'minlength', 'maxLength'=>'maxlength'],
 			])[$value['type']] ?? [], fn($k, $v)=> is_blank($this->$v) ? null : [$k, $this->$v]);
-
 		}
 
 		$parse	= function($value) use(&$parse){
@@ -335,6 +333,34 @@ class WPJAM_Field extends WPJAM_Attr{
 		};
 
 		return $this->_schema = $parse($value);
+	}
+
+	public function to_meta(){
+		$schema = $this->schema();
+		$meta	= [
+			'single'			=> true,
+			'show_in_rest'		=> ['schema'=>$schema],
+			'type'				=> $schema['type'] ?? 'string',
+			'sanitize_callback'	=> fn($value) => $this->validate($value)
+		];
+
+		if(isset($this->default) && (!isset($schema['enum']) || in_array($this->default, $schema['enum'], true))){
+			$meta['default']	= $this->default;
+		}
+
+		return $meta;
+	}
+
+	public function to_block(){
+		if($this->is('text, number, textarea, checkbox, toggle, select, radio')){
+			return wpjam_pick($this, ['min', 'max', 'step', 'rows', 'placeholder'])+array_filter([
+				'component'	=> ucfirst($this->is('number') ? 'text' : $this->type),
+				'options'	=> $this->options ? wpjam_array($this->options, fn($k, $v)=> [null, ['label'=>$v, 'value'=>$k]]) : [],
+				'label'		=> $this->title ?? $this->label ?? null,
+				'help'		=> $this->description ?? null,
+				'type'		=> $this->is('number') ? 'number' : null
+			]);
+		}
 	}
 
 	public function show_if(...$args){
@@ -370,7 +396,7 @@ class WPJAM_Field extends WPJAM_Attr{
 						}elseif(self::is_bool($k)){
 							$v && ($attr[$k]	= $k);
 						}elseif($k == 'description'){
-							$v && ($this->description	.= wpjam_tag('span', ['data-show_if'=>$this->show_if([$this->key, '=', $opt])], $v));
+							$v && ($this->description .= wpjam_tag('span', ['data-show_if'=>$this->show_if([$this->key, '=', $opt])], $v));
 						}else{
 							$attr['data'][$k]	= $k == 'show_if' ? $this->show_if($v) : $v;
 						}
@@ -402,7 +428,7 @@ class WPJAM_Field extends WPJAM_Attr{
 
 	public function custom_input($action, $value){
 		$cv		= '__custom';
-		$value	= $this->multiple ? wpjam_diff($value, [$cv]) : $value;
+		$value	= $this->multiple ? wpjam_diff($value ?: [], [$cv]) : $value;
 		$diff	= array_diff((array)$value, array_map('strval', array_keys($this->options())));
 		$input	= $this->custom_input;
 		$by		= $this->_custom ??= self::create((is_array($input) ? $input : [])+['key'=>$this->key.$cv, 'type'=>'text', 'class'=>'', 'required'=>true]);
@@ -646,11 +672,9 @@ class WPJAM_Field extends WPJAM_Attr{
 			$data['button_text']	??= $this->button_text ?: '添加'.(wpjam_between(mb_strwidth($this->title ?: ''), 4, 8) ? $this->title : '选项');
 
 			return $wrap->append($append)->data($data)->add_class(['mu', $this->type, ($this->sortable !== false ? 'sortable' : ''), 'direction-'.($this->direction ?: 'column')]);
+		}elseif($this->is('toggle')){
+			return $this->input(['value'=>1, 'type'=>'checkbox'])->data('value', $this->value)->after($this->label ?? $this->pull('description'));
 		}elseif($this->is('radio, select, checkbox')){
-			if($this->is('checkbox') && !$this->options){
-				return $this->input(['value'=>1])->data('value', $this->value)->after($this->label ?? $this->pull('description'));
-			}
-
 			if($this->multiple){
 				$this->name		.= '[]';
 				$this->_data	+= $this->pull('required') ? ['min_items'=>1] : [];
@@ -730,7 +754,7 @@ class WPJAM_Field extends WPJAM_Attr{
 	public static function parse($field, ...$args){
 		$field	= is_string($field) ? ['type'=>'view', 'value'=>$field, 'wrap_tag'=>''] : parent::parse($field);
 		$field	= ['options'=>(($field['options'] ?? []) ?: [])]+$field;
-		$type	= $field['type'] = ($field['type'] ?? '') ?: (array_find(['options'=>'select', 'label'=>'checkbox', 'fields'=>'fieldset'], fn($v, $k)=> !empty($field[$k])) ?: 'text');
+		$type	= $field['type'] = ($field['type'] ?? '') ?: (array_find(['options'=>'select', 'label'=>'toggle', 'fields'=>'fieldset'], fn($v, $k)=> !empty($field[$k])) ?: 'text');
 
 		if(($field['filterable'] ?? '') === 'multiple' && in_array($type, ['text', 'number', 'select'])){
 			$field	+= ['multiple'=>true]+($type == 'select' ? [] : ['unique_items'=>true, 'sortable'=>false]);
@@ -754,6 +778,12 @@ class WPJAM_Field extends WPJAM_Attr{
 			$field['fieldset']	??= 'object';
 			$field['type']		= 'fields';
 			$field['fields']	= wpjam_fill(['width', 'x', 'height'], fn($k)=> $k == 'x' ? '✖️' : (($v = $field['fields'][$k] ?? []) ? self::parse($v) : [])+['type'=>'number', 'class'=>'small-text']);
+		}elseif($type == 'checkbox'){
+			if(empty($field['options'])){
+				$field['type']	= 'toggle';
+			}else{
+				$field['multiple']	= true;
+			}
 		}elseif($type == 'mu-select' || (!empty($field['multiple']) && $type == 'select')){
 			$field['multiple']	= true;
 			$field['type']		= 'select';
@@ -1012,7 +1042,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 				if(!$flat){
 					[$field['fields'], $subs]	= [static::parse($subs, $flat, $prefix), []];
 				}
-			}elseif($field['type'] == 'checkbox' && !$field['options']){
+			}elseif($field['type'] == 'toggle'){
 				$subs	= wpjam_map((wpjam_pull($field, 'fields') ?: []), fn($v)=> $v+['show_if'=>[$nkey, '=', 1]]);
 			}elseif(is_array($field['options'])){
 				$subs	= wpjam_reduce($field['options'], fn($carry, $item, $opt)=> array_merge($carry, wpjam_map(is_array($item) ? ($item['fields'] ?? []) : [], fn($v)=> $v+['show_if'=>[$nkey, '=', $opt]])), [], 'options');
@@ -1075,8 +1105,6 @@ class WPJAM_Platform extends WPJAM_Register{
 
 			return $object ? [$object, $method](...$args) : null;
 		}
-
-		return $this->call_dynamic_method($method, ...$args);
 	}
 
 	public function verify(){

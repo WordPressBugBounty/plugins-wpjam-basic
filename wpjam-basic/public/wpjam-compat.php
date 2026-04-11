@@ -213,11 +213,11 @@ function wpjam_timer_hook($value){
 }
 
 function wpjam_parse_query($query, $args=[], $parse=true){
-	return wpjam_query($query, $args, $parse);
+	return wpjam_query($parse, $query, $args);
 }
 
 function wpjam_render_query($query, $args=[]){
-	return wpjam_query($query, $args, false);
+	return wpjam_query('render', $query, $args);
 }
 
 function wpjam_get_current_query(){
@@ -1031,6 +1031,12 @@ if(!function_exists('wpjam_add_once_filter')){
 	}
 }
 
+function wpjam_register_dashboard_widget($name, $args){
+	wpjam_dashboard('add_widget', $name, $args);
+}
+
+function_alias('wpjam_add_dashboard_widget', 'wpjam_register_dashboard_widget');
+
 function_alias('wpjam_every',	'array_all');
 function_alias('wpjam_some',	'array_any');
 function_alias('wpjam_array',	'array_wrap');
@@ -1075,8 +1081,6 @@ function_alias('wpjam_get_post_excerpt', 'get_post_excerpt');
 function_alias('wpjam_attr', 'wpjam_attribute_string');
 function_alias('wpjam_download_url', 'wpjam_download_image');
 function_alias('wpjam_is_external_url', 'wpjam_is_external_image');
-
-function_alias('get_post_type_support', 'get_post_type_support_value');
 
 function_alias('wpjam_get_post_option_fields', 'wpjam_get_post_fields');
 
@@ -1159,6 +1163,12 @@ if(is_admin()){
 			}
 		}
 	}, 10, 2);
+}
+
+class WPJAM_Posts_Widget extends WPJAM_Widget{
+	public function __construct(){
+		parent::__construct('wpjam-posts', 'WPJAM - 文章列表', WPJAM_Basic_Posts::get_widget());
+	}
 }
 
 class WPJAM_Error{

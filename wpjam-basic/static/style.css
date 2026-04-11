@@ -33,9 +33,24 @@
 	font-size:20px;
 }
 
-.wrap .wp-heading-inline{
-	display:inline-block;
-	margin-right:5px;
+.wrap{
+	.wp-heading-inline{
+		display:inline-block;
+		margin-right:5px;
+	}
+
+	form#wpjam_option{
+		> h3:only-of-type, 
+		> h2:only-of-type{
+			display: none;
+		}
+	}
+
+	.nav-tab-wrapper:has(> a:only-child){
+		&, & + h2{
+			display: none;
+		}
+	}
 }
 
 .notice p a{
@@ -74,36 +89,28 @@ div.card.response,
 }
 
 [data-tooltip],
-[data-description]{
-	color:#555;
+[data-description],
+.image-radio.preview{
 	cursor:pointer;
 	vertical-align:text-bottom;
 }
 
-#tooltip{
+.wpjam-tooltip{
 	position:absolute;
-	z-index:1000000;
-	color:#555;
-	max-width:min(80vw, 300px);
-	background-color:#ddd;
-	padding:5px 10px;
+	position-area:bottom span-all;
+	position-try-fallbacks:flip-block, flip-inline;
+	margin:10px;
+	border:none;
+	background-color:#333;
+	color:#fff;
+	padding:6px 10px;
 	border-radius:6px;
-	--arrow-left:10px;
-
-	&:before{
-		content:" ";
-		position:absolute;
-		left:var(--arrow-left);
-		bottom:100%; border-width:5px;
-		border-style:solid;
-		border-color:transparent transparent #ddd transparent;
-	}
+	max-width:min(80vw, 300px);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 
 	&:has(img){
 		max-width:none;
 		padding:0;
-
-		&:before{display:none;}
 	}
 }
 
@@ -183,40 +190,55 @@ div.card.response,
 	z-index:1000000;
 }
 
-#TB_window.modal{
-	z-index:100050;
-	top:0;
-	left:0;
+.wpjam-dialog{
+	padding:0;
+	border:none;
+	overflow:visible;
 
-	#TB_title, #TB_ajaxWindowTitle{
-		height:40px;
-		line-height:40px;
-		font-size:1.15em;
-		padding:0 10px;
-		width:inherit;
-	}
+	&::backdrop{background:rgba(0,0,0,0.7);}
 
-	#TB_closeWindowButton{
-		right:-32px;
+	.title{
+		display:flex;
+		justify-content:space-between;
+		background:#fcfcfc;
+		border-bottom:1px solid #ddd;
 
-		@media (max-width:782px){
-			right:0;
-			top:-30px;
+		h2{
+			height:40px;
+			line-height:40px;
+			margin:0;
+			padding:0 20px;
 		}
+	
+		button{
+			background:none;
+			border:0;
+			outline:0;
+			padding:0;
+			margin:0 -40px 0 0;
 
-		.tb-close-icon{
-			color:#fff;
+			@media (max-width:782px){
+				margin-right:0px;
+				margin-top:-70px;
+			}
 
 			&:before{
+				font:normal 20px / 29px dashicons;
 				content:"\f335";
 				font-size:32px;
+				line-height:40px;
+				cursor:pointer;
+				color:#fff;
+				-webkit-font-smoothing:antialiased;
 			}
 		}
 	}
 
-	#TB_ajaxContent{
+	.content{
 		background:#f1f1f1;
-		padding:2px 25px 15px 25px;
+		padding:2px 25px;
+		max-height:80vh;
+		overflow-y:auto;
 
 		table.form-table > tbody > tr{
 			> th{
@@ -232,6 +254,22 @@ div.card.response,
 				.after, .description{padding:0;}
 			}
 		}
+	}
+}
+
+.wpjam-loading{
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	background-color: #E8E8E8;
+	border: 1px solid #555;
+	margin: -40px 0 0 -125px;
+	padding: 35px 25px 25px;
+	z-index: 9999;
+	
+	img{
+		width:208px;
+		height:13px;
 	}
 }
 
@@ -294,6 +332,11 @@ input[type=checkbox]:indeterminate{
 	&:is(input[type=checkbox]){
 		appearance:none;
 		box-shadow:none;
+	}
+
+	&.button{
+		min-height:initial;
+		padding:initial;
 	}
 
 	&:checked, &.checked{
@@ -1451,16 +1494,7 @@ div#poststuff{
 .welcome-panel.wpjam-welcome-panel{
 	background:#fff;
 
-	&:before{display:none;}
-
-	h2{
-		font-size:32px;
-		color:initial;
-	}
-
-	.welcome-panel-content{min-height:initial;}
-
-	.welcome-panel-column-container{margin:0;}
+	h2{font-size:32px;}
 }
 
 @media screen and (max-width:782px){

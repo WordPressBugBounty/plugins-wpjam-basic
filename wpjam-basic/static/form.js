@@ -414,7 +414,7 @@ jQuery(function($){
 			}).on('keydown', (e)=> {
 				!this.val() && e.key === 'Backspace' && this.autocomplete('close');
 			}).on('input', (e)=>{
-				$hidden.val(this.val());
+				$hidden && $hidden.val(this.val());
 			});
 		}
 	};
@@ -711,21 +711,25 @@ jQuery(function($){
 	]};
 
 	$.fn.wpjam_tooltip	= function(action, e){
-		if(['mouseenter', 'mousemove'].includes(action)){
-			let $tooltip	= $('#tooltip');
+		let self		= $.fn.wpjam_tooltip;
+		let anchor		= '--anchor-tooltip';
+		let $tooltip	= $('div.wpjam-tooltip');
 
-			if(!$tooltip[0]){
-				let tooltip	= this.is('img') ? '<img src="'+this.attr('src')+'" width="'+this.get(0).naturalWidth/2+'" height="'+this.get(0).naturalHeight/2+'" />' : (this.data('tooltip') || this.data('description'));
-				$tooltip	= $('<div id="tooltip"></div>').html(tooltip).appendTo('body');
+		if(action === 'mouseenter'){
+			if(self.$el){
+				clearTimeout(self.timer);
+				self.$el.css('anchor-name', '');
 			}
 
-			$tooltip.css({
-				top: e.pageY + 22,
-				left: Math.min(e.pageX - 10, window.innerWidth - $tooltip.outerWidth() - 20),
-				'--arrow-left': (e.pageX - $tooltip.offset().left)+'px'
-			});
-		}else if(['mouseleave', 'mouseout'].includes(action)){
-			$('#tooltip').remove();
+			self.$el	= this;
+
+			let content	= this.is('img') ? '<img src="'+this.attr('src')+'" width="'+this.get(0).naturalWidth/2+'" height="'+this.get(0).naturalHeight/2+'" />' : (this.data('tooltip') || this.data('description'));
+
+			($tooltip[0] ? $tooltip : $('<div popover="manual" class="wpjam-tooltip"></div>')).html(content).css('position-anchor', anchor).appendTo('body')[0].showPopover();
+
+			return this.css('anchor-name', anchor);
+		}else if(action === 'mouseleave'){
+			self.timer	= setTimeout(()=> $tooltip.is(':hover') ? $tooltip.one('mouseleave', ()=> $tooltip.remove()) : $tooltip.remove(), 300);
 		}else{
 			this.is('[data-description]') && this.addClass('dashicons dashicons-editor-help');
 		}
@@ -733,7 +737,7 @@ jQuery(function($){
 
 	$.fn.wpjam_tooltip.rule	= {
 		selector:	'[data-tooltip], [data-description], .image-radio.preview img',
-		events:		['mouseenter', 'mousemove', 'mouseleave', 'mouseout']
+		events:		['mouseenter', 'mouseleave']
 	};
 
 	$.fn.wpjam_link = function(){
@@ -769,7 +773,7 @@ jQuery(function($){
 			custom && $field.one('input', ()=> $field[0].setCustomValidity(''))[0].setCustomValidity(custom);
 
 			if(!$field.is(':visible')){
-				$field.wpjam_each('.ui-tabs',	$el => $el.tabs('option', 'active', $el.find('.ui-tabs-panel').index($($field.closest('.ui-tabs-panel')))), 'closest');
+				$field.wpjam_each('.tab',		$el => $el.closest('.tabs').wpjam_tabs('#'+$el.attr('id')), 'closest');
 				$field.wpjam_each('.mu-select',	$el => $el.removeClass('hidden'), 'closest');
 			}
 
@@ -848,6 +852,26 @@ jQuery(function($){
 		}).open();
 	};
 
+	$.fn.wpjam_tabs		= function(hash){
+		return this.each(function(){
+			let $navs	= $(this).find('.nav-tab');
+
+			if(hash){
+				window.location.hash = hash;
+			}else{
+				hash	= window.location.hash || $navs.first().attr('href');
+			}
+
+			let $nav	= $navs.filter('[href="'+hash+'"]');
+
+			if($nav.length){
+				$(this).find('.tab').hide().filter(hash).show();
+				$navs.removeClass('nav-tab-active');
+				$nav.addClass('nav-tab-active');
+			}
+		});
+	};
+
 	Color.fn.fromHex	= function(color){
 		color	= color.replace(/^#|^0x/, '');
 		let l	= color.length;
@@ -904,12 +928,11 @@ jQuery(function($){
 		}
 	});
 
-	$('body').wpjam_init([
-		{name: 'tabs',	selector: '.tabs', callback: $el => $el.tabs({activate: (e, ui)=> window.history.replaceState(null, null, ui.newTab.children('a')[0].hash)})},
-		{name: 'form',	selector: 'form'}
-	]);
+	$('body').wpjam_init([{name: 'form', selector: 'form'}]);
 
 	$(document).on('widget-updated', ()=> $('.widget.open').wpjam_init());
+
+	$(window).on('hashchange load', ()=> $('.tabs').wpjam_tabs());
 });
 
 if(self != top){

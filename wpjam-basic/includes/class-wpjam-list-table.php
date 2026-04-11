@@ -629,7 +629,7 @@ class WPJAM_Builtin_List_Table extends WPJAM_List_Table{
 
 class WPJAM_List_Table_Component extends WPJAM_Register{
 	public static function group($method, ...$args){
-		$group	= parent::group(['config'=>['orderby'=>'order']]);
+		$group	= parent::group('', ['config'=>['orderby'=>'order']]);
 
 		if(in_array($method, ['add_object', 'remove_object'])){
 			$part		= str_replace('wpjam_list_table_', '', $group->name);

@@ -217,7 +217,7 @@ jQuery(function($){
 					args.bulk || _.extend(wpjam.params, _.pick(args, ['list_action', 'id', 'data']));
 				}else{
 					if(args.bulk && args.bulk == 2 && !args.id){
-						tb_remove();
+						wpjam.dialog()[0]?.close();
 
 						args.id	= args.ids.shift();
 
@@ -245,7 +245,7 @@ jQuery(function($){
 			if(args.action_type == 'submit'){
 				$el.is('body') || $el.prop('disabled', true).after(spinner);
 			}else if(args.action_type){
-				$('.spinner.is-active').length || $('<div id="TB_load"><img src="'+imgLoader.src+'" width="208" /></div>').appendTo('body').show();
+				$('.spinner.is-active').length || $('<div class="wpjam-loading"><img src="'+wpjam.loading+'" /></div>').appendTo('body').show();
 			}
 
 			return wpjam.post(args, (data)=> {
@@ -254,15 +254,15 @@ jQuery(function($){
 				if(args.action_type == 'submit'){
 					$el.prop('disabled', false);
 				}else if(args.action_type){
-					$('#TB_load').remove();
+					$('.wpjam-loading').remove();
 				}
 
 				if(data.errcode != 0){
-					wpjam.add_notice((args.page_title ? args.page_title+'失败：' : '')+(data.errmsg || ''), 'error');
+					wpjam.notice((args.page_title ? args.page_title+'失败：' : '')+(data.errmsg || ''), 'error');
 				}else{
 					data.params && _.extend(wpjam.params, data.params);
 
-					let $modal	= $('#TB_ajaxContent');
+					let $dialog	= wpjam.dialog();
 
 					if(data.type == 'form'){
 						if(!data.form && !data.data){
@@ -272,17 +272,17 @@ jQuery(function($){
 						if(args.callback){
 							args.callback.call(null, data);
 						}else{
-							wpjam.add_modal(data);
+							wpjam.dialog(data);
 						}
 					}else if(data.type == 'append'){
-						if(!$modal.length && data.list_action){
-							wpjam.add_modal(data);
+						if(!$dialog[0] && data.list_action){
+							wpjam.dialog(data);
 						}else{
-							let $wrap	= $modal.length ? $modal : $('div.wrap');
+							let $wrap	= $dialog[0] ? $dialog : $('div.wrap');
 						
 							$wrap.find('.response').remove().end().append($('<div class="response card">'+data.data+'</div>').hide().fadeIn(400));
 
-							if($modal.length){
+							if($dialog[0]){
 								$wrap.animate({scrollTop: $wrap.find('form').height()-50}, 300);
 							}else{
 								$wrap.find('.response').wpjam_scroll();
@@ -291,17 +291,17 @@ jQuery(function($){
 					}else{
 						if(data.type == 'redirect'){
 							if(data.dismiss){
-								$('body').one('thickbox:removed', ()=> wpjam.redirect(data));
+								$('body').one('wpjam:dialog:closed', ()=> wpjam.redirect(data));
 							}else{
 								wpjam.redirect(data);	
 							}
 						}
 
-						$modal.length && data.dismiss && tb_remove();
+						$dialog[0] && data.dismiss && $dialog[0].close();
 					}
 
 					if(type == 'option'){
-						data.type == 'save' && wpjam.add_notice(data.notice);
+						data.type == 'save' && wpjam.notice(data.notice);
 
 						$('body').wpjam_form().trigger('option_action_success', data);
 					}else if(type == 'page'){
@@ -310,10 +310,10 @@ jQuery(function($){
 
 							args.action_type == 'submit' && $('#wpjam_form').length && data.form && $('#wpjam_form').html(data.form);
 
-							wpjam.add_notice(data.notice || args.page_title+'成功');
+							wpjam.notice(data.notice || args.page_title+'成功');
 						}
 
-						(data.type != 'form' || !data.modal_id || data.modal_id == 'tb_modal') && wpjam.state();
+						data.type != 'form' && wpjam.state();
 
 						data.page_action	= args.page_action;
 						data.action_type	= data.page_action_type	= args.action_type;
@@ -337,7 +337,7 @@ jQuery(function($){
 								$item.insertAfter($item.next());
 							}
 						}else if(!['form', 'append', 'redirect'].includes(data.type)){
-							data.args && setTimeout(()=> ($('#TB_window').length ? $('#list_table_action_form') : this).wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
+							data.args && setTimeout(()=> (wpjam.dialog()[0] ? $('#list_table_action_form') : this).wpjam_action(type, _.extend({}, args, {data: data.args})), 400);
 
 							data.type == 'list' && data.list_action == 'delete' && list_table.delete_row(args.id);
 
@@ -383,13 +383,15 @@ jQuery(function($){
 	window.wpjam	= _.extend({}, wpjam_page_setting, {
 		load: function(params){
 			if(params){
-				tb_remove();
+				wpjam.dialog()[0]?.close();
 
 				this.params	= params;
 			}else{
 				this.params	= this.parse_params(window.location.search, true);
 
-				$('#notice_modal').length && this.add_modal('notice_modal');
+				let $modal	= $('#notice_modal');
+
+				$modal[0] && this.dialog({page_title: $modal.data('title'), data: $modal.html()}).one('wpjam:dialog:closed', ()=> $modal.find('.delete-notice').trigger('click'));
 
 				if(this.page_title_action){
 					$('a.page-title-action').remove();
@@ -441,17 +443,18 @@ jQuery(function($){
 			}
 		},
 
-		add_notice: function(notice, type){
+		notice: function(notice, type){
 			if(typeof notice === 'object'){
 				type	= notice.type;
 				notice	= notice.message;
 			}
 
 			if(notice){
+				let $dialog	= wpjam.dialog();
 				let $notice	= $('<div class="notice notice-'+(type || 'success')+' is-replaceable is-dismissible"><p><strong>'+notice+'</strong></p></div>');
 
-				if($('#TB_ajaxContent').length){
-					$('#TB_ajaxContent').find('.notice.is-replaceable').remove().end().animate({scrollTop: 0}, 300).prepend($notice);
+				if($dialog[0]){
+					$dialog.find('.content').find('.notice.is-replaceable').remove().end().animate({scrollTop: 0}, 300).prepend($notice);
 				}else{
 					$('div.wrap').find('.notice.is-replaceable').remove().end().find('.wp-header-end').last().wpjam_scroll().before($notice);
 				}
@@ -460,123 +463,39 @@ jQuery(function($){
 			}
 		},
 
-		add_modal: function(modal, title){
-			let width	= 0;
-			let id		= 'tb_modal';
-			let content	= '';
-
-			if(typeof modal === 'object'){
-				title	= modal.page_title;
-				width	= modal.width;
-				id		= modal.modal_id || id;
-				content	= modal.form || modal.data;
-			}else{
-				modal	= modal || 'notice_modal';
-
-				let $model	= $('#'+modal);
-
-				width	= $model.data('width');
-				title	= $model.data('title') || ' ';
-				content	= $model.html();
-
-				modal == 'notice_modal' && $('body').one('thickbox:removed', ()=> $model.find('.delete-notice').trigger('click'));
+		dialog: function(...args){
+			if(!args.length){
+				return $('dialog.wpjam-dialog[open]');
 			}
 
-			if(id == 'tb_modal'){
-				$('body').one('thickbox:removed', ()=> {
-					if(this.params.page_action || this.params.list_action){
-						this.params	= _.omit(this.params, this.params.page_action ? ['page_action', 'data'] : ['list_action', 'id', 'data']);
+			let data	= args[0];
+			let $dialog	= $('.wpjam-dialog');
+
+			if(!$dialog[0]){
+				$dialog	= $('<dialog id="wpjam_dialog" class="wpjam-dialog"><div class="title"><h2></h2><button type="button" commandfor="wpjam_dialog" command="close"></button></div><div class="content"></div></dialog>').appendTo('body');
+
+				$dialog.on('close', ()=> {
+					let omit	= this.params.page_action ? ['page_action', 'data'] : (this.params.list_action ? ['list_action', 'id', 'data'] : null);
+
+					if(omit){
+						this.params = _.omit(this.params, omit);
 
 						wpjam.state();
 					}
-				});
 
-				if($('#TB_window').length){
-					$('#TB_ajaxWindowTitle').html(title);
-					$('#TB_ajaxContent').html(content);
-
-					tb_position();
-				}else{
-					if(!$('body #tb_modal').length){
-						$('body').append('<div id="tb_modal" class="hidden"></div>');
-
-						if(window.send_to_editor && !wpjam.send_to_editor){
-							[wpjam.send_to_editor, window.send_to_editor]	= [window.send_to_editor, function(html){
-								[wpjam.tb_remove, window.tb_remove]	= [window.tb_remove, null];
-
-								wpjam.send_to_editor(html);
-
-								window.tb_remove	= wpjam.tb_remove;
-							}];
-						}
-					}
-
-					$('#tb_modal').html(content);
-
-					[this.tb_position, window.tb_position]	= [window.tb_position, this.tb_position];
-
-					$(window).on('resize.wpjam', _.throttle(()=> tb_position(), 500));
-
-					$('body').one('thickbox:removed', ()=> {
-						[wpjam.tb_position, window.tb_position]	= [window.tb_position, wpjam.tb_position];
-
-						$(window).off('resize.wpjam');
-					});
-
-					tb_show(title, '#TB_inline?inlineId=tb_modal&width='+(width || 771));
-				}
-			}else{
-				if(!$('body .modal').length){
-					$('body').append('<div class="modal"><div class="modal-title">'+title+'</div><div class="modal-content">'+content+'</div></div><div class="modal-overlay"></div>').addClass('modal-open');
-
-					$('<div class="modal-close"></div>').on('click', function(){
-						$('body').removeClass('modal-open');
-
-						$(this).parent().fadeOut(300, function(){
-							$(this).remove();
-							$('.modal-overlay').remove();
-						});
-
-						return false;
-					}).prependTo('div.modal');
-
-					$(window).on('resize', _.throttle(()=> this.tb_position(), 500));
-				}
-
-				this.tb_position();
+					$dialog.trigger('wpjam:dialog:closed');
+				}).on('click', 'button[command="close"]', ()=> $dialog[0].close());
 			}
-		},
 
-		tb_position: function(){
-			let style	= {maxHeight: Math.min(900, $(window).height()-120)};
-			let width	= $(window).width()-20;
-			let $tb		= $('#TB_window');
+			$dialog.css('width', (data.width || 700)+'px')
+				.find('h2').text(data.page_title || '').end()
+				.find('.content').html(data.form || data.data || '');
 
-			if($tb.length){
-				$tb.addClass('modal');
+			$dialog[0].showModal();
 
-				if(width < 761){
-					style.width	= width - 50;
-				}else{
-					if(TB_WIDTH != 801 && TB_WIDTH < width){
-						style.width	= TB_WIDTH - 50;
-					}else{
-						style.maxWidth	= (width <= TB_WIDTH - 31) ? width - 50 : TB_WIDTH - 51;
-					}
-				}
+			$dialog.trigger('wpjam:dialog:opened');
 
-				$('#TB_ajaxContent').removeAttr('style').css(style);
-
-				$('#TB_overlay').off('click');
-			}else if($('.modal').length){
-				if(width < 720){
-					style.width		= width - 50;
-				}else{
-					style.maxWidth	= 690;
-				}
-
-				$('.modal').css(style);
-			}
+			return $dialog;
 		},
 
 		compare: function(a, compare, b){
@@ -674,28 +593,26 @@ jQuery(function($){
 				let obj	= {};
 				params	= params ? params.replace(/^\?|\+/g, ' ').trim() : '';
 
-				if(params){
-					params.split('&').forEach(v => {
-						let	param	= v.split('=');
-						let key		= decodeURIComponent(param[0]);
-						let val		= param.length === 2 ? decodeURIComponent(param[1]) : '';
-						let keys	= key.split('][');
+				params && params.split('&').forEach(v => {
+					let	param	= v.split('=');
+					let key		= decodeURIComponent(param[0]);
+					let val		= param.length === 2 ? decodeURIComponent(param[1]) : '';
+					let keys	= key.split('][');
 
-						if(keys[0].includes('[') && _.last(keys).endsWith(']')){
-							keys	= keys.shift().split('[').concat(keys);
-							keys	= [...keys.slice(0, -1), keys.pop().slice(0, -1)];
+					if(keys[0].includes('[') && _.last(keys).endsWith(']')){
+						keys	= keys.shift().split('[').concat(keys);
+						keys	= [...keys.slice(0, -1), keys.pop().slice(0, -1)];
 
-							keys.reduce((cur, k, i)=> {
-								k		= (k === '') ? cur.length : k;
-								cur[k] = keys.length - 1 > i ? (cur[k] || (isNaN(Number(keys[i + 1])) ? {} : [])) : val;
+						keys.reduce((cur, k, i)=> {
+							k		= (k === '') ? cur.length : k;
+							cur[k] = keys.length - 1 > i ? (cur[k] || (isNaN(Number(keys[i + 1])) ? {} : [])) : val;
 
-								return cur[k];
-							}, obj);
-						}else{
-							obj[key]	= val;
-						}
-					});
-				}
+							return cur[k];
+						}, obj);
+					}else{
+						obj[key]	= val;
+					}
+				});
 
 				params	= obj;
 			}
@@ -751,6 +668,386 @@ jQuery(function($){
 		}
 	});
 
+	let list_table	= wpjam.list_table && Object.assign(wpjam.list_table, {
+		load: function(data){
+			let $views	= $('ul.subsubsub');
+			let $left	= $('#col-left form');
+			let $form	= $('form:has(.wp-list-table)');
+			let update	= {
+				views:		true,
+				table:		true,
+				tablenav:	true,
+				left:		true
+			};
+
+			if(data){
+				data.setting && Object.assign(list_table, data.setting);
+
+				data.left && $left.removeData('initialized').html(data.left);
+
+				if(data.views){
+					$views.empty().append($(data.views).html());
+
+					data.type != 'list' && $views.find('a').removeClass('current').end().find('li.'+this.view+' a').addClass('current');
+				}
+
+				if(data.table || data.tablenav){
+					$form.find('input[name="_wpnonce"], input[name="_wp_http_referer"]').remove().end();
+
+					if(data.table){
+						$form.find('table, div.tablenav').remove().end().append(data.table);
+					}else{
+						_.each(['top', 'bottom'], key => $form.find('div.tablenav.'+key).replaceWith(data.tablenav[key]));
+					}
+				}
+
+				update	= _.mapObject(update, (v, k)=> data[k] ? v : false);
+			}else{
+				$form.attr('novalidate', 'novalidate').on('submit', _.debounce(function(){
+					let $el	= $(document.activeElement);
+
+					if($el.is('#doaction, #doaction2')){
+						let $select	= $el.prev('select');
+						let name	= $select.val();
+						let ids		= $form.find('th.check-column input[type="checkbox"]:checked').toArray().map(cb => cb.value);
+						let action	= list_table.bulk_actions ? list_table.bulk_actions[name] : null;
+
+						if(action && ids.length){
+							if(name == 'delete' && action.bulk === true){
+								action.bulk	= 2;
+							}
+
+							$select.data(action).data('ids', ids).wpjam_action('list');
+
+							return false;
+						}
+					}else if($el.is('[name=filter_action], #search-submit')){
+						if(wpjam.list_table.ajax !== false){
+							$form.wpjam_query();
+
+							return false;
+						}
+					}
+				}, 300, true)).on('keydown', '.tablenav :input, .search-box :input', function(e){
+					if(e.key === 'Enter' && wpjam.list_table.ajax !== false){
+						let $input	= $(this);
+
+						if($input.is('#current-page-selector')){
+							$form.wpjam_query(_.extend(wpjam.params, {paged: parseInt($input.val())}));
+
+							return false;
+						}else if(!$input.closest('.mu-text, .mu-fields').length){
+							let $el	= $input.closest(':has(:submit)').find(':submit');
+
+							if($el.length){
+								$el.first().focus().click();
+
+								return false;
+							}
+						}
+					}
+				}).on('click', '.tablenav .prev-day, .tablenav .next-day', function(e){
+					let $day	= $(this);
+					let $date	= $day.siblings('[name="date"]');
+					let date	= new Date($date.val());
+
+					date.setDate(date.getDate()+($day.hasClass('prev-day') ? -1 : 1));
+					$date.val(date.toISOString().split('T')[0]);
+					$form.find('#filter_action').focus().click();
+				}).on('change', '.tablenav [type="date"]', function(){
+					if($(this).is('[name="date"]')){
+						$form.find('#filter_action').focus().click();
+					}else if($(this).is('[name="end_date"]')){
+						let dates	= _.map(['start_date', 'end_date'], k => $('.tablenav [name="'+k+'"]').val());
+
+						dates[0] && dates[1] && dates[0] > dates[1] && wpjam.notice('开始日期不能大于结束日期', 'error');
+					}
+				});
+
+				$('body').on('submit', '#list_table_action_form', _.debounce(function(e){
+					$(this).wpjam_action('list');
+
+					return false;
+				}, 300, true)).on('click', '.list-table-action', _.debounce(function(e){
+					$(this).wpjam_action('list');
+
+					return false;
+				}, 300, true)).on('click', '.list-table-filter, ul.subsubsub a, .wp-list-table td a, .wp-list-table th a, .tablenav .pagination-links a', _.debounce(function(){
+					let $a	= $(this);
+
+					if($a.hasClass('list-table-filter')){
+						$form.wpjam_query($a.data('filter'));
+
+						return false;
+					}
+
+					if(wpjam.list_table.ajax === false){
+						return;
+					}
+
+					if($a.closest('td').length && (wpjam.plugin_page || !$a.attr('href').startsWith($('#adminmenu a.current').attr('href')))){
+						return;
+					}
+
+					let params	= wpjam.parse_params(new URL($a.prop('href')).search);
+
+					if(wpjam.builtin_page && (params.page || params.action)){
+						return;
+					}
+
+					if($a.parent().is('th, .pagination-links')){
+						delete params.page;
+
+						params	= _.extend({}, wpjam.params, params, {paged: params.paged || 1});
+					}
+
+					$form.wpjam_query(params);
+
+					return false;
+				}, 300, true));
+
+				if($left.length){
+					let $left_paged;
+					let left_key	= wpjam.left_key = this.left_key;
+
+					$left.prop('novalidate', true).on('init', function(){
+						$left_paged	= $left.find('input.current-page').addClass('expandable');
+
+						let paged	= parseInt($left_paged.val());
+						let total	= parseInt($left_paged.attr('max'));
+
+						$left.wpjam_each(['a.prev-page', 'a.next-page'], $el => {
+							let [cmp, val, addon]	= $el.addClass('button').hasClass('prev-page') ? ['<=', 1, -1] : ['>=', total, +1];
+
+							if(wpjam.compare(paged, cmp, val)){
+								$el.addClass('disabled');
+							}else{
+								$el.attr('data-left_paged', paged+addon);
+							}
+						});
+
+						if($left.find('[data-id]').length){
+							wpjam.params[left_key]	= wpjam.params[left_key] || $left.find('[data-id]').first().data('id');
+
+							$left.find('[data-id='+wpjam.params[left_key]+']').addClass('left-current');
+						}
+					}).on('submit', _.debounce(function(){
+						$left.wpjam_query();
+
+						return false;
+					}, 300, true)).on('click', '[data-left_paged]', _.debounce(function(){
+						$left_paged.val($(this).data('left_paged')).addClass('expandable');
+
+						$left.trigger('submit');
+					}, 300, true)).on('click', '[data-id]', _.debounce(function(){
+						$left.find('.left-current').removeClass('left-current');
+						$form.wpjam_query(_.extend({}, wpjam.params, {[left_key]: $(this).addClass('left-current').data('id')}));
+
+						return false;
+					}, 300, true)).on('change', 'select', _.debounce(function(){
+						$(this).hasClass('left-filter') && $left_paged.val(1);
+
+						$left.trigger('submit');
+					}, 300, true));
+				}
+			}
+
+			if(list_table.search){
+				if(list_table.search.box){
+					$('#list_table_form').find('p.search-box').remove().end().prepend(list_table.search.box);
+				}else{
+					$('p.search-box').find('input[type="search"]').val(list_table.search.term);
+				}
+
+				list_table.search.columns && $('p.search-box').find('#search_columns').remove().end().prepend(list_table.search.columns);
+			}
+
+			$('input[name="post_status"]').length || $('input[name="post_status"]').val(wpjam.params.post_status || 'all');
+
+			if(update.views){
+				this.view	= $views.find('li:has(a.current)').attr('class');
+			}
+
+			if(update.table){
+				let $table	= $form.find('table');
+				let $tbody	= $table.find(' > tbody');
+
+				$('.wp-header-end').last().siblings('span.subtitle, div.summary').remove().end()
+				.before(this.subtitle ? '<span class="subtitle">'+this.subtitle+'</span>' : '')
+				.after(this.summary ? '<div class="summary">'+this.summary+'</div>' : '');
+
+				this.sortable && $tbody.wpjam_sortable({items: this.sortable.items, axis: 'y'});
+
+				let sticky	= false;
+				let columns	= $table.find('th[id]:not(.hidden) i').map((i, el) => {
+					let $i		= $(el);	
+					let $th		= $i.closest('th');
+					let data	= $i.data();
+					
+					if(data.sticky){
+						sticky		= true;
+						data.left	= $th.prevAll(':not(.hidden)').get().reduce((left, el) => left+$(el).outerWidth(), 0);
+					}
+
+					data.description && $i.appendTo($i.closest('a'));
+
+					delete data.description;
+
+					return _.isEmpty(data) ? null : _.extend({}, data, {selector: '.column-'+$th.attr('id')});
+				}).toArray().filter(column => column !== null);
+
+				Object.assign(this, {
+					$form:		$form.attr('data-layout', this.layout).addClass('layout-'+this.layout),
+					$tbody:		$tbody,
+					name:		($tbody.data('wp-lists') || ':post').split(':')[1],
+					columns:	[...columns, {selector:'.check-column', check: true, sticky: sticky, left: 0}],
+					sticky:		sticky,
+					nowrap:		$table.hasClass('nowrap')
+				});
+
+				if(this.sticky && $table.width() > $table.closest('form').width()){
+					$table.addClass('sticky-columns');
+
+					$('#col-left').length && $('#col-left table').height() > $(window).height() && $table.css('max-height', $('#col-left table').height());
+				}
+
+				$table.wpjam_row(false);
+
+				if(wpjam.params.id && !wpjam.params.list_action && !wpjam.params.action){
+					let id	= wpjam.params.id;
+
+					if(this.get_row(id).length){
+						this.update_row(id);
+					}else{
+						$form.wpjam_query({id: id});
+					}
+
+					delete wpjam.params.id;
+				}
+			}
+
+			if(update.table || update.tablenav){
+				let total	= parseInt($form.find('span.total-pages').first().text());
+
+				$form.removeData('initialized').find('.overallactions').remove();
+				total && $form.find('.current-page').addClass('expandable').removeAttr('size').attr({type: 'number', 'min':1, 'max': total});
+
+				$left.length && $('a.page-title-action').length && this.overall_actions.unshift($('a.page-title-action').clone().toggleClass('page-title-action button').prop('outerHTML'));
+
+				this.overall_actions && $('<div class="actions overallactions"></div>').append(this.overall_actions).appendTo('.tablenav.top').insertBefore($('.tablenav.top div.tablenav-pages, .tablenav.top br.clear').first());
+			}
+
+			update.left && $left.length && $left.trigger('init');
+
+			if(document.readyState === 'complete'){
+				setTimeout(()=> $('body').trigger('list_table_load', data), 100);
+			}else{
+				$(window).on('load', ()=> $('body').trigger('list_table_load', data));
+			}
+		},
+
+		callback: function(data, args){
+			let $dialog	= wpjam.dialog();
+
+			($dialog[0] && data.form) && wpjam.dialog(data);
+			($dialog[0] || args.action_type != 'submit') && wpjam.notice(data.notice);
+
+			if(data.type == 'list'){
+				$('html').scrollTop(0);
+
+				((data.bulk && data.ids) || data.id) && this.update_row(data);
+			}else if(['add', 'duplicate'].includes(data.type)){
+				let pos		= (data.after || data.before);
+				let $pos	= pos ? this.get_row(pos) : this.$tbody.find('tr');
+				let $item	= $(data.data);
+
+				if(data.after || data.last){
+					$pos.last().after($item);
+				}else{
+					$pos.first().before($item);
+				}
+
+				this.$tbody.find('tr.no-items').remove();
+
+				this.update_row(data);
+			}else if(data.type == 'delete'){
+				this.delete_row(data);
+
+				setTimeout(()=> {
+					if(this.$tbody.find('tr').length == 0){
+						this.$tbody.append('<tr class="no-items"><td colspan="'+this.column_count+'" class="colspanchange">'+_wpMediaViewsL10n.noItemsFound+'</td></tr>');
+					}
+				}, 450);
+			}else if(['add_item', 'edit_item', 'del_item', 'move_item'].includes(data.type)){
+				let params	= wpjam.parse_params(['add_item', 'edit_item'].includes(data.type) ? args.defaults : args.data);
+				let field	= '[data-field="'+params._field+'"]';
+
+				if(data.type == 'del_item'){
+					let $items	= this.get_row(args.id).find(field);
+
+					$items.find('[data-i="'+params.i+'"]').css('background-color', '#ff0000cc').fadeOut(400, function(){
+						$(this).remove();
+
+						list_table.update_row(data, false);
+					});
+				}else{
+					let $items	= this.update_row(data, false).get_row(data.id).find(field);
+
+					if(data.type == 'add_item'){
+						$items.find('.item:not(.add-item)').last().css('background-color', '#ffffeecc');
+					}else if(data.type == 'edit_item'){
+						$items.find('[data-i="'+params.i+'"]').css('background-color', '#ffffeecc');
+					}else if(data.type == 'move_item'){
+						$items.find('[data-i="'+params.pos+'"]').css('background-color', '#eeffeecc');
+					}
+				}
+			}else{
+				this.update_row(data);
+			}
+		},
+
+		update_row: function(data, color){
+			if(this.layout == 'calendar'){
+				_.each(data.data, (item, date)=> $('td#date_'+date).html(item).wpjam_row());
+			}else{
+				if(_.isObject(data) && data.bulk){
+					_.each(data.data || data.ids, item => this.update_row(item));
+				}else{
+					let id	= data;
+
+					if(_.isObject(data)){
+						id	= data.id;
+
+						data.data && this.get_row(id).first().before(data.data).end().remove();
+					}
+
+					this.get_row(id).wpjam_row(color);
+				}
+			}
+
+			return this;
+		},
+
+		delete_row: function(data){
+			if(data.bulk){
+				_.each(data.ids, id => this.delete_row(id));
+			}else{
+				let id		= _.isObject(data) ? data.id : data;
+				let $item	= this.get_row(id);
+
+				$item.css('backgroundColor', '#ff0000cc').fadeOut(400, ()=> $item.remove());
+			}
+
+			return this;
+		},
+
+		get_row: function(id){
+			id	= typeof id == "string" ? id.replace(/(:|\.|\[|\]|,|=|@)/g, "\\$1") : id;
+
+			return $('.tr-'+id).length ? $('.tr-'+id) : $('#'+this.name+'-'+id);
+		}
+	});
+
 	wpjam.add_extra_logic($, 'ajax', function(options){
 		let type	= typeof options.data;
 		let data	= type == 'string' ? wpjam.parse_params(options.data) : (type == 'object' ? options.data : {});
@@ -765,396 +1062,18 @@ jQuery(function($){
 		}
 	}, 'before');
 
-	window.onpopstate = event => {
-		event.state && event.state.params && wpjam.load(event.state.params);
-	};
-
-	let list_table	= null;
-
-	if(wpjam.list_table){
-		list_table	= Object.assign(wpjam.list_table, {
-			load: function(data){
-				let $views	= $('ul.subsubsub');
-				let $left	= $('#col-left form');
-				let $form	= $('form:has(.wp-list-table)');
-				let update	= {
-					views:		true,
-					table:		true,
-					tablenav:	true,
-					left:		true
-				};
-
-				if(data){
-					data.setting && Object.assign(list_table, data.setting);
-
-					data.left && $left.removeData('initialized').html(data.left);
-
-					if(data.views){
-						$views.empty().append($(data.views).html());
-
-						data.type != 'list' && $views.find('a').removeClass('current').end().find('li.'+this.view+' a').addClass('current');
-					}
-
-					if(data.table || data.tablenav){
-						$form.find('input[name="_wpnonce"], input[name="_wp_http_referer"]').remove().end();
-
-						if(data.table){
-							$form.find('table, div.tablenav').remove().end().append(data.table);
-						}else{
-							_.each(['top', 'bottom'], key => $form.find('div.tablenav.'+key).replaceWith(data.tablenav[key]));
-						}
-					}
-
-					update	= _.mapObject(update, (v, k)=> data[k] ? v : false);
-				}else{
-					$form.attr('novalidate', 'novalidate').on('submit', _.debounce(function(){
-						let $el	= $(document.activeElement);
-
-						if($el.is('#doaction, #doaction2')){
-							let $select	= $el.prev('select');
-							let name	= $select.val();
-							let ids		= $form.find('th.check-column input[type="checkbox"]:checked').toArray().map(cb => cb.value);
-							let action	= list_table.bulk_actions ? list_table.bulk_actions[name] : null;
-
-							if(action && ids.length){
-								if(name == 'delete' && action.bulk === true){
-									action.bulk	= 2;
-								}
-
-								$select.data(action).data('ids', ids).wpjam_action('list');
-
-								return false;
-							}
-						}else if($el.is('[name=filter_action], #search-submit')){
-							if(wpjam.list_table.ajax !== false){
-								$form.wpjam_query();
-
-								return false;
-							}
-						}
-					}, 300, true)).on('keydown', '.tablenav :input, .search-box :input', function(e){
-						if(e.key === 'Enter' && wpjam.list_table.ajax !== false){
-							let $input	= $(this);
-
-							if($input.is('#current-page-selector')){
-								$form.wpjam_query(_.extend(wpjam.params, {paged: parseInt($input.val())}));
-
-								return false;
-							}else if(!$input.closest('.mu-text, .mu-fields').length){
-								let $el	= $input.closest(':has(:submit)').find(':submit');
-
-								if($el.length){
-									$el.first().focus().click();
-
-									return false;
-								}
-							}
-						}
-					}).on('click', '.tablenav .prev-day, .tablenav .next-day', function(e){
-						let $day	= $(this);
-						let $date	= $day.siblings('[name="date"]');
-						let date	= new Date($date.val());
-
-						date.setDate(date.getDate()+($day.hasClass('prev-day') ? -1 : 1));
-						$date.val(date.toISOString().split('T')[0]);
-						$form.find('#filter_action').focus().click();
-					}).on('change', '.tablenav [type="date"]', function(){
-						if($(this).is('[name="date"]')){
-							$form.find('#filter_action').focus().click();
-						}else if($(this).is('[name="end_date"]')){
-							let dates	= _.map(['start_date', 'end_date'], k => $('.tablenav [name="'+k+'"]').val());
-
-							dates[0] && dates[1] && dates[0] > dates[1] && wpjam.add_notice('开始日期不能大于结束日期', 'error');
-						}
-					});
-
-					$('body').on('submit', '#list_table_action_form', _.debounce(function(e){
-						$(this).wpjam_action('list');
-
-						return false;
-					}, 300, true)).on('click', '.list-table-action', _.debounce(function(e){
-						$(this).wpjam_action('list');
-
-						return false;
-					}, 300, true)).on('click', '.list-table-filter, ul.subsubsub a, .wp-list-table td a, .wp-list-table th a, .tablenav .pagination-links a', _.debounce(function(){
-						let $a	= $(this);
-
-						if($a.hasClass('list-table-filter')){
-							$form.wpjam_query($a.data('filter'));
-
-							return false;
-						}
-
-						if(wpjam.list_table.ajax === false){
-							return;
-						}
-
-						if($a.closest('td').length && (wpjam.plugin_page || !$a.attr('href').startsWith($('#adminmenu a.current').attr('href')))){
-							return;
-						}
-
-						let params	= wpjam.parse_params(new URL($a.prop('href')).search);
-
-						if(wpjam.builtin_page && (params.page || params.action)){
-							return;
-						}
-
-						if($a.parent().is('th, .pagination-links')){
-							delete params.page;
-
-							params	= _.extend({}, wpjam.params, params, {paged: params.paged || 1});
-						}
-
-						$form.wpjam_query(params);
-
-						return false;
-					}, 300, true));
-
-					if($left.length){
-						let $left_paged;
-						let left_key	= wpjam.left_key = this.left_key;
-
-						$left.prop('novalidate', true).on('init', function(){
-							$left_paged	= $left.find('input.current-page').addClass('expandable');
-
-							let paged	= parseInt($left_paged.val());
-							let total	= parseInt($left_paged.attr('max'));
-
-							$left.wpjam_each(['a.prev-page', 'a.next-page'], $el => {
-								let [cmp, val, addon]	= $el.addClass('button').hasClass('prev-page') ? ['<=', 1, -1] : ['>=', total, +1];
-
-								if(wpjam.compare(paged, cmp, val)){
-									$el.addClass('disabled');
-								}else{
-									$el.attr('data-left_paged', paged+addon);
-								}
-							});
-
-							if($left.find('[data-id]').length){
-								wpjam.params[left_key]	= wpjam.params[left_key] || $left.find('[data-id]').first().data('id');
-
-								$left.find('[data-id='+wpjam.params[left_key]+']').addClass('left-current');
-							}
-						}).on('submit', _.debounce(function(){
-							$left.wpjam_query();
-
-							return false;
-						}, 300, true)).on('click', '[data-left_paged]', _.debounce(function(){
-							$left_paged.val($(this).data('left_paged')).addClass('expandable');
-
-							$left.trigger('submit');
-						}, 300, true)).on('click', '[data-id]', _.debounce(function(){
-							$left.find('.left-current').removeClass('left-current');
-							$form.wpjam_query(_.extend({}, wpjam.params, {[left_key]: $(this).addClass('left-current').data('id')}));
-
-							return false;
-						}, 300, true)).on('change', 'select', _.debounce(function(){
-							$(this).hasClass('left-filter') && $left_paged.val(1);
-
-							$left.trigger('submit');
-						}, 300, true));
-					}
-				}
-
-				if(list_table.search){
-					if(list_table.search.box){
-						$('#list_table_form').find('p.search-box').remove().end().prepend(list_table.search.box);
-					}else{
-						$('p.search-box').find('input[type="search"]').val(list_table.search.term);
-					}
-
-					list_table.search.columns && $('p.search-box').find('#search_columns').remove().end().prepend(list_table.search.columns);
-				}
-
-				$('input[name="post_status"]').length || $('input[name="post_status"]').val(wpjam.params.post_status || 'all');
-
-				if(update.views){
-					this.view	= $views.find('li:has(a.current)').attr('class');
-				}
-
-				if(update.table){
-					let $table	= $form.find('table');
-					let $tbody	= $table.find(' > tbody');
-
-					$('.wp-header-end').last().siblings('span.subtitle, div.summary').remove().end()
-					.before(this.subtitle ? '<span class="subtitle">'+this.subtitle+'</span>' : '')
-					.after(this.summary ? '<div class="summary">'+this.summary+'</div>' : '');
-
-					this.sortable && $tbody.wpjam_sortable({items: this.sortable.items, axis: 'y'});
-
-					let sticky	= false;
-					let columns	= $table.find('th[id]:not(.hidden) i').map((i, el) => {
-						let $i		= $(el);	
-						let $th		= $i.closest('th');
-						let data	= $i.data();
-						
-						if(data.sticky){
-							sticky		= true;
-							data.left	= $th.prevAll(':not(.hidden)').get().reduce((left, el) => left+$(el).outerWidth(), 0);
-						}
-
-						data.description && $i.appendTo($i.closest('a'));
-
-						delete data.description;
-
-						return _.isEmpty(data) ? null : _.extend({}, data, {selector: '.column-'+$th.attr('id')});
-					}).toArray().filter(column => column !== null);
-
-					Object.assign(this, {
-						$form:		$form.attr('data-layout', this.layout).addClass('layout-'+this.layout),
-						$tbody:		$tbody,
-						name:		($tbody.data('wp-lists') || ':post').split(':')[1],
-						columns:	[...columns, {selector:'.check-column', check: true, sticky: sticky, left: 0}],
-						sticky:		sticky,
-						nowrap:		$table.hasClass('nowrap')
-					});
-
-					if(this.sticky && $table.width() > $table.closest('form').width()){
-						$table.addClass('sticky-columns');
-
-						$('#col-left').length && $('#col-left table').height() > $(window).height() && $table.css('max-height', $('#col-left table').height());
-					}
-
-					$table.wpjam_row(false);
-
-					if(wpjam.params.id && !wpjam.params.list_action && !wpjam.params.action){
-						let id	= wpjam.params.id;
-
-						if(this.get_row(id).length){
-							this.update_row(id);
-						}else{
-							$form.wpjam_query({id: id});
-						}
-
-						delete wpjam.params.id;
-					}
-				}
-
-				if(update.table || update.tablenav){
-					let total	= parseInt($form.find('span.total-pages').first().text());
-
-					$form.removeData('initialized').find('.overallactions').remove();
-					total && $form.find('.current-page').addClass('expandable').removeAttr('size').attr({type: 'number', 'min':1, 'max': total});
-
-					$left.length && $('a.page-title-action').length && this.overall_actions.unshift($('a.page-title-action').clone().toggleClass('page-title-action button').prop('outerHTML'));
-
-					this.overall_actions && $('<div class="actions overallactions"></div>').append(this.overall_actions).appendTo('.tablenav.top').insertBefore($('.tablenav.top div.tablenav-pages, .tablenav.top br.clear').first());
-				}
-
-				update.left && $left.length && $left.trigger('init');
-
-				if(document.readyState === 'complete'){
-					setTimeout(()=> $('body').trigger('list_table_load', data), 100);
-				}else{
-					$(window).on('load', ()=> $('body').trigger('list_table_load', data));
-				}
-			},
-
-			callback: function(data, args){
-				let modal	= $('#TB_window').length;
-
-				(modal && data.form) && wpjam.add_modal(data);
-				(modal || args.action_type != 'submit') && wpjam.add_notice(data.notice);
-
-				if(data.type == 'list'){
-					$('html').scrollTop(0);
-
-					((data.bulk && data.ids) || data.id) && this.update_row(data);
-				}else if(['add', 'duplicate'].includes(data.type)){
-					let pos		= (data.after || data.before);
-					let $pos	= pos ? this.get_row(pos) : this.$tbody.find('tr');
-					let $item	= $(data.data);
-
-					if(data.after || data.last){
-						$pos.last().after($item);
-					}else{
-						$pos.first().before($item);
-					}
-
-					this.$tbody.find('tr.no-items').remove();
-
-					this.update_row(data);
-				}else if(data.type == 'delete'){
-					this.delete_row(data);
-
-					setTimeout(()=> {
-						if(this.$tbody.find('tr').length == 0){
-							this.$tbody.append('<tr class="no-items"><td colspan="'+this.column_count+'" class="colspanchange">'+_wpMediaViewsL10n.noItemsFound+'</td></tr>');
-						}
-					}, 450);
-				}else if(['add_item', 'edit_item', 'del_item', 'move_item'].includes(data.type)){
-					let params	= wpjam.parse_params(['add_item', 'edit_item'].includes(data.type) ? args.defaults : args.data);
-					let field	= '[data-field="'+params._field+'"]';
-
-					if(data.type == 'del_item'){
-						let $items	= this.get_row(args.id).find(field);
-
-						$items.find('[data-i="'+params.i+'"]').css('background-color', '#ff0000cc').fadeOut(400, function(){
-							$(this).remove();
-
-							list_table.update_row(data, false);
-						});
-					}else{
-						let $items	= this.update_row(data, false).get_row(data.id).find(field);
-
-						if(data.type == 'add_item'){
-							$items.find('.item:not(.add-item)').last().css('background-color', '#ffffeecc');
-						}else if(data.type == 'edit_item'){
-							$items.find('[data-i="'+params.i+'"]').css('background-color', '#ffffeecc');
-						}else if(data.type == 'move_item'){
-							$items.find('[data-i="'+params.pos+'"]').css('background-color', '#eeffeecc');
-						}
-					}
-				}else{
-					this.update_row(data);
-				}
-			},
-
-			update_row: function(data, color){
-				if(this.layout == 'calendar'){
-					_.each(data.data, (item, date)=> $('td#date_'+date).html(item).wpjam_row());
-				}else{
-					if(_.isObject(data) && data.bulk){
-						_.each(data.data || data.ids, item => this.update_row(item));
-					}else{
-						let id	= data;
-
-						if(_.isObject(data)){
-							id	= data.id;
-
-							data.data && this.get_row(id).first().before(data.data).end().remove();
-						}
-
-						this.get_row(id).wpjam_row(color);
-					}
-				}
-
-				return this;
-			},
-
-			delete_row: function(data){
-				if(data.bulk){
-					_.each(data.ids, id => this.delete_row(id));
-				}else{
-					let id		= _.isObject(data) ? data.id : data;
-					let $item	= this.get_row(id);
-
-					$item.css('backgroundColor', '#ff0000cc').fadeOut(400, ()=> $item.remove());
-				}
-
-				return this;
-			},
-
-			get_row: function(id){
-				id	= typeof id == "string" ? id.replace(/(:|\.|\[|\]|,|=|@)/g, "\\$1") : id;
-
-				return $('.tr-'+id).length ? $('.tr-'+id) : $('#'+this.name+'-'+id);
-			}
-		});
-	}
+	$(window).on('popstate', function(e){
+		e.originalEvent.state?.params && wpjam.load(e.originalEvent.state?.params);
+	});
 
 	$('body').on('click', '.show-modal', _.debounce(function(){
-		wpjam.add_modal($(this).data('modal_id'));
+		let $modal	= $('#'+$(this).data('modal_id'));
+
+		wpjam.dialog({
+			page_title:	$modal.data('title') || ' ',
+			width:		$modal.data('width'),
+			data:		$modal.html(),
+		});
 	}, 300, true)).on('click', '.is-dismissible .notice-dismiss', function(){
 		$(this).prev('.delete-notice').trigger('click');
 	}).on('click', '.wpjam-button', _.debounce(function(){

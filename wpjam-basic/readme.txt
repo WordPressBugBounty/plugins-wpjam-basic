@@ -53,8 +53,13 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.9.4 =
+= 6.9.5 =
+* 新增古腾堡编辑器侧边栏插件渲染
+* 去掉 jQuery UI Tab，使用 hashchange 实现 Tab 切换
+* WPJAM_Field 没有 options 的 checkbox 的类型统一为 toggle
 * 开启多语言和新增函数 wpjam_translate
+* 新增函数 wpjam_register_widget 用于注册 Widget
+* 新增函数 wpjam_compress 和 wpjam_uncompress 用于加密和解密数据
 * 新增函数 wpjam_column 支持获取多列
 * 新增函数 wpjam_entries 可以将关联数组转换成索引数组
 * 增强函数 wpjam_chart 支持图表各种操作
@@ -73,13 +78,13 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 新增 PHP 8.5 array_first 和 array_last 兼容
 * wpjam_try 和 wpjam_catch 函数新增 :: 和 -> 模式的支持
 * wpjam_value 函数新增 model 的支持
+* wpjam_set 函数支持 [] 模式新增元素
 * list_table_action 增加 update_setting 功能
 * WPJAM_DB 和 list_table 支持 search_column
 * WP_Query 新增 sticky_posts 参数支持
 * WPJAM_Args 新增 pick 方法
 * WPJAM_Taxonomy 和 WPJAM_Meta_Option 新增 show_in_posts_rest 属性
 * 后台 JS 新增 list_table_load 事件
-* wpjam_set 支持 [] 模式新增元素
 
 = 6.8 =
 * 全面优化 wpjam_try / wpjam_catch 等高阶函数
@@ -139,7 +144,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 优化自定义文章类型和分类模式获取名称的方式
 * 新增函数 wpjam_url - 根据目录获取 url
 * 新增函数 wpjam_has_bit / wpjam_add_bit / wpjam_remove_bit - 位运算
-* 新增函数：wpjam_move / wpjam_get_all_terms / wpjam_html_tag_processor / wpjam_dashboard_widget
+* 新增函数：wpjam_move / wpjam_get_all_terms / wpjam_html_tag_processor
 
 = 6.3 =
 * 「文章浏览」扩展支持设置文章初始浏览数
