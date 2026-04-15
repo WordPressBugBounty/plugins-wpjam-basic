@@ -1204,15 +1204,18 @@ class WPJAM_DB extends WPJAM_Args{
 class WPJAM_Items extends WPJAM_Args{
 	public function __construct($args=[]){
 		$args	+= ['items_type'=> wpjam_pull($args, 'type')];
-		$args	+= [
+		$type	= $args['items_type'];
+
+		$this->args	= $args+($type ? ([
 			'option'		=> ['primary_key'=>'option_key'],
 			'transient'		=> ['item_type'=>''],
 			'meta'			=> ['parent_key'=>($args['meta_type'] ?? '').'_id'],
 			'post_content'	=> ['parent_key'=>'post_id'],
 			'cache'			=> ['item_type'=>'', 'retry_times'=> 10, 'cache_group'=>'list_cache'],
-		][$args['items_type']] ?? [];
-
-		$this->args	= $args+['item_type'=>'array', 'primary_key'=>'id'];
+		][$type] ?? []) : [])+[
+			'item_type'		=> 'array',
+			'primary_key'	=> 'id'
+		];
 	}
 
 	public function __call($method, $args){

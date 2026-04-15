@@ -831,11 +831,9 @@ class WPJAM_Fields extends WPJAM_Attr{
 			if($type == 'if_value'){
 				$args[]	= null;
 				$prefix	= $prop ? $parent->key.'__' : '';
-			}elseif($parent){
-				$if	= ($parent->_mu ?: $parent)->_if ;
-				$if	= ['values'=>$values+$if['values']]+$if;
 			}else{
-				$if	= ['values'=>$this->validate($values, 'if_value')+$values, 'show'=>true];
+				$if	= $parent ? ($parent->_mu ?: $parent)->_if : [];
+				$if	= $if ? ['values'=>$values+$if['values']]+$if : ['values'=>$this->validate($values, 'if_value')+$values, 'show'=>true];
 			}
 		}elseif($method == 'get_defaults'){
 			$method	= fn()=> $this->disabled ? null : $this->value;

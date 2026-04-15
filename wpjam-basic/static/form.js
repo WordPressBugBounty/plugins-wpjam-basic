@@ -1,78 +1,73 @@
 jQuery(function($){
 	$.fn.wpjam_init	= function(rules){
-		_.each($.fn.wpjam_component.rules, rule => this.wpjam_component(rule));
+		_.each([
+			{name: 'file',		selector: '[data-media_button]',	events: [
+				{name: 'click', 	selector: '.wpjam-img, .wpjam-image .button, .wpjam-file .button'}
+			]},
+			{name: 'checkable',	selector: '.checkable',	events: [
+				'validate',
+				{name: 'change',	selector: '.checkable input'},
+				{name: 'click',		selector: '.mu-select-wrap button'},
+				{name: 'click',		selector: 'body'},
+			]},
+			{name: 'input',		selector: 'input',	events: [
+				{name: 'query_label',	selector: 'input'},
+			]},
+			{name: 'indeterminate',	selector: '[data-indeterminate]'},
+			{name: 'textarea',	selector: 'textarea'},
+			{name: 'select',	selector: 'select'},
+			{name: 'plupload',	selector: '.plupload'},
+			{name: 'show_if',	selector: '[data-show_if]'},
+			{name: 'data_type',	selector: '[data-data_type][data-query_args]'},
+			{name: 'mu',		selector: '.mu',	events: [
+				{name: 'keydown',	selector: '.mu-text :input, .mu-fields :input'},
+				{name: 'click',		selector: '.mu .new-item',	action: 'new_item'},
+				{name: 'click',		selector: '.mu .del-item',	action: 'del_item'}
+			]},
+			{name: 'depend',	selector: '.has-dependents',	events: ['change']}
+		], rule => this.wpjam_component(rule));
+
 		_.each(Object.entries($.fn), ([n, f])=> n.startsWith('wpjam_') && _.isFunction(f) && f.rule && this.wpjam_component(f.rule, n));
-		_.each(rules, rule => this.wpjam_component(rule));
+
+		this.is('body') && this.wpjam_component({name: 'form', selector: 'form'});
 
 		return this;
 	};
 
 	$.fn.wpjam_component	= function(rule, name){
+		let handle		= name || 'wpjam_'+rule.name;
 		let selector	= rule.selector;
-		let callback	= rule.callback;
-		let	handle		= callback ? null : (name || 'wpjam_'+rule.name);
 
-		if(_.isFunction(callback) || _.isFunction($.fn[handle])){
-			if(this.is('body') && handle){
-				_.each(rule.events, event => {
-					let n	= event;
-					let s	= selector;
-					let a	= n;
-					let t	= '';
+		this.is('body') && _.each(rule.events, event => {
+			let n	= event;
+			let s	= selector;
+			let a	= n;
+			let t	= '';
 
-					if(_.isObject(event)){
-						n	= event.name;
-						s	= event.selector || s;
-						a	= event.action || n;
-						t	= event.type;
-					}
-
-					if(s && n && a){
-						let callback	= function(...args){
-							return $(this)[handle](a, ...args);
-						};
-
-						if(t == 'throttle'){
-							callback	= _.throttle(callback, 500);
-						}else if(t == 'debounce'){
-							callback	= _.debounce(callback, 500);
-						}
-
-						this.on(n+'.wpjam', s === 'body' ? null : s, callback);
-					}
-				});
+			if(_.isObject(event)){
+				n	= event.name;
+				s	= event.selector || s;
+				a	= event.action || n;
+				t	= event.type;
 			}
 
-			selector && this.wpjam_each(selector, $el => handle ? $el[handle]() : callback($el));
-		}
-	}
+			if(s && n && a){
+				let callback	= function(...args){
+					return $(this)[handle](a, ...args);
+				};
 
-	$.fn.wpjam_component.rules	= [
-		{name: 'file',		selector: '[data-media_button]',	events: [
-			{name: 'click', 	selector: '.wpjam-img, .wpjam-image .button, .wpjam-file .button'}
-		]},
-		{name: 'checkable',	selector: '.checkable',	events: [
-			'validate',
-			{name: 'change',	selector: '.checkable input'},
-			{name: 'click',		selector: '.mu-select-wrap button'},
-			{name: 'click',		selector: 'body'},
-		]},
-		{name: 'input',		selector: 'input',	events: [
-			{name: 'query_label',	selector: 'input'},
-		]},
-		{name: 'indeterminate',	selector: '[data-indeterminate]'},
-		{name: 'textarea',	selector: 'textarea'},
-		{name: 'select',	selector: 'select'},
-		{name: 'plupload',	selector: '.plupload'},
-		{name: 'show_if',	selector: '[data-show_if]'},
-		{name: 'data_type',	selector: '[data-data_type][data-query_args]'},
-		{name: 'mu',		selector: '.mu',	events: [
-			{name: 'keydown',	selector: '.mu-text :input, .mu-fields :input'},
-			{name: 'click',		selector: '.mu .new-item',	action: 'new_item'},
-			{name: 'click',		selector: '.mu .del-item',	action: 'del_item'}
-		]},
-		{name: 'depend',	selector: '.has-dependents',	events: ['change']}
-	];
+				if(t == 'throttle'){
+					callback	= _.throttle(callback, 500);
+				}else if(t == 'debounce'){
+					callback	= _.debounce(callback, 500);
+				}
+
+				this.on(n+'.wpjam', s === 'body' ? null : s, callback);
+			}
+		});
+
+		selector && this.wpjam_each(selector, $el => $el[handle]());
+	}
 
 	$.fn.wpjam_file	= function(action, e){
 		if(action == 'click'){
@@ -751,7 +746,7 @@ jQuery(function($){
 	$.fn.wpjam_form	= function(action){
 		let init	= this.is('body');
 
-		(this.is('body') ? this.find('form') : this).each(function(){
+		(init ? this.find('form') : this).each(function(){
 			if(!$(this).data('initialized')){
 				$(this).data('initialized', true);
 
@@ -928,7 +923,7 @@ jQuery(function($){
 		}
 	});
 
-	$('body').wpjam_init([{name: 'form', selector: 'form'}]);
+	$('body').wpjam_init();
 
 	$(document).on('widget-updated', ()=> $('.widget.open').wpjam_init());
 

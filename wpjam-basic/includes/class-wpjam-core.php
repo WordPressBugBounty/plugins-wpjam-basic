@@ -237,6 +237,10 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		return parent::__set($key, $value);
 	}
 
+	public function __call($method, $args){
+		return $this->call_dynamic_method($method, ...$args);
+	}
+
 	public function to_array(){
 		$this->filter_args();
 
@@ -504,6 +508,8 @@ class WPJAM_Post extends WPJAM_Instance{
 		}elseif($method === 'in_taxonomy'){
 			return is_object_in_taxonomy($this->post, ...$args);
 		}
+
+		return $this->call_dynamic_method($method, ...$args);
 	}
 
 	public function save($data){
@@ -825,6 +831,8 @@ class WPJAM_Term extends WPJAM_Instance{
 		}elseif($method == 'is_object_in'){
 			return is_object_in_term($args[0], $this->taxonomy, $this->id);
 		}
+
+		return $this->call_dynamic_method($method, ...$args);
 	}
 
 	public function value_callback($field){

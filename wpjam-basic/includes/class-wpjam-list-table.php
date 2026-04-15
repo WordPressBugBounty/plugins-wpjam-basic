@@ -628,11 +628,11 @@ class WPJAM_Builtin_List_Table extends WPJAM_List_Table{
 }
 
 class WPJAM_List_Table_Component extends WPJAM_Register{
-	public static function group($method, ...$args){
-		$group	= parent::group('', ['config'=>['orderby'=>'order']]);
+	public static function registry($method, ...$args){
+		$registry	= parent::registry('', ['config'=>['orderby'=>'order']]);
 
 		if(in_array($method, ['add_object', 'remove_object'])){
-			$part		= str_replace('wpjam_list_table_', '', $group->name);
+			$part		= str_replace('wpjam_list_table_', '', $registry->name);
 			$args[0]	= ($name = $args[0]).WPJAM_Data_Type::prepare($args[1], 'key');
 
 			if($method == 'add_object'){
@@ -643,7 +643,7 @@ class WPJAM_List_Table_Component extends WPJAM_Register{
 					}
 
 					if(!empty($args[1]['overall']) && $args[1]['overall'] !== true){
-						static::group($method, $name.'_all', ['overall'=>true, 'title'=>wpjam_pull($args[1], 'overall')]+$args[1]);
+						static::registry($method, $name.'_all', ['overall'=>true, 'title'=>wpjam_pull($args[1], 'overall')]+$args[1]);
 					}
 				}elseif($part == 'column'){
 					$args[1]['_field']	= wpjam_field(wpjam_pick($args[1], ['name', 'options'])+['type'=>'view', 'wrap_tag'=>'', 'key'=>$name]);
@@ -657,7 +657,7 @@ class WPJAM_List_Table_Component extends WPJAM_Register{
 			}
 		}
 
-		return parent::group($method, ...$args);
+		return parent::registry($method, ...$args);
 	}
 }
 
@@ -718,7 +718,7 @@ class WPJAM_List_Table_Action extends WPJAM_List_Table_Component{
 		$data	+= in_array($type, ['direct', 'form']) && $this->overall ? $this->form_data : [];
 		$id		= $cb('id') ?? '';
 		$ids	= wp_parse_args($cb('ids') ?? []);
-		$bulk	= $cb('bulk');
+		$bulk	= $cb('bulk') ?? 0;
 		$bulk	= ['true'=>1, 'false'=>0][$bulk] ?? $bulk;
 		$args	= $form_args = ['data'=>$data, 'bulk'=>&$bulk, 'id'=>$id, 'ids'=>$ids];
 		$submit	= null;

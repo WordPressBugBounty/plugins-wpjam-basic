@@ -1,19 +1,19 @@
 <?php
 // register
 function wpjam_register($group, $name, $args=[]){
-	return $group && $name ? WPJAM_Register::group($group.':add_object', $name, $args) : null;
+	return $group && $name ? WPJAM_Register::registry($group.':add_object', $name, $args) : null;
 }
 
 function wpjam_unregister($group, $name){
-	$group && $name && WPJAM_Register::group($group.':remove_object', $name);
+	$group && $name && WPJAM_Register::registry($group.':remove_object', $name);
 }
 
 function wpjam_get_registered($group, $name){
-	return $group && $name ? WPJAM_Register::group($group.':get_object', $name) : null;
+	return $group && $name ? WPJAM_Register::registry($group.':get_object', $name) : null;
 }
 
 function wpjam_get_registereds($group, $args=[]){
-	return $group ? WPJAM_Register::group($group.':get_objects', $args) : [];
+	return $group ? WPJAM_Register::registry($group.':get_objects', $args) : [];
 }
 
 function wpjam_args($args=[]){
