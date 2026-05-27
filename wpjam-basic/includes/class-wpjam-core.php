@@ -970,7 +970,7 @@ class WPJAM_Term extends WPJAM_Instance{
 
 		if($object && $object->hierarchical){
 			if(!$type && is_admin() && $object->levels > 1 && $object->selectable){
-				$type	= 'levels';
+				$type	= 'cascade';
 			}elseif(!$type || ($type == 'mu-text' && empty($args['item_type']))){
 				$type	= (!is_admin() || $object->selectable) ? ($type ? 'mu-' : '').'select' : $type;
 			}elseif($type == 'mu-text' && $args['item_type'] == 'select'){
@@ -978,43 +978,12 @@ class WPJAM_Term extends WPJAM_Instance{
 			}
 		}
 
-		if(in_array($type, ['select', 'mu-select']) || $type == 'levels'){
-			$key	= 'show_option_all';
-			$field	= [$key=>($args[$key] ?? '请选择')];
+		if(in_array($type, ['select', 'mu-select']) || $type == 'cascade'){
+			$k		= 'show_option_all';
+			$v		= array_first(wpjam_pull($args, [$k, 'option_all']));
+			$field	= $v === false ? [] : [$k=>($v === true || is_null($v) ? '请选择' : $v)];
 
-			if(isset($args['option_all'])){	// 兼容
-				$v		= $args['option_all'];
-				$field	= $v === false ? [] : ($v === true ? $field : [$key=>$v]);
-			}
-
-			return array_merge($args, $type == 'levels' ? [
-				'sep'		=> ' ',
-				'fields'	=> wpjam_array(range(0, $object->levels-1), fn($k, $v)=> ['level_'.$v, ['type'=>'number']+$field]),
-				'render'	=> function($args){
-					$tax	= $this->taxonomy;
-					$values	= $this->value ? array_reverse([$this->value, ...get_ancestors($this->value, $tax, 'taxonomy')]) : [];
-					$terms	= get_terms(['taxonomy'=>$tax, 'hide_empty'=>0]);
-					$fields	= $this->fields;
-					$parent	= 0;
-
-					for($level=0; $level < count($fields); $level++){
-						$options	= is_null($parent) ? [] : array_column(wp_list_filter($terms, ['parent'=>$parent]), 'name', 'term_id');
-						$value		= $values[$level] ?? 0;
-						$parent		= $value ?: null;
-
-						$fields['level_'.$level]	= array_merge(
-							$fields['level_'.$level],
-							['type'=>'select', 'data_type'=>'taxonomy', 'taxonomy'=>$tax, 'value'=>$value, 'options'=>$options],
-							($level > 0 ? ['show_if'=>['level_'.($level-1), '!=', 0], 'data-filter_key'=>'parent'] : [])
-						);
-					}
-
-					return $this->update_arg('fields', $fields)->render_by_fields($args);
-				}
-			] : $field+[
-				'type'		=> $type,
-				'options'	=> fn()=> $object->get_options()
-			]);
+			return $field+['type'=>$type]+($type == 'cascade' ? [] : ['options'=> fn()=> $object->get_options()])+$args;
 		}
 
 		return $args+['type'=>'text', 'class'=>'all-options', 'placeholder'=>'请输入'.$title.'ID或者输入关键字筛选'];
@@ -1023,10 +992,20 @@ class WPJAM_Term extends WPJAM_Instance{
 	public static function with_field($method, $field, $value){
 		$tax	= $field->taxonomy;
 
-		if($method == 'validate'){
+		if($method == 'render'){
+			$object	= wpjam_get_taxonomy($tax);
+			$terms	= get_terms(['taxonomy'=>$tax, 'hide_empty'=>0]);
+			$values	= $value ? array_reverse([$value, ...get_ancestors($value, $tax, 'taxonomy')]) : [];
+
+			for($i = 0; $i < $object->levels; $i++){
+				$parent		= $i ? ($values[$i-1] ?? null) : 0;
+				$options[]	= is_null($parent) ? [] : array_column(wp_list_filter($terms, ['parent'=>$parent]), 'name', 'term_id');
+			}
+
+			return ['filter_key'=>'parent', 'value'=>$values, 'options'=>$options];
+		}elseif($method == 'validate'){
 			if(is_array($value)){
-				$level	= array_find(range((wpjam_get_taxonomy_setting($tax, 'levels') ?: 1)-1, 0), fn($v)=> $value['level_'.$v] ?? 0);
-				$value	= is_null($level) ? 0 : $value['level_'.$level];
+				$value	= array_first(wpjam_sort(array_filter($value), 'kr')) ?: 0;
 			}
 
 			if(is_numeric($value)){
@@ -1398,9 +1377,7 @@ class WPJAM_Bind extends WPJAM_Register{
 	public function get_email($openid){
 		return $this->get_user_email($openid);
 	}
-}
 
-class WPJAM_Qrcode_Bind extends WPJAM_Bind{
 	public function verify_qrcode($scene, $code, $output=''){
 		$qrcode	= $scene ? $this->cache_get($scene.'_scene') : null;
 
@@ -1445,11 +1422,7 @@ class WPJAM_Qrcode_Bind extends WPJAM_Bind{
 class WPJAM_User_Signup extends WPJAM_Register{
 	public function __construct($name, $args=[]){
 		if(is_array($args)){
-			if(empty($args['type'])){
-				$args['type']	= $name;
-			}
-
-			parent::__construct($name, $args);
+			parent::__construct($name, ['type'=>($args['type'] ??  '') ?: $name]+$args);
 		}
 	}
 

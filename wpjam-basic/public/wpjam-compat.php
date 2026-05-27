@@ -8,6 +8,7 @@ class_alias('WPJAM_Cache_Items', 'WPJAM_ListCache');
 class_alias('WPJAM_Cache', 'WPJAM_Cache_Group');
 class_alias('WPJAM_Crypt', 'WPJAM_OPENSSL_Crypt');
 class_alias('WPJAM_Option_Setting', 'WPJAM_Setting');
+class_alias('WPJAM_Bind', 'WPJAM_Qrcode_Bind');
 
 if(!function_exists('function_alias')){
 	function function_alias($original, $alias=null){

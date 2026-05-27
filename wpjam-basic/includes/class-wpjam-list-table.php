@@ -272,7 +272,7 @@ class WPJAM_List_Table extends WP_List_Table{
 				$view	= $object();
 				$view	&& $this->add('views', $key, is_array($view) ? $this->get_filter_link(...$view) : $view);
 			}else{
-				$data	= array_filter($object->pick(['description', 'sticky', 'nowrap', 'format', 'precision', 'conditional_styles']));
+				$data	= array_filter($object->pick(['description', 'sticky', 'format', 'precision', 'conditional_styles', ...($this->nowrap ? [] : ['nowrap'])]));
 
 				$this->add('columns', $key, $object->title.($data ? wpjam_tag('i', ['data'=>$data]) : ''));
 
@@ -340,7 +340,6 @@ class WPJAM_List_Table extends WP_List_Table{
 
 		$method	= array_find(['render_row', 'render_item', 'item_callback'], fn($v)=> method_exists($this->model, $v));
 		$item	= $method ? [$this->model, $method]($item, $attr) : $item;
-		$attr	+= $method && isset($item['class']) ? [['class'=>$item['class']], trigger_error(var_export($item, true))][0] : [];	// del 2026-03-31
 
 		$this->numberable && ($this->no ??= $this->offset);
 
@@ -372,26 +371,31 @@ class WPJAM_List_Table extends WP_List_Table{
 			$args	= $cell['args'] ?? [];
 			$type	= $args['item_type'] ?? 'image';
 			$key	= $args[$type.'_key'] ?? $type;
-			$data	= ['field'=>'', 'max_items'=>null]+($type == 'image' ? ['width'=>60, 'height'=>60, 'per_row'=>null] : []);
-			$data	= wpjam_pick($args, array_keys($data))+$data;
-			$cell	= wpjam_tag('div', ['items', $type.'-list'])->data($data)->style($args['style'] ?? '');
+			$max	= $args['max_items'] ?? null;
+			$field	= $args['field'] ?? '';
+			$cell	= wpjam_tag('div', ['items', $type.'-list'])->data(['field'=>$field, 'max_items'=>$max])->style($args['style'] ?? '');
+
+			if($type == 'image'){
+				$size	= wpjam_pick($args, ['width', 'height'])+['width'=>60, 'height'=>60];
+
+				$cell->style(wpjam_array($size, fn($k, $v)=> ['--'.$k, $v.'px'])+['--per-row'=>$arg['per_row'] ?? 4]);
+			}
+
 			$names	= $args['actions'] ?? ['add_item', 'edit_item', 'del_item'];
 			$names	= !empty($args['sortable']) && $cell->add_class('sortable') ? ['move_item', ...$names] : $names;
-			$args	= ['id'=>$id,'data'=>['_field'=>$data['field']]];
-			$add	= in_array('add_item', $names) && (!$data['max_items'] || count($items) <= $data['max_items']);
+			$args	= ['id'=>$id,'data'=>['_field'=>$field]];
+			$add	= in_array('add_item', $names) && (!$max || count($items) <= $max);
 
 			foreach($items as $i => $item){
 				$v	= $item[$key] ?: '';
+				$t	= wpjam_tag('span', ['truncate-text']);
 
-				if($type == 'image'){
-					$ar	= wpjam_pick($data, ['width', 'height']);
-					$v	= wpjam_tag('img', ['src'=>wpjam_get_thumbnail($v, array_map(fn($s)=> $s*2, $ar))]+$ar)->after('span', ['item-title'], $item['title'] ?? '');
-				}
+				$type == 'image' ? $t->text($item['title'] ?? '')->before('img', ['src'=>wpjam_get_thumbnail($v, array_map(fn($s)=> $s*2, $size))]+$size) : $t->text($v);
 
 				$args['i']	= $args['data']['i']	= $i;
 
 				$cell->append(wpjam_tag('div', ['id'=>'item_'.$i, 'data'=>['i'=>$i], 'class'=>'item'])->append([
-					$this->get_action('move_item', $args+['title'=>$v, 'fallback'=>true])->style(wpjam_pick($item, ['color'])),
+					$this->get_action('move_item', $args+['title'=>$t, 'fallback'=>true])->style(wpjam_pick($item, ['color'])),
 					wpjam_tag('span', ['row-actions'])->append($this->get_action(array_diff($names, ['add_item']), $args+['wrap'=>'<span class="%s"></span>', 'item'=>$item]))
 				]));
 			}
@@ -629,7 +633,7 @@ class WPJAM_Builtin_List_Table extends WPJAM_List_Table{
 
 class WPJAM_List_Table_Component extends WPJAM_Register{
 	public static function registry($method, ...$args){
-		$registry	= parent::registry('', ['config'=>['orderby'=>'order']]);
+		$registry	= parent::registry('', ['called'=>static::class, 'config'=>['orderby'=>'order']]);
 
 		if(in_array($method, ['add_object', 'remove_object'])){
 			$part		= str_replace('wpjam_list_table_', '', $registry->name);

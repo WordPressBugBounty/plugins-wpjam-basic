@@ -3,13 +3,12 @@ trait WPJAM_Call_Trait{
 	public function call($name, ...$args){
 		if(is_closure($name)){
 			$cb	= $name;
+		}elseif(try_remove_suffix($name, '_by_model')){
+			$cb	= [$this->model, $name];
+		}elseif(try_remove_suffix($name, '_by_prop')){
+			$cb	= $this->$name;
 		}else{
 			$cb = [$this, $name];
-
-			if($by = array_find(['model', 'prop'], fn($k)=> str_ends_with($name, '_by_'.$k))){
-				$name	= explode_last('_by_', $name)[0];
-				$cb 	= $by == 'prop' ? $this->$name : [$this->model, $name];
-			}
 		}
 
 		return wpjam_call(wpjam_bind($cb, $this), ...$args);
@@ -70,7 +69,7 @@ trait WPJAM_Items_Trait{
 	}
 
 	public function add_item($key, ...$args){
-		[$item, $key]	= (!$args || is_bool($key) || (!is_scalar($key) && !is_null($key))) ? [$key, null] : [array_shift($args), $key];
+		[$key, $item]	= ($args && !is_bool($key) && (is_scalar($key) || is_null($key))) ? [$key, array_shift($args)] : [null, $key];
 
 		return $this->process_items(fn($items)=> wpjam_add_at($items, count($items), $key, $this->prepare_item($item, $key, 'add', ...$args)), ...$args);
 	}
@@ -360,12 +359,12 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 		return is_null($value) ? $this->delete_arg($key) : $this->update_arg($key, $value);
 	}
 
-	public function get_arg($key, $default=null, $action=false){
+	public function get_arg($key, $default=null, $callback=false){
 		$value	= wpjam_get($this->get_args(), $key);
 
-		if($action){
+		if($callback){
 			$value	= is_closure($value) ? wpjam_bind($value, $this) : ($value ?? (is_string($key) ? wpjam_callback([$this->model, 'get_'.$key]) : null));
-			$value	= $action === 'callback' ? maybe_callback($value, $this->name) : $value;
+			$value	= $callback === 'callback' ? maybe_callback($value, $this->name) : $value;
 		}
 
 		return $value ?? $default;
@@ -486,8 +485,8 @@ class WPJAM_Register extends WPJAM_Args{
 		return $this->args;
 	}
 
-	public function get_arg($key, $default=null, $should_callback=true){
-		return parent::get_arg($key, $default, $should_callback ? 'callback' : 'parse');
+	public function get_arg($key, $default=null, $callback=true){
+		return parent::get_arg($key, $default, $callback ? 'callback' : 'parse');
 	}
 
 	public function get_parent(){
@@ -777,8 +776,8 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 		}
 	}
 
-	public function get_arg($key, $default=null, $do_callback=true){
-		$value	= parent::get_arg($key, $default, $do_callback);
+	public function get_arg($key, $default=null, $callback=true){
+		$value	= parent::get_arg($key, $default, $callback);
 
 		if($key == 'menu_page'){
 			if(!$this->name || (is_network_admin() && !$this->site_default)){
@@ -815,7 +814,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 			$value	= array_map(fn($v)=> ($this->model && !isset($v['callback']) && !isset($v['model'])) ? $v+['model'=>$this->model] : $v, $value);
 		}elseif($key == 'sections'){
 			if(!$value || !is_array($value)){
-				$id		= $this->type == 'section' ? $this->section_id : ($this->current_tab ?: $this->sub_name ?: $this->name);
+				$id		= $this->type == 'section' ? (string)$this->section_id : ($this->current_tab ?: $this->sub_name ?: $this->name);
 				$value	= [$id=>array_filter(['fields'=>$this->get_arg('fields', null, false)]) ?: $this->get_arg('section') ?: []];
 			}
 
@@ -974,34 +973,27 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 
 	public function get_options($args=[]){
 		if($this->name == 'post'){
-			if(isset($args['post_type'])){
-				$object = wpjam_get_post_type_object($args['post_type']);
-				$keys[]	= 'post_type';
-			}
+			$key	= 'post_type';
+			$cb 	= 'wpjam_get_post_type_object';
 		}elseif($this->name == 'term'){
-			if(isset($args['taxonomy'])){
-				$object = wpjam_get_taxonomy($args['taxonomy']);
-				$keys[]	= 'taxonomy';
-			}
-
-			if(isset($args['action'])){
-				$keys[]	= 'action';
-			}
+			$key	= 'taxonomy';
+			$cb 	= 'wpjam_get_taxonomy';
 		}
 
-		empty($object) || $this->call_option('get', $object->name.'_base') || $this->call_option('register', $object->name.'_base', [
-			$keys[0]		=> $object->name,
-			'title'			=> $this->name == 'post' ? '基础信息' : '快速编辑',
-			'page_title'	=> '设置'.$object->title,
-			'fields'		=> [$object, 'get_fields'],
-			'list_table'	=> $object->show_ui,
-			'action_name'	=> 'set',
-			'row_action'	=> $this->name == 'term',
-			'order'			=> 99,
-		]);
+		if(isset($key) && isset($args[$key])){
+			$args[$key]	= ['value'=>($value = $args[$key]), 'if_null'=>true, 'callable'=>true];
+			$object		= $cb($value);
 
-		foreach($keys ?? [] as $k){
-			$args[$k]	= ['value'=>$args[$k], 'if_null'=>true, 'callable'=>true];
+			$object && ($this->call_option($value.'_base') || $this->call_option($value.'_base', [
+				$key			=> $value,
+				'title'			=> $this->name == 'post' ? '基础信息' : '快速编辑',
+				'row_action'	=> $this->name == 'term',
+				'action_name'	=> 'set',
+				'page_title'	=> '设置'.$object->title,
+				'fields'		=> [$object, 'get_fields'],
+				'list_table'	=> $object->show_ui,
+				'order'			=> 99,
+			]));
 		}
 
 		if(isset($args['list_table'])){
@@ -1012,19 +1004,22 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 		return wpjam_sort(wpjam_filter($this->get_arg('options[]'), $args), 'order', 'DESC', 10);
 	}
 
-	public function call_option($action, ...$args){
-		$name	= $args[0];
+	public function call_option($name, ...$args){
+		$del	= try_remove_prefix($name, '-');
 		$key	= 'options['.$name.']';
-		$type	= $this->name;
 
-		if($action == 'register'){
-			$args	= $args[1];
+		if($del){
+			return $this->delete_arg($key) && true;
+		}
 
-			if($type == 'post'){
+		if($args){
+			$args	= $args[0];
+
+			if($this->name == 'post'){
 				$args	+= ['fields'=>[], 'priority'=>'default'];
 
 				$args['post_type']	??= wpjam_pull($args, 'post_types') ?: null;
-			}elseif($type == 'term'){
+			}elseif($this->name == 'term'){
 				$args['taxonomy']	??= wpjam_pull($args, 'taxonomies') ?: null;
 
 				if(!isset($args['fields'])){
@@ -1033,37 +1028,10 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 				}
 			}
 
-			$option	= $this->update_arg($key, new WPJAM_Meta_Option(['name'=>$name, 'meta_type'=>$type]+$args))->get_arg($key);
-
-			if($option && in_array($type, ['post', 'term'])){
-				$block	= is_admin() && $type == 'post' && $option->context === 'side' && $option->list_table !== 'only';
-				$fields	= [];
-
-				if(wpjam_is_assoc_array($option->fields)){
-					foreach($option->fields as $key => $field){
-						$field	= wpjam_field($field+['key'=>$key]);
-
-						if($meta = $field->to_meta()){
-							register_meta($type, $key, $meta);
-						}
-
-						if($block){
-							$fields[$key]	= $field->to_block();
-						}
-					}
-
-					if($fields = array_filter($fields)){
-						wpjam_admin('vars[block][panels][]', ['name'=>$name, 'title'=>$args['title'], 'fields'=>$fields]);
-					}
-				}
-			}
-
-			return $option;
-		}elseif($action == 'unregister'){
-			return $this->delete_arg($key) && true;
-		}else{
-			return $this->get_arg($key);
+			$this->update_arg($key, new WPJAM_Meta_Option(['name'=>$name, 'meta_type'=>$this->name]+$args));
 		}
+
+		return $this->get_arg($key);
 	}
 
 	public function get_table(){
@@ -1200,15 +1168,16 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 			return;
 		}
 
-		$mids	= $wpdb->get_col("SELECT m.".$this->get_column('id')." FROM ".$this->get_table()." m LEFT JOIN ".$table." t ON t.".$key." = m.".$this->get_column('object_id')." WHERE t.".$key." IS NULL") ?: [];
+		$mids	= $wpdb->get_col("SELECT m.".$this->get_column('id')." FROM ".$this->get_table()." m LEFT JOIN ".$table." t ON t.".$key." = m.".$this->get_column()." WHERE t.".$key." IS NULL") ?: [];
 
 		array_walk($mids, [$this, 'delete_by_mid']);
 	}
 
 	public function create_table(){
-		if(($table	= $this->get_table()) != $GLOBALS['wpdb']->get_var("show tables like '{$table}'")){
-			$column	= $this->name.'_id';
+		$table	= $this->get_table();
+		$column	= $this->name.'_id';
 
+		if($table != $GLOBALS['wpdb']->get_var("show tables like '{$table}'")){
 			$GLOBALS['wpdb']->query("CREATE TABLE {$table} (
 				meta_id bigint(20) unsigned NOT NULL auto_increment,
 				{$column} bigint(20) unsigned NOT NULL default '0',
@@ -1221,16 +1190,35 @@ class WPJAM_Meta_Type extends WPJAM_Register{
 		}
 	}
 
-	public function registered(){
-		wpjam_hooks('add_'.$this->name.'_metadata, update_'.$this->name.'_metadata', function($check, $id, $key, $value){
-			if($registered = get_registered_meta_keys($this->name)[$key] ?? null){
-				if(array_key_exists('default', $registered) && $value === $registered['default']){
-					return delete_metadata($this->name, $id, $key) || true;
+	public function register_keys(){
+		if($this->name == 'post'){
+			foreach(get_post_types(['show_in_rest'=>true]) as $post_type){
+				foreach($this->get_options(['post_type'=>$post_type]) as $option){
+					if(wpjam_is_assoc_array($option->fields)){
+						wpjam_fields($option->fields)->register_meta($this->name, $post_type);
+					}
 				}
 			}
+		}
+	}
 
-			return $check;
-		}, 10, 4);
+	public function delete_if_default($check, $id, $key, $value){
+		$type		= $this->name;
+		$subtype	= $type == 'post' ? get_post_type($id) : ($type == 'term' ? get_term_taxonomy($id) : '');
+		$registered	= $subtype ? (get_registered_meta_keys($type, $subtype)[$key] ?? null) : null;
+		$registered	??= get_registered_meta_keys($type)[$key] ?? null;
+
+		if($registered && array_key_exists('default', $registered) && $value === $registered['default']){
+			return delete_metadata($type, $id, $key) || true;
+		}
+
+		return $check;
+	}
+
+	public function registered(){
+		add_action('init', [$this, 'register_keys'], 99);
+
+		wpjam_hooks('add_'.$this->name.'_metadata, update_'.$this->name.'_metadata', [$this, 'delete_if_default'], 10, 4);
 	}
 
 	public static function get_defaults(){
@@ -1290,11 +1278,11 @@ class WPJAM_Meta_Option extends WPJAM_Args{
 			}
 
 			return wpjam_update_metadata($this->meta_type, $id, $data, $object->get_defaults());
-		}elseif($method == 'render'){
-			echo wpautop($this->summary ?: '').$object->render(...$args);
-		}else{
-			return $object->$method(...$args);
 		}
+
+		$res	= $object->$method(...$args);
+
+		return $method == 'render' ? wpjam_echo(wpautop($this->summary ?: '').$res) : $res;
 	}
 }
 
@@ -1673,7 +1661,7 @@ class WPJAM_AJAX extends WPJAM_Args{
 			is_login() || add_filter('script_loader_src', fn($src, $handle)=> $handle == 'wpjam-ajax' && current_theme_supports('script', $handle) ? '' : $src, 10, 2);
 		}
 
-		if(wp_doing_ajax() && wpjam_get($_REQUEST, 'action') == $name && (is_user_logged_in() || !empty($args['nopriv']))){
+		if(wp_doing_ajax() && ($_REQUEST['action'] ?? '') == $name && (is_user_logged_in() || !empty($args['nopriv']))){
 			add_action('wp_ajax_'.(is_user_logged_in() ? '' : 'nopriv_').$name, fn()=> wpjam_send_json(wpjam_catch(new static(['name'=>$name]+$args))));
 		}
 
@@ -1723,17 +1711,10 @@ class WPJAM_Notice{
 			$notice	= trim($item['notice']);
 			$notice	.= !empty($item['admin_url']) ? (($item['modal'] ? "\n\n" : ' ').'<a href="'.add_query_arg($data, home_url($item['admin_url'])).'">点击查看<span class="dashicons dashicons-arrow-right-alt"></span></a>') : '';
 
-			$notice	= wpautop($notice).wpjam_get_page_button('delete_notice', ['data'=>$data]);
-
-			if($item['modal']){
-				if(empty($modal)){	// 弹窗每次只显示一条
-					$modal	= $notice;
-
-					echo '<div id="notice_modal" class="hidden" data-title="'.esc_attr($item['title'] ?: '消息').'">'.$modal.'</div>';
-				}
-			}else{
-				echo '<div class="notice notice-'.$item['type'].' '.$item['class'].'">'.$notice.'</div>';
-			}
+			echo wpjam_tag('div', [
+				'class' => $item['modal'] ? 'hidden notice-modal' : 'notice notice-'.$item['type'].' '.$item['class'],
+				'data'	=> $item['modal'] ? ['title'=>$item['title'] ?: '消息'] : [],
+			], wpautop($notice).wpjam_get_page_button('delete_notice', ['data'=>$data]))."\n";
 		}
 	}
 

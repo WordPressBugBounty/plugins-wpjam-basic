@@ -62,7 +62,7 @@ class WPJAM_Basic_Admin{
 			$('body').on('click', 'div.wpjam-icons p', function(){
 				let dashicon	= $(this).data('dashicon');
 				
-				wpjam.dialog({page_title: dashicon, data: '<div style="display:flex;"><p><span style="font-size:100px; width: 100px; height: 100px;" class="dashicons '+dashicon+'"></span></p><p style="margin-left:20px; font-size:20px;">'+dashicon+'<br /><br />HTML：<br /><code>&lt;span class="dashicons '+dashicon+'"&gt;&lt;/span&gt;</code></p></dov>'});
+				wpjam.dialog('<div style="display:flex;"><p><span style="font-size:100px; width: 100px; height: 100px;" class="dashicons '+dashicon+'"></span></p><p style="margin-left:20px; font-size:20px;">'+dashicon+'<br /><br />HTML：<br /><code>&lt;span class="dashicons '+dashicon+'"&gt;&lt;/span&gt;</code></p></dov>', dashicon);
 			});
 		});
 		</script>

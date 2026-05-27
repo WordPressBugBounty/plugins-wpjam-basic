@@ -192,11 +192,11 @@ function wpjam_get_meta_type($name){
 }
 
 function wpjam_register_meta_option($type, $name, $args){
-	return ($object = wpjam_get_meta_type($type)) ? $object->call_option('register', $name, $args) : null;
+	return ($object = wpjam_get_meta_type($type)) ? $object->call_option($name, $args) : null;
 }
 
 function wpjam_unregister_meta_option($type, $name){
-	return ($object = wpjam_get_meta_type($type)) ? $object->call_option('unregister', $name) : null;
+	return ($object = wpjam_get_meta_type($type)) ? $object->call_option('-'.$name) : null;
 }
 
 function wpjam_get_meta_options($type, $args=[]){
@@ -204,7 +204,7 @@ function wpjam_get_meta_options($type, $args=[]){
 }
 
 function wpjam_get_meta_option($type, $name, $output='object'){
-	$option	= ($object = wpjam_get_meta_type($type)) ? $object->call_option('get', $name) : null;
+	$option	= ($object = wpjam_get_meta_type($type)) ? $object->call_option($name) : null;
 
 	return $output == 'object' ? $option : ($option ? $option->to_array() : []);
 }
@@ -804,19 +804,25 @@ function wpjam_add_to_media($file, $args=[]){
 function wpjam_upload($name, $args=[]){
 	require_once ABSPATH.'wp-admin/includes/file.php';
 
+	if(!empty($args['accept'])){
+		$args['mimes']	= wpjam_accept_to_mime_types($args['accept']);
+		$args['mimes'] || wpjam_throw('upload_error', '无效的文件类型');
+	}
+
 	if($bits = wpjam_pull($args, 'bits')){
-		if(preg_match('/data:image\/([^;]+);base64,/i', $bits, $m)){
-			$bits	= base64_decode(trim(substr($bits, strlen($m[0]))));
-			$name	= explode_last('.', $name)[0].'.'.$m[1];
+		preg_match('/data:([^;]+);base64,/i', $bits, $m) || wpjam_throw('upload_error', '无效的 data URI 格式');
+
+		$mime	= $m[1];
+		$bits	= base64_decode(trim(substr($bits, strlen($m[0]))));
+		$ext	= array_search($mime, get_allowed_mime_types()) ?: '';
+		$ext	= $ext ? explode('|', $ext)[0] : '';
+
+		if(!$ext || (!empty($args['mimes']) && !in_array($mime, $args['mimes']))){
+			wpjam_throw('upload_error', '不允许的文件类型');
 		}
 
-		$upload	= wp_upload_bits($name, null, $bits);
+		$upload	= wp_upload_bits(explode_last('.', $name)[0].'.'.$ext, null, $bits);
 	}else{
-		if(!empty($args['accept'])){
-			$args['mimes']	= wpjam_accept_to_mime_types($args['accept']);
-			$args['mimes'] || wpjam_throw('upload_error', '无效的文件类型');
-		}
-
 		$args 	+= ['test_form'=>false];
 		$upload	= is_array($name) ? wp_handle_sideload($name, $args) : wp_handle_upload($_FILES[$name], $args);
 	}

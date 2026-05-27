@@ -61,7 +61,7 @@ class WPJAM_Attr extends WPJAM_Args{
 
 	public function style(...$args){
 		if($args){
-			$args	= count($args) <= 1 || is_array($args[0]) ? (array)$args[0] : [[$args[0]=>$args[1]]];
+			$args	= count($args) <= 1 || is_array($args[0]) ? (array)$args[0] : [$args[0].':'.$args[1]];
 
 			return $this->attr('style', array_merge(wpjam_array($this->style), $args));
 		}
@@ -188,36 +188,16 @@ class WPJAM_Tag extends WPJAM_Attr{
 
 class WPJAM_Field extends WPJAM_Attr{
 	protected function __construct($args){
-		$this->init($args);
-	}
+		$this->init($args)->_title ??= $this->title.'「'.$this->key.'」';
 
-	public function __get($key){
-		$value	= parent::__get($key);
-
-		if($key == 'fieldset' && !$this->is('fieldset')){
-			return '';
-		}elseif($key == '_title'){
-			return $value ?? $this->title.'「'.$this->key.'」';
-		}
-
-		return $value;
+		$this->is('fieldset') || ($this->fieldset = '');
 	}
 
 	public function __call($method, $args){
-		if(in_array($method, ['input', 'select', 'textarea'])){
-			$tag	= wpjam_tag($method, $this->get_args())->attr($args[0] ?? []);
-
-			$tag->class	??= $method == 'textarea' ? 'wide-text' : (in_array($tag->type, ['text', 'password', 'url', 'email']) ? 'regular-text' : '');
-
-			$data	= ($this->_data ?: [])+['name'=>array_last($this->_names)]+$tag->add_class('field-key field-key-'.$this->key)->pull(['key', 'data_type', 'query_args', 'custom_validity']);
-
-			return $tag->data($data)->remove_attr(['default', 'options', 'multiple', 'title', 'label', 'render', 'before', 'after', 'description', 'wrap_class', 'wrap_tag', 'item_type', 'direction', 'group', 'buttons', 'button_text', 'size', 'post_type', 'taxonomy', 'sep', 'fields', 'parse_required', 'show_if', 'show_in_rest', 'column', 'custom_input', ...($tag->is('input') ? [] : ['type', 'value'])]);
-		}
-
 		[$action, $type]	= $method == 'fields' ? [$method, '_fields'] : explode_last('_by', $method)+['', ''];
 
 		if($type == '_data_type'){
-			if(in_array($action, ['parse', 'validate'])){
+			if(in_array($action, ['render', 'parse', 'validate'])){
 				if(!$this->$type){
 					return $args[0];
 				}
@@ -235,8 +215,15 @@ class WPJAM_Field extends WPJAM_Attr{
 			}
 		}elseif($type == '_fields'){
 			$this->$type	??= WPJAM_Fields::create($this->fields, $this->_fields_args ?: [], $this);
-		}elseif($type == '_item'){
-			$this->$type	??= self::create(($this->is('mu-fields') ? ['type'=>'fieldset', 'fieldset'=>'object', '_mu'=>$this] : ['type'=>$this->is('mu-text') ? $this->item_type : substr($this->type, 3)])+wpjam_except($this->get_args(), ['required', 'filterable', 'multiple']));
+		}elseif($type == '_item' && !$this->$type){
+			if($this->is('mu-fields')){
+				$attr	= ['type'=>'fieldset', 'fieldset'=>'object']+($this->tag_label ? ['group'=>true] : []);
+			}else{
+				$attr	= ['type'=>$this->is('mu-text') ? ($this->item_type ?? 'text') : substr($this->type, 3)];
+				$attr	+= $attr['type'] == 'text' && $this->direction == 'row' ? ['class'=>$this->class ?? 'medium-text'] : [];
+			}
+
+			$this->$type	= self::create($attr+['_mu'=>$this]+wpjam_except($this->get_args(), ['required', 'filterable', 'multiple']));
 		}
 
 		return $this->$type ? wpjam_try([$this->$type, $action], ...$args) : null;
@@ -251,30 +238,43 @@ class WPJAM_Field extends WPJAM_Attr{
 		|| in_array($this->type, $strict ? $type : array_merge($type, wpjam_pick(['fieldset'=>'fields', 'view'=>'hr'], $type)));
 	}
 
+	protected function el($name, $attr=[]){
+		$tag	= wpjam_tag($name, $this->get_args())->attr($attr);
+		$data	= $tag->pull(['key', 'data_type', 'query_args', 'custom_validity']);
+
+		if($name == 'textarea'){
+			$tag->class	??= 'wide-text';
+		}elseif($name == 'input'){
+			$tag->class	??= $this->class = in_array($tag->type, ['text', 'url', 'email']) ? 'regular-text' : '';
+		}
+
+		in_array($name, ['select', 'textarea', 'input']) && $tag->add_class('field-key-'.$this->key);
+
+		return $tag->data($data)->remove_attr(['default', 'options', 'multiple', 'title', 'label', 'render', 'before', 'after', 'description', 'wrap_class', 'wrap_tag', 'show_option_all', 'show_option_none', 'option_all_value', 'option_none_value', 'direction', 'group', 'buttons', 'size', 'post_type', 'taxonomy', 'sep', 'fields', 'parse_required', 'show_if', 'show_in_rest', 'column', 'custom_input', 'max_items', 'min_items', 'unique_items', 'filterable', 'summarization', ...($name == 'input' ? [] : ['type', 'value'])]);
+	}
+
 	public function init($args=[], $affix=false){
 		if($affix){
 			$p	= $this->_parent;
 			$i	= $p->_mu ? 'i'.$args['i'] : '';
 			$v	= $args['v'][$this->name] ?? null;
+			$pp	= $p->name.($i ? '['.$i.']' : '');
 
-			$this->_prefix	= $p->key;
-			$this->_suffix	= $i;
-
-			$prepend	= $p->name.($i ? '['.$i.']' : '');
-			$this->id	= $this->affix($this->id);
-			$this->key	= $this->affix($this->key);
+			$this->attr(['_prefix'=>$p->key, '_suffix'=>$i]);
+			$this->attr(wpjam_fill(['id', 'key'], fn($k)=> $this->affix($this->$k)));
 
 			isset($v) && $this->val($v);
 		}else{
 			$this->args	= $args;
-			$prepend	= $this->pull('prepend_name');
+
+			$pp	= $this->pull('prepend_name');
 
 			$this->attr('_data_type', wpjam_get_data_type($this))->attr('options', fn($v)=> is_callable($v) ? $v() : $v);
 
 			$this->pattern && $this->attr(wpjam_pattern($this->pattern) ?: []);
 		}
 
-		$this->_names	= array_reduce([$prepend, $this->name], fn($c, $v)=> $v ? [...$c, ...wpjam_names($v)] : $c, []);
+		$this->_names	= array_reduce([$pp, $this->name], fn($c, $v)=> $v ? [...$c, ...wpjam_names($v)] : $c, []);
 		$this->name		= wpjam_names($this->_names);
 
 		return $this;
@@ -314,11 +314,14 @@ class WPJAM_Field extends WPJAM_Attr{
 			}
 
 			$value	+= ['type'=>'string'];
-			$value	+= wpjam_array((array_fill_keys(['integer', 'number'], ['minimum'=>'min', 'maximum'=>'max'])+[
-				'array'		=> ['maxItems'=>'max_items', 'minItems'=>'min_items', 'uniqueItems'=>'unique_items'],
-				'string'	=> ['minLength'=>'minlength', 'maxLength'=>'maxlength'],
-			])[$value['type']] ?? [], fn($k, $v)=> is_blank($this->$v) ? null : [$k, $this->$v]);
 		}
+
+		$value	+= wpjam_array((array_fill_keys(['integer', 'number'], ['minimum'=>'min', 'maximum'=>'max'])+[
+			'array'		=> ['maxItems'=>'max_items', 'minItems'=>'min_items', 'uniqueItems'=>'unique_items'],
+			'string'	=> ['minLength'=>'minlength', 'maxLength'=>'maxlength'],
+		])[$value['type']] ?? [], fn($k, $v)=> is_blank($this->$v) ? null : [$k, $this->$v]);
+
+		$value	+= $value['type'] === 'array' && $this->required ? ['minItems'=>1] : [];
 
 		$parse	= function($value) use(&$parse){
 			foreach(wpjam_pull($value, ['enum', 'items', 'properties']) as $k => $v){
@@ -335,32 +338,67 @@ class WPJAM_Field extends WPJAM_Attr{
 		return $this->_schema = $parse($value);
 	}
 
-	public function to_meta(){
-		$schema = $this->schema();
-		$meta	= [
-			'single'			=> true,
-			'show_in_rest'		=> ['schema'=>$schema],
-			'type'				=> $schema['type'] ?? 'string',
-			'sanitize_callback'	=> fn($value) => $this->validate($value)
-		];
-
-		if(isset($this->default) && (!isset($schema['enum']) || in_array($this->default, $schema['enum'], true))){
-			$meta['default']	= $this->default;
+	public function button_text(){
+		if($text = $this->pull('button_text')){
+			return $text;
 		}
 
-		return $meta;
+		if($this->is('color')){
+			return '选择颜色';
+		}elseif($this->is('uploader')){
+			return  __('Select Files', 'wpjam');
+		}elseif($this->is('img, image, file, mu-img, mu-image, mu-file')){
+			return '选择'.($this->is('file, mu-file') ? '文件' : '图片').($this->is('mu') ? '[多选]' : '');
+		}elseif($this->is('mu-text, mu-fields')){
+			return '添加'.(wpjam_between(mb_strwidth($this->title ?: ''), 4, 8) ? $this->title : '选项');
+		}
+	}
+
+	public function item_type(){
+		return $this->pull('item_type') ?? ($this->is('img, mu-img') ? 'id' : ($this->is('image, mu-image') ? 'image' : ''));
 	}
 
 	public function to_block(){
-		if($this->is('text, number, textarea, checkbox, toggle, select, radio')){
-			return wpjam_pick($this, ['min', 'max', 'step', 'rows', 'placeholder'])+array_filter([
-				'component'	=> ucfirst($this->is('number') ? 'text' : $this->type),
-				'options'	=> $this->options ? wpjam_array($this->options, fn($k, $v)=> [null, ['label'=>$v, 'value'=>$k]]) : [],
-				'label'		=> $this->title ?? $this->label ?? null,
-				'help'		=> $this->description ?? null,
-				'type'		=> $this->is('number') ? 'number' : null
-			]);
+		$options	= $this->options ? wpjam_map($this->options(false), fn($v)=> $v+wpjam_pick($v['data'] ?? [], ['show_if'])) : [];
+
+		if($this->is('image, img, mu-image, mu-img')){
+			$component	= 'Media';
+		}elseif($this->is('file, mu-file')){
+			$component	= 'File';
+		}elseif($this->is('uploader')){
+			$component	= 'Uploader';
+			$props		= [
+				'accept'	=> $this->accept ?: 'image/*',
+				'nonce'		=> wp_create_nonce('upload-'.$this->name)
+			];
+		}elseif($this->is('fieldset, mu-fields')){
+			$component	= 'Fieldset';
+			$props		= [
+				'fields'	=> $this->to_block_by_fields(),
+				'fieldset'	=> $this->is('mu-fields') ? 'object' : $this->fieldset,
+				'direction'	=> $this->direction
+			];
+		}elseif($this->is('toggle, checkbox, select, radio, range, color, search, textarea, timestamp')){
+			$component	= ucfirst($this->type);
+		}elseif($this->data_type){
+			$component	= 'Combobox';
+			$props		= wpjam_pick($this, ['data_type', 'query_args']);
+		}else{
+			$component	= 'Text';
+			$props		= ['type'=> $this->is('mu-text') ? ($this->item_type ?: 'Text') : $this->type];
 		}
+
+		return wpjam_pick($this, ['name', 'min', 'max', 'step', 'rows', 'placeholder'])+($props ?? [])+array_filter([
+			'component'		=> $component,
+			'multiple'		=> $this->is('mu') || $this->multiple,
+			'label'			=> $this->title ?? $this->label ?? null,
+			'help'			=> $this->description ?? null,
+			'schema'		=> $this->schema(),
+			'show_if'		=> $this->show_if(),
+			'button_text'	=> $this->button_text(),
+			'item_type'		=> $this->item_type(),
+			'options'		=> $options
+		]);
 	}
 
 	public function show_if(...$args){
@@ -369,80 +407,56 @@ class WPJAM_Field extends WPJAM_Attr{
 		}
 	}
 
-	public function options($action=''){
-		$select	= $this->is('select') && !$this->multiple;
-		$init	= $action == 'render' ? ($select ? $this->select() : wpjam_tag('fieldset')) : ($select ? array_reduce(['all', 'none'], fn($c, $k)=> $c+array_filter([($this->{'option_'.$k.'_value'} ?? '') => $this->{'show_option_'.$k}]), []) : []);
+	public function options($flat=true, ...$args){
+		$res		= [];
+		$options	= $args[0] ?? array_replace($this->is('select') && !$this->multiple ? array_reduce(['all', 'none'], fn($c, $k)=> $c+array_filter([($this->{'option_'.$k.'_value'} ?? '') => $this->{'show_option_'.$k}]), []) : [], $this->options);
 
-		return wpjam_reduce($this->options, function($carry, $item, $opt, $depth){
-			if(is_array($carry)){
-				if(!is_array($item)){
-					$carry[$opt]	= $item;
-				}elseif(!isset($item['options'])){
-					if($k = array_find(['title', 'label', 'image'], fn($k)=> isset($item[$k]))){
-						$carry	= array_replace($carry, [$opt => $item[$k]], array_fill_keys(wp_parse_list($item['alias'] ?? []), $item[$k]));
-					}
-				}
-			}else{
-				$attr	= [];
+		foreach(wpjam_array($options) as $key => $item){
+			if(is_array($item)){
+				$label	= array_first(wpjam_pull($item, ['label', 'title']));
+				$subs	= isset($item['options']) ? $this->options($flat, wpjam_pull($item, 'options')) : null;
 
-				if(is_array($item)){
-					$arr	= $item;
-					$item	= array_first(wpjam_pull($arr, ['label', 'title']));
-					$attr	= wpjam_pull($arr, ['class']);
+				if($flat){
+					$res	= array_replace($res, $subs ?? array_fill_keys([$key, ...wp_parse_list(wpjam_pull($item, 'alias', []))], $label));
+				}else{
+					$opt	= ['label'=>$label]+(isset($subs) ? ['options'=>$subs] : ['value'=>(string)$key]);
 
-					foreach($arr as $k => $v){
+					foreach($item as $k => $v){
 						if(is_numeric($k)){
-							self::is_bool($v) && ($attr[$v]	= $v);
+							self::is_bool($v) && ($opt[$v] = $v);
 						}elseif(self::is_bool($k)){
-							$v && ($attr[$k]	= $k);
-						}elseif($k == 'description'){
-							$v && ($this->description .= wpjam_tag('span', ['data-show_if'=>$this->show_if([$this->key, '=', $opt])], $v));
+							$v && ($opt[$k] = $k);
+						}elseif(in_array($k, ['class', 'image', 'description'])){
+							$opt[$k]	= $v;
+						}elseif($k == 'alias'){
+							$opt[$k]	= wp_parse_list($v);
 						}else{
-							$attr['data'][$k]	= $k == 'show_if' ? $this->show_if($v) : $v;
+							$opt['data'][$k]	= $k == 'show_if' ? $this->show_if($v) : $v;
 						}
 					}
 
-					if(isset($arr['options'])){
-						return $carry->append(...($carry->is('select') ? ['optgroup', $attr+['label'=>$item]] : ['label', $attr, $item.'<br />']));
-					}
+					$res[]	= $opt;
 				}
-
-				if($carry->is('select')){
-					$value	= isset($this->value) && in_array($this->value, wp_parse_list($attr['data']['alias'] ?? [])) ? $this->value : $opt;
-					$args	= ['option', $attr+['value'=>$value], $item];
+			}else{
+				if($flat){
+					$res[$key]	= $item;
 				}else{
-					$image	= wpjam_pull($attr, 'data[image]') ?: [];
-					$attr	= wpjam_set($attr, 'class[]', $image ? 'image-'.$this->type : '');
-					$item	= array_reduce(array_slice((array)$image, 0, 2), fn($c, $i)=> $c.wpjam_tag('img', ['src'=>$i, 'alt'=>$item]), '').$item;
-					$args	= wpjam_pull($attr, ['data', 'class']);
-					$input	= $this->input(['id'=>$this->id.'_'.$opt, 'value'=>$opt, 'type'=>$this->is('radio') ? 'radio' : 'checkbox']+$attr);
-					$args	= ['label', ['for'=>$input->id]+$args, $input.$item];
+					$res[]	= ['value'=>(string)$key, 'label'=>$item];
 				}
-
-				($depth >= 1 ? array_last($carry->append()) : $carry)->append(...$args);
 			}
-
-			return $carry;
-		}, $init, 'options');
-	}
-
-	public function custom_input($action, $value){
-		$cv		= '__custom';
-		$value	= $this->multiple ? wpjam_diff($value ?: [], [$cv]) : $value;
-		$diff	= array_diff((array)$value, array_map('strval', array_keys($this->options())));
-		$input	= $this->custom_input;
-		$by		= $this->_custom ??= self::create((is_array($input) ? $input : [])+['key'=>$this->key.$cv, 'type'=>'text', 'class'=>'', 'required'=>true]);
-		$title	= $by->pull('title') ?: (is_string($input) ? $input : __('Other', 'wpjam'));
-
-		if($action == 'render'){
-			$this->attr(['value'=>$diff ? (is_array($value) ? [...$value, $cv] : $cv) : $value, 'options['.$cv.']'=>$title]);
-
-			return $by->attr(['placeholder'=>'请输入'.$title.'选项', 'value'=>array_first($diff), 'name'=>$this->name, 'show_if'=>[$this->key, $cv]])->wrap();
 		}
 
-		$diff && $by->attr('_title', $this->_title.'的「'.$title.'」')->schema([])->validate(array_first($diff));
+		return $res;
+	}
 
-		return $value;
+	public function custom_input(){
+		if($input = $this->custom_input){
+			$cv		= '__custom';
+			$by		= (is_array($input) ? $input : [])+['key'=>$this->key.$cv, 'type'=>'text', 'required'=>true];
+			$title	= ($by['title'] ?? '') ?: (is_string($input) ? $input : __('Other', 'wpjam'));
+
+			return $by+['by'=>$cv, 'title'=>$title, 'placeholder'=>'请输入'.$title.'选项'];
+		}
 	}
 
 	public function validate($value, $type=''){
@@ -467,8 +481,14 @@ class WPJAM_Field extends WPJAM_Attr{
 				$value	= $type == 'if_value' ? $value : array_map(fn($v)=> $this->validate_by_item($v, $type), $value);
 			}else{
 				if($this->is('radio, select, checkbox')){
-					$value	= $this->multiple && !$value ? [] : $value;
-					$value	= $this->custom_input ? $this->custom_input('validate', $value) : $value;
+					$value	= ($mu = $this->multiple) && !$value ? [] : $value;
+
+					if($custom = $this->custom_input()){
+						$mu && ($value = wpjam_diff($value ?: [], [$custom['by']]));
+
+						$diff	= array_diff((array)$value, array_map('strval', array_keys($this->options())));
+						$diff	&& (self::create($custom))->attr('_title', $this->_title.'的「'.$custom['title'].'」')->schema([])->validate(array_first($diff));
+					}
 				}
 
 				$value && ($value = $this->validate_by_data_type($value));
@@ -567,9 +587,9 @@ class WPJAM_Field extends WPJAM_Attr{
 	public function wrap($tag='', $args=[]){
 		$field	= $this->render($args);
 		$wrap	= $tag ? wpjam_tag($tag, ['id'=>$tag.'_'.$this->id])->append($field) : $field;
-		$label	= $this->is('view, mu, fieldset, img, uploader, radio') || $this->multiple ? [] : ['for'=> $this->id];
+		$label	= $this->is('view, mu, fieldset, img, uploader, radio, editor') || $this->multiple ? [] : ['for'=>$this->id];
 
-		$this->buttons && ($this->after = wpjam_join(' ', [$this->after, implode(' ', wpjam_map($this->buttons, [self::class, 'create']))]));
+		$this->buttons && ($this->after = wpjam_join(' ', $this->after, ...array_values(wpjam_map($this->buttons, [self::class, 'create']))));
 
 		foreach(['before', 'after'] as $k){
 			$this->$k && $field->$k(($field->is('div') || $this->is('textarea,editor') ? 'p' : 'span'), [$k], $this->$k);
@@ -577,8 +597,8 @@ class WPJAM_Field extends WPJAM_Attr{
 
 		if($this->fieldset){
 			$wrap->after("\n");
-		}elseif(!$field->is('div') && ($this->label || $this->before || $this->after || $this->get_arg_by_parent('label') === true)){
-			$field->wrap('label', $label);
+		}else{
+			!$field->is('div') && $label && ($this->label || $this->before || $this->after || $this->get_arg_by_parent('label') === true) && $field->wrap('label', $label);
 		}
 
 		$title	= $this->title ? wpjam_tag('label', $label, $this->title) : '';
@@ -605,150 +625,130 @@ class WPJAM_Field extends WPJAM_Attr{
 
 		$field->before($title);
 
-		if($show_if = $this->show_if()){
-			$wrap->data('show_if', $show_if)->tag() || $wrap->tag('div');
-		}
+		($show_if = $this->show_if()) && ($wrap->data('show_if', $show_if)->tag() || $wrap->tag('div'));
 
-		return $wrap->add_class([$this->wrap_class, wpjam_get($args, 'wrap_class'), $this->disabled, $this->readonly, ($this->is('hidden') ? 'hidden' : '')])->data('for', $wrap === $field ? null : $this->key);
+		return $wrap->add_class([$this->wrap_class, wpjam_get($args, 'wrap_class'), $this->disabled, $this->readonly, ($this->is('hidden') ? 'hidden' : '')]);
+	}
+
+	public function value($value){
+		if($this->is('img')){
+			return ['value'=>$value, 'url'=>wpjam_at(wpjam_get_thumbnail($value), '?', 0)];
+		}else{
+			return $this->query_label_by_data_type($value);
+		}
 	}
 
 	public function render($args=[]){
-		$this->value	= $this->value_callback($args);
-		$this->_data	= $this->pull(['filterable', 'summarization', 'show_option_all', 'show_option_none', 'option_all_value', 'option_none_value', 'max_items', 'min_items', 'unique_items']);
+		$key	= $this->key;
+		$value	= $this->value = $this->value_callback($args);
+		$data	= array_filter([
+			'schema'		=> $this->schema(),
+			'item_type'		=> $this->item_type(),
+			'button_text'	=> $this->button_text()
+		])+$this->pick(['key', 'type', 'direction', 'filterable', 'summarization'])+['value'=>&$value];
 
 		if($this->render){
 			return wpjam_wrap($this->call('render_by_prop', $args));
-		}
-
-		$key	= $this->key;
-
-		if($this->is('fieldset')){
+		}elseif($this->is('fieldset')){
 			$mu		= $this->_mu;
-			$group	= $this->group && !$this->is('fields');
+			$tag	= $this->wrap_tag ?: ($mu || !$this->is('fields') ? 'div' : '');
+			$group	= $this->group && $tag;
 			$field	= $this->render_by_fields($args)->wrap($mu && !$args['v'] ? 'template' : '');
-			$attr	= $mu ? ['mu-item'] : ($this->is('fields') ? [] : array_filter($this->pick(['class', 'style'])+['data'=>$this->data()]));
-			$tag	= $this->wrap_tag ?: ($group || $attr ? 'div' : '');
+			$attr	= $mu || $this->is('fields') ? [] : array_filter($this->pick(['class', 'style'])+['data'=>$this->data()]);
 
 			$this->title && $tag == 'fieldset' && $field->prepend('legend', ['screen-reader-text'], $this->title);
 			$this->summary && $field->before([$this->summary, 'strong'], 'summary')->wrap('details');
 
-			return $field->wrap($tag, $attr)->add_class($group ? 'field-group' : '')->data($mu ? [] : ['key'=>$key]);
+			return $field->wrap($tag, $attr)->add_class($group ? 'field-group' : '');
 		}elseif($this->is('mu')){
-			$value	= $this->value ?: [];
-			$value	= is_array($value) ? array_values(wpjam_filter($value, fn($v)=> !is_blank($v), true)) : [$value];
-			$wrap	= wpjam_tag('div', ['id'=>$this->id]);
-			$data	= $this->pull('_data');
-			$args	= ['id'=>'', 'name'=>$this->name.'[]', 'value'=>null];
+			$class	= ['mu', $this->type, ($this->sortable !== false ? 'sortable' : '')];
+			$value	= array_values(wpjam_filter((array)$value, fn($v)=> !is_blank($v), true));
 
 			if($this->is('mu-fields')){
-				$data	+= $this->tag_label ? $this->attr(['group'=>true, 'direction'=>'row'])->pick(['tag_label']) : [];
-				$append	= wpjam_map($value+['${i}'=>[]], fn($v, $i)=> $this->render_by_item(['i'=>$i, 'v'=>$v]));
-			}elseif($this->is('mu-img, mu-image, mu-file')){
-				$data	+= [
-					'button_text'	=> '选择'.($this->is('mu-file') ? '文件' : '图片').'[多选]',
-					'item_type'		=> $this->is('mu-image') ? 'image' : $this->item_type
-				];
-
-				if($this->is('mu-img')){
-					$this->direction = 'row';
-
-					$value	= array_map(fn($v)=> ['value'=>$v, 'url'=>wpjam_at(wpjam_get_thumbnail($v), '?', 0)] , $value);
-					$data	+= ['thumb_args'=> wpjam_get_thumbnail_args([200, 200])];
-				}
-
-				$data	+= ['value'=>$value];
-				$append	= $this->input($args+['type'=>$this->is('mu-img') ? 'hidden' : 'url', 'required'=>false]);
-			}elseif($this->is('mu-text')){
-				if(($this->item_type ??= 'text') == 'text'){
-					$this->direction == 'row' && ($this->class ??= 'medium-text');
-
-					$value	= $this->query_label_by_data_type($value) ?: $value;
-				}
-
-				$data	+= ['value'=>$value];
-				$append	= $this->attr_by_item($args)->render();
+				$data	+= $this->pick(['tag_label']);
+				$text	= implode(wpjam_map($value+['${i}'=>[]], fn($v, $i)=> $this->render_by_item(['i'=>$i, 'v'=>$v])));
+			}else{
+				$text	= $this->attr_by_item(['id'=>'', 'value'=>null, 'name'=>$this->name.'[]'])->render();
+				$value	= $this->is('mu-img') ? array_map([$this, 'value_by_item'], $value) : ($this->is('mu-text') ? ($this->value($value) ?: $value) : $value);
 			}
 
-			$data['button_text']	??= $this->button_text ?: '添加'.(wpjam_between(mb_strwidth($this->title ?: ''), 4, 8) ? $this->title : '选项');
-
-			return $wrap->append($append)->data($data)->add_class(['mu', $this->type, ($this->sortable !== false ? 'sortable' : ''), 'direction-'.($this->direction ?: 'column')]);
+			return wpjam_tag('div', $this->pick(['id', 'name'])+['class'=>$class, 'data'=>$data], $text);
 		}elseif($this->is('toggle')){
-			return $this->input(['value'=>1, 'type'=>'checkbox'])->data('value', $this->value)->after($this->label ?? $this->pull('description'));
-		}elseif($this->is('radio, select, checkbox')){
-			if($this->multiple){
-				$this->name		.= '[]';
-				$this->_data	+= $this->pull('required') ? ['min_items'=>1] : [];
+			return $this->el('input', ['value'=>1, 'type'=>'checkbox'])->data($data)->after($this->label ?? $this->pull('description'));
+		}elseif($this->is('radio, select, checkbox, cascade')){
+			$field	= $this->el($this->is('select') && !$this->multiple ? 'select' : 'fieldset');
+			$data	+= $this->pick(['multiple', 'sep'])+($this->is('cascade, select') ? ['show_option_all'=>$this->show_option_all ?: '请选择'] : []);
+
+			if($this->is('cascade')){
+				$data	= $this->render_by_data_type($value)+$data;
+				$data	+= ['options'=>array_map(fn($v)=> $this->options(false, $v), wpjam_pull($data, 'options'))];
+			}else{
+				$data	+= ['options'=>$this->options(false), 'custom'=>$this->custom_input()];
 			}
 
-			$custom	= $this->custom_input ? $this->custom_input('render', $this->value) : '';
-			$field	= $this->options('render')->data($this->pull('_data')+$this->pull(['data_type', 'query_args'])+$this->pick(['value']));
-
-			if($field->is('fieldset')){
-				$field->attr(['id'=>$this->id.'_options', 'class'=>['checkable', 'direction-'.($this->direction ?: ($this->sep ? 'column' : 'row'))]]);
-
-				$this->is('select') && $field->add_class('mu-select hidden')->data('show_option_all', fn($v)=> $v ?: '请选择');
-			}
-
-			$custom && ($this->is('select') ? $field->after('&emsp;'.$custom) : $field->append($custom));
-
-			return $field;
+			return $field->data($data);
 		}elseif($this->is('editor, textarea')){
 			if($this->is('editor')){
 				$this->id	= 'editor_'.$this->id;
 
 				if(user_can_richedit()){
 					if(!wp_doing_ajax()){
-						return wpjam_wrap(wpjam_ob('wp_editor', $this->value ?: '', $this->id, ['textarea_name'=>$this->name]));
+						return wpjam_wrap(wpjam_ob('wp_editor', $value ?: '', $this->id, ['textarea_name'=>$this->name]));
 					}
 
-					$this->data('editor', ['tinymce'=>true, 'quicktags'=>true, 'mediaButtons'=>current_user_can('upload_files')]);
+					$data	+= ['editor'=>['tinymce'=>true, 'quicktags'=>true, 'mediaButtons'=>current_user_can('upload_files')]];
 				}
 			}
 
-			return $this->textarea()->append(esc_textarea($this->value ?: ''));
+			return $this->el('textarea')->append(esc_textarea($value ?: ''))->data($data);
 		}elseif($this->is('img, image, file')){
-			$size	= array_filter(wpjam_pick(wpjam_parse_size($this->size), ['width', 'height']));
-
-			(count($size) == 2) && ($this->description	??= '建议尺寸：'.implode('x', $size));
+			$field	= $this->el('input', ['type'=>$this->is('img') ? 'hidden' : 'url']);
 
 			if($this->is('img')){
-				$type	= 'hidden';
-				$size	= wpjam_parse_size($this->size ?: '600x0', [600, 600]);
-				$data	= ['thumb_args'=> wpjam_get_thumbnail_args($size), 'size'=>wpjam_array($size, fn($k, $v)=> [$k, (int)($v/2) ?: null], true)];
+				if($this->_mu){
+					$size	= [200, 200];
+				}else{
+					$size	= wpjam_parse_size($this->size);
+
+					$size['width'] && $size['height'] && ($this->description ??= '建议尺寸：'.$size['width'].'x'.$size['height']);
+
+					$size	= wpjam_parse_size($this->size ?: '480x0', [480, 480]);
+					$value	= $value ? $this->value($value) : '';
+				}
+
+				$field->data('thumb_args', wpjam_get_thumbnail_args($size));
 			}
 
-			return $this->input(['type'=>$type ?? 'url'])->wrap('div', ['wpjam-'.$this->type])->data(($data ?? [])+[
-				'value'			=> $this->value ? ['url'=>wpjam_get_thumbnail($this->value), 'value'=>$this->value] : '',
-				'item_type'		=> $this->is('image') ? 'image' : $this->item_type,
-				'media_button'	=> $this->button_text ?: '选择'.($this->is('file') ? '文件' : '图片')
-			]);
+			return $this->_mu ? $field : $field->data($data);
 		}elseif($this->is('uploader')){
 			$accept	= $this->accept ?: 'image/*';
 			$exts	= implode(',', wpjam_map(wpjam_accept_to_mime_types($accept), fn($v)=> str_replace('|', ',', $v), 'k'));
 
-			return $this->input(['type'=>'hidden'])->wrap('div', ['plupload', $exts ? '' : 'disabled'])->data(['key'=>$key, 'plupload'=>[
-				'browse_button'		=> 'plupload_button__'.$key,
-				'button_text'		=> $this->button_text ?: __('Select Files', 'wpjam'),
-				'container'			=> 'plupload_container__'.$key,
-				'file_data_name'	=> $key,
-				'multipart_params'	=> ['_ajax_nonce'=>wp_create_nonce('upload-'.$key), 'action'=>'wpjam-upload', 'name'=>$key, 'accept'=>$accept],
-				'filters'			=> ['max_file_size'=>(wp_max_upload_size() ?: 0).'b']+($exts ? ['mime_types'=>[['extensions'=>$exts]]] : []),
-			]+(($this->pull('drap_drop') && !wp_is_mobile()) ? [
-				'drop_element'	=> 'plupload_drag_drop__'.$key,
-				'drop_info'		=> [__('Drop files to upload', 'wpjam'), _x('or', 'Uploader: Drop files here - or - Select Files', 'wpjam')]
-			] : [])]);
+			return $this->el('input', ['type'=>'hidden', 'disabled'=>!$exts])->data($data+[
+				'drag_drop'	=> $this->pull('drag_drop') && !wp_is_mobile(),
+				'filters'	=> [
+					'max_file_size'	=> (wp_max_upload_size() ?: 0).'b',
+					'mime_types'	=> [['extensions'=>$exts]]
+				],
+				'params'	=> [
+					'action'		=> 'wpjam-upload',
+					'name'			=> $key,
+					'accept'		=> $accept,
+					'_ajax_nonce'	=> wp_create_nonce('upload-'.$key.'-'.$accept)
+				]
+			])->wrap('div');
 		}elseif($this->is('view')){
-			$value	= (string)$this->value;
+			$value	= (string)$value;
 			$wrap	= $value != strip_tags($value);
 			$tag	= $this->wrap_tag ?? (!$this->show_if && $wrap ? '' : 'span');
-			$value	= $this->options && !$wrap ? (array_find($this->options(), fn($v, $k)=> $value ? $k == $value : !$k) ?? $value) : $value;
+			$view	= array_find(($this->options && !$wrap ? $this->options() : []), fn($v, $k)=> $value ? $k == $value : !$k) ?? $value;
 
-			return wpjam_wrap($value, $tag, $tag ? ['class'=>'field-key field-key-'.$key, 'data'=>['val'=>$this->value, 'name'=>$this->name]] : []);
+			return wpjam_wrap($view, $tag, $tag ? ['class'=>'field-key-'.$key, 'data'=>['val'=>$value, 'name'=>$this->name]] : []);
 		}elseif($this->is('hr')){
 			return wpjam_tag('hr');
 		}
 
-		return $this->input()->data(['class'=>$this->class]+array_filter(['label'=>$this->query_label_by_data_type($this->value)]));
+		return $this->el('input')->data($data+array_filter(['class'=>$this->class, 'label'=>$this->value($value)]));
 	}
 
 	public static function parse($field, ...$args){
@@ -760,10 +760,6 @@ class WPJAM_Field extends WPJAM_Attr{
 			$field	+= ['multiple'=>true]+($type == 'select' ? [] : ['unique_items'=>true, 'sortable'=>false]);
 		}
 
-		if(isset($field['propertied'])){	// del 2025-12-30
-			$field['fieldset']	= $field['propertied'] ? 'object' : 'flat';
-		}
-
 		if(!isset($field['wrap_tag']) && in_array($type, ['fieldset', 'mu-fields']) && array_all($field['fields'] ?? [], fn($v)=> empty($v['title']))){
 			$field['wrap_tag']	= 'fieldset';
 		}
@@ -773,11 +769,11 @@ class WPJAM_Field extends WPJAM_Attr{
 		}elseif(in_array($type, ['number', 'url', 'tel', 'email', 'search'])){
 			$field['inputmode']	??= $type == 'number' ? ((($step = $field['step'] ?? '') == 'any' || strpos($step, '.')) ? 'decimal': 'numeric') : $type;
 		}elseif(in_array($type, ['fieldset', 'fields'])){
-			$field['fieldset']	??= (!empty($field['data_type']) || wpjam_pull($field, 'fieldset_type') == 'array') ? 'object' : 'flat';
+			$field['fieldset']	??= (!empty($field['data_type']) || in_array(wpjam_pull($field, 'fieldset_type'), ['array', 'object'])) ? 'object' : 'flat';
 		}elseif($type == 'size'){
 			$field['fieldset']	??= 'object';
 			$field['type']		= 'fields';
-			$field['fields']	= wpjam_fill(['width', 'x', 'height'], fn($k)=> $k == 'x' ? '✖️' : (($v = $field['fields'][$k] ?? []) ? self::parse($v) : [])+['type'=>'number', 'class'=>'small-text']);
+			$field['fields']	= wpjam_fill(['width', 'x', 'height'], fn($k)=> $k == 'x' ? '✖️' : (($v = $field['fields'][$k] ?? []) ? (is_string($v) ? self::parse($v) : $v) : [])+['type'=>'number', 'class'=>'small-text']);
 		}elseif($type == 'checkbox'){
 			if(empty($field['options'])){
 				$field['type']	= 'toggle';
@@ -787,7 +783,6 @@ class WPJAM_Field extends WPJAM_Attr{
 		}elseif($type == 'mu-select' || (!empty($field['multiple']) && $type == 'select')){
 			$field['multiple']	= true;
 			$field['type']		= 'select';
-			$field['direction']	= 'column';
 		}elseif($type == 'tag-input' || (!empty($field['multiple']) && in_array($type, ['text', 'number']))){
 			$field['item_type']	??= $type == 'tag-input' ? 'text' : $type;
 			$field['class']		= 'tag-input';
@@ -804,8 +799,8 @@ class WPJAM_Field extends WPJAM_Attr{
 
 		if($key && !is_numeric($key)){
 			return new WPJAM_Field(wpjam_fill(['id', 'name'], fn($k)=> ($field[$k] ?? '') ?: $key)+$field+([
-				'color'		=> ['label'=>true, 'data-button_text'=>wpjam_pull($field, 'button_text'), 'data-alpha-enabled'=>wpjam_pull($field, 'alpha')],
-				'timestamp' => ['sanitize_callback'=> fn($v)=> $v ? wpjam_strtotime($v) : 0]
+				'color'		=> ['label'=>true, 'data-alpha-enabled'=>wpjam_pull($field, 'alpha')],
+				'timestamp' => ['sanitize_callback'=> fn($v)=> $v ? (is_numeric($v) ? $v : wpjam_strtotime($v)) : '']
 			][$field['type']] ?? []));
 		}
 
@@ -822,6 +817,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 		$parent	= $this->parent;
 		$prop	= $parent && !$parent->is('flat');
 		$data	= [];
+		$fields	= try_remove_suffix($method, '_parts') ? wpjam_filter($this->fields, array_shift($args)) : $this->fields;
 		$method	= $method == 'fields' ? array_shift($args) : $method;
 
 		if($method == 'validate'){
@@ -839,7 +835,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 			$method	= fn()=> $this->disabled ? null : $this->value;
 		}
 
-		foreach($this->fields as $field){
+		foreach($fields as $field){
 			$set	= $field->is('set');
 			$flat	= $field->is('flat');
 
@@ -1001,6 +997,57 @@ class WPJAM_Fields extends WPJAM_Attr{
 		}
 
 		return $items;
+	}
+
+	public function register_meta($type, $subtype=''){
+		$nested	= [];
+
+		foreach($this->fields as $field){
+			if($field->is('fieldset') && $field->is('flat')){
+				$field->register_meta_by_fields($type);
+				continue;
+			}
+
+			if($schema = $field->schema()){
+				$names	= $field->_names;
+
+				if(count($names) > 1){
+					$temp	= &$nested;
+
+					while($n = array_shift($names)){
+						if(empty($names)){
+							$temp[$n]	= $schema;
+						}else{
+							$temp[$n]	??= ['type'=>'object', 'properties'=>[]];
+							$temp		= &$temp[$n]['properties'];
+						}
+					}
+				}else{
+					$default	= $field->get_arg('show_in_rest.default') ?? $field->default;
+					$check		= rest_validate_value_from_schema($default, $schema );
+
+					register_meta($type, $names[0], [
+						'object_subtype'	=> $subtype,
+						'single'			=> true,
+						'type'				=> $schema['type'],
+						'show_in_rest'		=> ['schema'=>$schema],
+						'sanitize_callback'	=> fn($value)=> $field->validate($value)
+					]+(is_wp_error($check) ? [] : ['default'=>$default]));
+				}
+			}
+		}
+
+		wpjam_map($nested, fn($v, $k)=> register_meta($type, $k, [
+			'object_subtype'	=> $subtype,
+			'single'			=> true,
+			'type'				=> 'object',
+			'show_in_rest'		=> ['schema'=>$v],
+			'sanitize_callback'	=> fn($value)=> wpjam_filter($this->validate_parts(fn($v)=> $v->_names[0] === $k, [$k => $value])[$k], fn($v)=> !is_null($v), true)
+		]));
+	}
+
+	public function to_block(){
+		return wpjam_array($this->fields, fn($k, $v)=> [null, $v->schema() ? $v->to_block() : null], true);
 	}
 
 	public static function create($fields, $type='', ...$args){
@@ -1314,9 +1361,9 @@ class WPJAM_Data_Type extends WPJAM_Register{
 
 	public function with_field($action, $value, $field){
 		$method	= $action.'_value';
-		$result	= $this->$method ? $this->call($method.'_by_prop', $value, $field) : (($cb = $this->model.'::with_field') && wpjam_callback($cb) ? wpjam_try($cb, $action, $field, $value) : $value);
+		$res	= $this->$method ? $this->call($method.'_by_prop', $value, $field) : (($cb = $this->model.'::with_field') && wpjam_callback($cb) ? wpjam_try($cb, $action, $field, $value) : $value);
 
-		return $action == 'validate' && is_null($result) ? wpjam_throw('invalid_field_value', $field->_title.'「'.$value.'」的值无效') : $result;
+		return $action == 'validate' && is_null($res) ? wpjam_throw('invalid_field_value', $field->_title.'「'.$value.'」的值无效') : $res;
 	}
 
 	public function query_label($value){
@@ -1340,8 +1387,8 @@ class WPJAM_Data_Type extends WPJAM_Register{
 
 		if($this->model){
 			$args	= isset($args['model']) ? wpjam_except($args, ['data_type', 'model', 'label_field', 'id_field']) : $args;
-			$result	= wpjam_try($this->model.'::query_items', $args, 'items');
-			$items	= wp_is_numeric_array($result) ? $result : ($result['items'] ?? []);
+			$res	= wpjam_try($this->model.'::query_items', $args, 'items');
+			$items	= wp_is_numeric_array($res) ? $res : ($res['items'] ?? []);
 
 			return $this->label_field ? wpjam_column($items, ['label'=>$this->label_field, 'value'=>$this->id_field]) : $items;
 		}

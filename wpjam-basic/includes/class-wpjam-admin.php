@@ -10,7 +10,7 @@ class WPJAM_Admin extends WPJAM_Args{
 
 	public function error($msg='', $type='success'){
 		if($msg === ''){
-			return wpjam_map($this->error ?: [], fn($e)=> wpjam_echo(wpjam_tag('div', ['is-dismissible', 'notice', 'notice-'.$e['type']], ['p', [], $e['msg']])));	
+			return wpjam_map($this->error ?: [], fn($e)=> wpjam_echo(wpjam_tag('div', ['is-dismissible', 'notice', 'notice-'.$e['type']], ['p', [], $e['msg']])));
 		}
 
 		if(is_wp_error($msg)){
@@ -31,9 +31,10 @@ class WPJAM_Admin extends WPJAM_Args{
 		wp_localize_script('wpjam-script', 'wpjam_page_setting', array_map('maybe_closure', $this->vars)+[
 			'admin_url'	=> $GLOBALS['current_admin_url'],
 			'loading'	=> includes_url('js/thickbox/loadingAnimation.gif'),
-		]+$this->pick(['query_data', 'query_url']));
+		]+$this->pick(['query_data', 'query_url', 'block']));
 
-		wp_enqueue_script('wpjam-form', $static.'/form.js',	['wpjam-script'], $ver);
+		$this->block && wp_enqueue_script('wpjam-blocks', $static.'/blocks.js', ['wp-plugins', 'wp-editor', 'wp-element', 'wp-components', 'wp-data'], '1.0', true);
+
 		wp_enqueue_style('wpjam-style', $static.'/style.css', ['wp-color-picker', 'editor-buttons'], $ver);
 
 		$this->style	&& wp_add_inline_style('wpjam-style', "\n".implode("\n\n", array_filter($this->style)));
@@ -96,28 +97,24 @@ class WPJAM_Admin extends WPJAM_Args{
 			if($this->plugin_page){
 				$page	= $this->plugin_page->name;
 				$tab	= ($tab = $this->current_tab) ? $tab->name : '';
+				$pv		= $load['plugin_page'] ?? '';
+				$tv		= $load['current_tab'] ?? '';
 
-				if(!empty($load['plugin_page'])){
-					if(is_callable($load['plugin_page'])){
-						return $load['plugin_page']($page, $tab);
-					}
-
-					if(!wpjam_compare($page, $load['plugin_page'])){
-						return false;
-					}
+				if($pv && is_callable($pv)){
+					return $pv($page, $tab);
 				}
 
-				return empty($load['current_tab']) ? !$tab : ($tab && wpjam_compare($tab, $load['current_tab']));
+				if($pv && !wpjam_compare($page, $pv)){
+					return false;
+				}
+
+				return $tv ? ($tab && wpjam_compare($tab, $tv)) : !$tab;
 			}else{
-				if(!empty($load['screen']) && is_callable($load['screen']) && !$load['screen']($this->screen)){
+				if(($sv = $load['screen'] ?? '') && is_callable($sv) && !$sv($this->screen)){
 					return false;
 				}
 
-				if(array_any(['base', 'post_type', 'taxonomy'], fn($k)=> !empty($load[$k]) && !wpjam_compare($this->screen->$k, $load[$k]))){
-					return false;
-				}
-
-				return true;
+				return array_all(['base', 'post_type', 'taxonomy'], fn($k) => empty($load[$k]) || wpjam_compare($this->screen->$k, $load[$k]));
 			}
 		}), 'order', 'desc', 10) as $load){
 			wpjam_map((array)($load['page_file'] ?? []), fn($file)=> is_file($file) && include $file);
@@ -132,15 +129,13 @@ class WPJAM_Admin extends WPJAM_Args{
 	}
 
 	public function builtin(){
-		$base		= $this->screen->base;
-		$typenow	= $GLOBALS['typenow'];
-		$taxnow		= $GLOBALS['taxnow'];
+		$base	= $this->screen->base;
+		$type	= $GLOBALS['typenow'];
+		$tax	= $GLOBALS['taxnow'];
 
-		if($base == 'upload' && (wpjam_get_parameter('mode') ?: get_user_option('media_library_mode', get_current_user_id())) != 'list'){
-			return;
-		}
-
-		if(in_array($base, ['edit', 'upload'])){
+		if($base == 'edit'
+			|| ($base == 'upload' && (wpjam_get_parameter('mode') ?: get_user_option('media_library_mode', get_current_user_id())) === 'list')
+		){
 			$object	= wpjam_admin('type_object');
 
 			WPJAM_Builtin_List_Table::load(wpjam_pick($object, ['title', 'model', 'hierarchical'])+[
@@ -149,31 +144,44 @@ class WPJAM_Admin extends WPJAM_Args{
 				'singular'		=> 'post',
 				'data_type'		=> 'post_type',
 				'meta_type'		=> 'post',
-				'post_type'		=> $typenow,
+				'post_type'		=> $type,
 			]);
 		}elseif($base == 'post'){
 			$object	= wpjam_admin('type_object');
+			$size	= $object->thumbnail_size;
+			$label	= $object->_jam ? $object->labels->name : '';
 
-			if($label = in_array($typenow, ['post', 'page', 'attachment']) ? '' : $object->labels->name){
-				add_filter('post_updated_messages', fn($ms)=> $ms+[$typenow=> array_map(fn($m)=> str_replace('文章', $label, $m), $ms['post'])]);
+			$size	&& add_filter('admin_post_thumbnail_html', fn($content)=> $content.wpautop('尺寸：'.$size));
+			$label	&& add_filter('post_updated_messages', fn($ms)=> $ms+[$type=> array_map(fn($m)=> str_replace('文章', $label, $m), $ms['post'])]);
+
+			$options	= wpjam_get_post_options($type, ['list_table'=>false]);
+
+			if(use_block_editor_for_post_type($type) && post_type_supports($type, 'custom-fields')){
+				foreach($options as $name => $option){
+					if(($option->modal || $option->context === 'side') && wpjam_is_assoc_array($option->fields)){
+						$fields	= wpjam_fields($option->fields)->to_block();
+						$fields	&& $this->update_arg('block[panels][]', wpjam_pick($option, ['title', 'modal'])+compact('name', 'fields'));
+
+						unset($options[$name]);
+					}
+				}
 			}
 
-			if($size = $object->thumbnail_size){
-				add_filter('admin_post_thumbnail_html', fn($content)=> $content.wpautop('尺寸：'.$size));
-			}
+			if($options){
+				$this->meta_options	= $options;
 
-			if(use_block_editor_for_post_type($typenow)){
-				wpjam_admin('vars[block][panels]') && add_action('enqueue_block_editor_assets', fn()=> wp_enqueue_script('wpjam-blocks', wpjam_url(dirname(__DIR__), 'relative').'/static/blocks.js', ['wpjam-script', 'wp-plugins', 'wp-editor', 'wp-element', 'wp-components', 'wp-data'], '1.0', true));
+				add_action('add_meta_boxes',		[$this, 'meta_options'], 10, 2);
+				add_action('wp_after_insert_post',	[$this, 'meta_options'], 999);
 			}
-
-			add_action('add_meta_boxes',		[$this, 'meta_options'], 10, 2);
-			add_action('wp_after_insert_post',	[$this, 'meta_options'], 999);
 		}elseif(in_array($base, ['term', 'edit-tags'])){
 			$object	= wpjam_admin('tax_object');
-			
-			if($label = in_array($taxnow, ['post_tag', 'category']) ? '' : $object->labels->name){
-				add_filter('term_updated_messages', fn($ms)=> $ms+[$taxnow=> array_map(fn($m)=> str_replace(['项目', 'Item'], [$label, ucfirst($label)], $m), $ms['_item'])]);
-			}
+			$label	= $object->_jam ? $object->labels->name : '';
+
+			$label	&& add_filter('term_updated_messages', fn($ms)=> $ms+[$tax=> array_map(fn($m)=> str_replace(['项目', 'Item'], [$label, ucfirst($label)], $m), $ms['_item'])]);
+
+			$this->meta_options	= wpjam_get_term_options($tax, ['list_table'=>false]);
+
+			add_action($tax.'_'.($base == 'term' ? 'edit' : 'add').'_form_fields', [$this, 'meta_options'], 10, 2);
 
 			if($base == 'edit-tags'){
 				wpjam_map(['slug', 'description'], fn($sup)=> $object->supports($sup) || wpjam_admin('removed_columns[]', $sup));
@@ -190,12 +198,10 @@ class WPJAM_Admin extends WPJAM_Args{
 					'singular'		=> 'tag',
 					'data_type'		=> 'taxonomy',
 					'meta_type'		=> 'term',
-					'taxonomy'		=> $taxnow,
-					'post_type'		=> $typenow,
+					'taxonomy'		=> $tax,
+					'post_type'		=> $type,
 				]);
 			}
-
-			add_action($taxnow.'_'.($base == 'edit-tags' ? 'add' : 'edit').'_form_fields', [$this, 'meta_options'], 10, 2);
 		}elseif($base == 'users'){
 			WPJAM_Builtin_List_Table::load([
 				'title'			=> '用户',
@@ -210,9 +216,11 @@ class WPJAM_Admin extends WPJAM_Args{
 	}
 
 	public function meta_options(...$args){
-		$hook	= current_filter();
+		$hook		= current_filter();
+		$base		= $this->screen->base;
+		$options	= $this->meta_options;
 
-		if($this->screen->base == 'post'){
+		if($base == 'post'){
 			if($hook === 'add_meta_boxes'){
 				$type	= $args[0];
 				$pid	= $args[1]->ID;
@@ -227,8 +235,6 @@ class WPJAM_Admin extends WPJAM_Args{
 					return;
 				}
 			}
-
-			$objects	= array_filter(wpjam_get_post_options($type, ['list_table'=>false]), fn($v)=> ($v->meta_box_cb || ($v->fields = $v->get_fields($pid, ''))) && (!use_block_editor_for_post_type($type) || $v->context !== 'side'));
 		}else{
 			if($hook == 'pre_insert_term'){
 				$action	= 'validate';
@@ -244,21 +250,26 @@ class WPJAM_Admin extends WPJAM_Args{
 				$tax	= get_term_field('taxonomy', $args[0]);
 			}
 
-			$objects	= wpjam_get_term_options($tax, ['list_table'=>false, 'action'=>str_contains($hook, 'edit') ? 'edit' : 'add']);
+			$options	= wpjam_filter($options, ['action'=>['value'=>str_contains($hook, 'edit') ? 'edit' : 'add', 'if_null'=>true]]);
 		}
 
-		foreach($objects as $object){
+		foreach($options as $option){
+			if($base == 'post'){
+				$context	= $option->context ?: 'normal';
+
+				if(!($cb = $option->meta_box_cb)){
+					if(!($option->fields = $option->get_fields($pid))){
+						continue;
+					}
+
+					$cb	= fn()=> $option->render($id, ['fields_type'=>($context === 'side' ? 'list' : 'table')]);
+				}
+			}
+
 			if($hook === 'add_meta_boxes'){
-				add_meta_box(
-					$object->name,
-					$object->title,
-					$object->meta_box_cb ?: fn()=> $object->render($id, ['fields_type'=>($object->context === 'side' ? 'list' : 'table')]),
-					$type,
-					$object->context ?: 'normal',
-					$object->priority
-				);
+				add_meta_box($option->name, $option->title, $cb, $type, $context, $option->priority);
 			}else{
-				wpjam_trap([$object, $action], ...[...$args, 'die']);
+				wpjam_trap([$option, $action], ...[...$args, 'die']);
 			}
 		}
 	}
@@ -269,12 +280,6 @@ class WPJAM_Admin extends WPJAM_Args{
 		}
 
 		if(wp_doing_ajax()){
-			$screen	= $_POST['screen_id'] ?? ($_POST['screen'] ?? '');
-
-			if(!$screen){
-				return;
-			}
-
 			wpjam_ajax('wpjam-page-action', [
 				'admin'			=> true,
 				'nonce_action'	=> fn($data)=> $data['page_action'] ?? '',
@@ -284,14 +289,20 @@ class WPJAM_Admin extends WPJAM_Args{
 			wpjam_ajax('wpjam-query', [
 				'admin'		=> true,
 				'fields'	=> ['data_type'=> ['required'=>true]],
-				'callback'	=> fn($data)=> ['items'=>($cb = [wpjam_get_data_type($data['data_type'], $data['query_args']), 'query_items'])[0] ? wpjam_try($cb, $data['query_args']) : []]
+				'callback'	=> fn($data)=> ['items'=> wpjam_try([wpjam_get_data_type($data['data_type'], $data['query_args']), isset($data['include']) ? 'query_label' : 'query_items'], $data['include'] ?? $data['query_args'])]
 			]);
 
 			wpjam_ajax('wpjam-upload', [
 				'admin'			=> true,
-				'nonce_action'	=> fn($data)=> 'upload-'.$data['name'],
-				'callback'		=> fn($data)=> wpjam_upload($data['name'], ['accept'=>$data['accept']])
+				'nonce_action'	=> fn($data)=> 'upload-'.$data['name'].'-'.$data['accept'],
+				'callback'		=> fn($data)=> wpjam_upload($data['filename'] ?? $data['name'], $data)
 			]);
+
+			$screen	= $_POST['screen_id'] ?? ($_POST['screen'] ?? '');
+
+			if(!$screen){
+				return;
+			}
 
 			$page	= $GLOBALS['plugin_page'] = $_POST['plugin_page'] ?? '';
 			$part	= $page ? wpjam_at($screen, '_page_'.$page, 1) : $screen;
@@ -333,6 +344,7 @@ class WPJAM_Admin extends WPJAM_Args{
 				add_action($object->prefix().'admin_menu',	[$object, 'init'], 9);
 
 				add_filter('wpjam_html', fn($html)=> str_replace('dashicons-before dashicons-ri-', 'ri-', $html));
+				add_filter('admin_body_class', fn($class)=> $class.(version_compare($GLOBALS['wp_version'], '7.0', '<' ) ? ' wpjam-legacy' : ''));
 			}
 		}
 
@@ -476,7 +488,7 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 			in_array($data_type, ['post_type', 'taxonomy']) && $this->$data_type && !wpjam_admin('screen', $data_type) && wpjam_admin('screen', $data_type, $this->$data_type);
 		}
 
-		$this->actions	&& wpjam_map($this->actions, 'wpjam_register_page_action', 'kv');	
+		$this->actions	&& wpjam_map($this->actions, 'wpjam_register_page_action', 'kv');
 		$this->chart	&& wpjam_chart(is_array($this->chart) ? $this->chart : []);
 		$this->editor	&& add_action('admin_footer', 'wp_enqueue_editor');
 
@@ -730,7 +742,7 @@ class WPJAM_Chart extends WPJAM_Args{
 
 	public function get_parameter($key, $args=[]){
 		if(is_array($key)){
-			return wpjam_fill($key, fn($k)=> $this->get_parameter($k, $args));	
+			return wpjam_fill($key, fn($k)=> $this->get_parameter($k, $args));
 		}
 
 		if(str_contains($key, 'timestamp')){

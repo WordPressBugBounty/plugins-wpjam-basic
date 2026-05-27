@@ -181,9 +181,8 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			JS : "wpjam.list_table.ajax 	= false;\n");
 
 			$base == 'edit' && wpjam_script(<<<'JS'
-			wpjam.add_extra_logic(inlineEditPost, 'setBulk', ()=> $('#the-list').trigger('bulk_edit'));
-
-			wpjam.add_extra_logic(inlineEditPost, 'edit', function(id){
+			inlineEditPost.setBulk	= wpjam.enhance(inlineEditPost.setBulk, ()=> $('#the-list').trigger('bulk_edit'));
+			inlineEditPost.edit		= wpjam.enhance(inlineEditPost.edit, function(id){
 				return ($('#the-list').trigger('quick_edit', typeof(id) === 'object' ? this.getId(id) : id), false);
 			});
 			JS);
