@@ -433,42 +433,36 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		add_filter('pre_term_link',	fn($link, $term)=> in_array($term->taxonomy, wpjam('no_base_taxonomy[]')) ? '%'.$term->taxonomy.'%' : str_replace('%term_id%', $term->term_id, $link), 1, 2);
 
 		!is_admin() && add_filter('request', function($vars){
-			$structure	= get_option('permalink_structure');
+			$struct		= get_option('permalink_structure');
 			$request	= $GLOBALS['wp']->request;
+			$no_base	= wpjam('no_base_taxonomy[]');
 
-			if(!$structure || !$request || isset($vars['module']) || !wpjam('no_base_taxonomy[]')){
+			if(!$struct || !$request || !$no_base || isset($vars['module'])){
 				return $vars;
 			}
 
 			if(preg_match("#(.?.+?)/page/?([0-9]{1,})/?$#", $request, $matches)){
-				$request	= $matches[1];
-				$paged		= $matches[2];
+				[, $request, $paged]	= $matches;
 			}
 
 			if($GLOBALS['wp_rewrite']->use_verbose_page_rules){
-				if(!empty($vars['error']) && $vars['error'] == '404'){
+				if(($vars['error'] ?? '') == '404'){
 					$key	= 'error';
-				}elseif(str_contains($structure, '/%postname%')){
-					$key	= !empty($vars['name']) ? 'name' : '';
+				}elseif(str_contains($struct, '/%postname%') && !empty($vars['name'])){
+					$key	= 'name';
 				}elseif(!str_contains($request, '/')){
-					$type	= array_find(['author', 'category'], fn($k)=> str_starts_with($structure, '/%'.$k.'%'));
-					$key	= $type && !str_starts_with($request, $type.'/') && !empty($vars[$type.'_name']) ? [$type.'_name', 'name'] : '';
+					$type	= array_find(['author', 'category'], fn($k)=> str_starts_with($struct, '/%'.$k.'%'));
+					$key	= $type && !empty($vars[$type.'_name']) ? [$type.'_name', 'name'] : '';
 				}
-			}elseif(!empty($vars['pagename']) && !isset($_GET['page_id']) && !isset($_GET['pagename'])){
-				$key	= 'pagename';
+			}else{
+				$key	= !empty($vars['pagename']) && !isset($_GET['page_id']) && !isset($_GET['pagename']) ? 'pagename' : '';
 			}
 
-			if(!empty($key)){
-				foreach(wpjam('no_base_taxonomy[]') as $tax){
-					$name	= is_taxonomy_hierarchical($tax) ? wp_basename($request) : $request;
+			foreach(!empty($key) ? $no_base : [] as $tax){
+				$name	= is_taxonomy_hierarchical($tax) ? wp_basename($request) : $request;
 
-					if(array_find(wpjam_get_all_terms($tax), fn($term)=> $term->slug == $name)){
-						$vars	= wpjam_except($vars, $key);
-						$vars	= ($tax == 'category' ? ['category_name'=>$name] : ['taxonomy'=>$tax, 'term'=>$name])+$vars;
-						$vars	= array_filter(['paged'=>$paged ?? 0])+$vars;
-
-						break;
-					}
+				if(array_find(wpjam_get_all_terms($tax), fn($term)=> $term->slug == $name)){
+					return ($tax == 'category' ? ['category_name'=>$name] : ['taxonomy'=>$tax, 'term'=>$name])+array_filter(['paged'=>$paged ?? 0])+wpjam_except($vars, $key);
 				}
 			}
 

@@ -868,6 +868,7 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	public function render($page){
 		$nav	= $page->tab_slug ? '' : wpjam_tag('h2', ['nav-tab-wrapper', 'wp-clearfix']);
 		$form	= wpjam_tag('form', ['method'=>'POST', 'id'=>'wpjam_option', 'novalidate']);
+		$tabs	= [];
 
 		foreach($this->get_sections() as $id => $sec){
 			$nav && $nav->append('a', ['class'=>'nav-tab', 'href'=>'#tab_'.$id, 'data'=>wpjam_pick($sec, ['show_if'])], $sec['title']);

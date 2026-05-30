@@ -53,7 +53,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 6.9.6 =
+= 7.0 =
 * 新增古腾堡编辑器组件渲染（侧边栏/弹窗）
 * 去掉 jQuery UI Tab，使用 hashchange 实现 Tab 切换
 * WPJAM_Field 没有 options 的 checkbox 的类型统一为 toggle

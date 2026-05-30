@@ -343,8 +343,11 @@ class WPJAM_Admin extends WPJAM_Args{
 			}else{
 				add_action($object->prefix().'admin_menu',	[$object, 'init'], 9);
 
-				add_filter('wpjam_html', fn($html)=> str_replace('dashicons-before dashicons-ri-', 'ri-', $html));
-				add_filter('admin_body_class', fn($class)=> $class.(version_compare($GLOBALS['wp_version'], '7.0', '<' ) ? ' wpjam-legacy' : ''));
+				add_filter('wpjam_html', fn($html)=> str_replace(
+					['dashicons-before dashicons-ri-', '/wp-admin/page='],
+					['ri-', '/wp-admin/admin.php?page='],
+					$html
+				));
 			}
 		}
 

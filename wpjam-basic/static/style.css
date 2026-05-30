@@ -429,6 +429,7 @@ input[type=checkbox].switch{
 
 	&:is(input){
 		min-width:var(--line-height);
+		max-width:calc(98vw);
 		width:unset !important;
 	}
 

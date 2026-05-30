@@ -295,7 +295,6 @@ class WPJAM_List_Table extends WP_List_Table{
 			'subtitle'	=> $this->get_subtitle_by_model().($s ? sprintf(__('Search results for: %s', 'wpjam'), '<strong>'.esc_html($s).'</strong>') : ''),
 			'summary'	=> $this->get_summary_by_model(),
 
-			'column_count'		=> [$this, ($this->builtin ? 'builtin_' : '').'get_column_count'](),
 			'bulk_actions'		=> array_map(fn($v)=> array_filter($v->get_data_attr(['bulk'=>true])), $this->bulk_actions ?: []),
 			'overall_actions'	=> array_values($this->get_action(array_diff($this->overall_actions ?: [], $this->next_actions ?: []), ['class'=>'button overall-action']))
 		];
