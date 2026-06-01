@@ -759,10 +759,10 @@ jQuery(function($){
 
 		let args	= {
 			...(wp.media.view.settings.post.id && {frame: 'post'}),
-			multiple: mu,
-			id		: 'uploader_'+this.prop('id'),
-			title	: btn,
-			library	: {type : ['img', 'image'].includes(type) ? 'image' : item_type},
+			id: 		'uploader_'+this.prop('id'),
+			multiple:	mu,
+			title:		btn,
+			library	:	{type : ['img', 'image'].includes(type) ? 'image' : item_type},
 			// button	: {text: title}
 		};
 
@@ -778,7 +778,7 @@ jQuery(function($){
 					alert('最多可以选择'+rest+'个');
 				}
 			});
-		}).on((args.frame == 'post' ? 'insert' : 'select'), function(){
+		}).on('insert select', function(){
 			frame.state().get('selection').map((attachment)=> {
 				let data	= attachment.toJSON();
 				let qs		= $.param(_.pick(data, 'orientation', 'width', 'height'));
