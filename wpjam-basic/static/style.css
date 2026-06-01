@@ -429,8 +429,9 @@ input[type=checkbox].switch{
 
 	&:is(input){
 		min-width:var(--line-height);
-		max-width:calc(98vw);
 		width:unset !important;
+
+		&.regular-text{min-width:25em;}
 	}
 
 	&:is(textarea){
@@ -679,24 +680,40 @@ label.image-radio{
 	}
 }
 
-div.plupload{
-	position:relative;
-	display:flex;
+div.wpjam-uploader{
+	display:inline-flex;
 	justify-content:flex-start;
 	align-items:center;
 
-	.button{margin-right:6px;}
+	.button{
+		margin-right:6px;
+	}
 
-	&:has(div.progress) .button{display:none;}
+	&:has(div.progress) .button{
+		display:none;
+	}
 
-	div.progress{margin:0 6px;}
+	div.progress{
+		margin:0 6px;
+	}
 
-	&.drag-drop .drag-drop-area{
+	&.drag-drop{
 		border:4px dashed #c3c4c7;
 		height:200px;
 		width:98%;
+		display:grid;
+		align-content:center;
+		text-align:center;
+		justify-content:stretch;
+		gap:10px;
 
-		.drag-drop-inside{width:initial;}
+		.media-item{
+			display:inline-block;
+		}
+
+		.drag-drop-info{
+			font-size:20px;
+		}
 	}
 }
 

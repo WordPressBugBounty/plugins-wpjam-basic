@@ -29,8 +29,9 @@ class WPJAM_Admin extends WPJAM_Args{
 		wp_enqueue_script('wpjam-script', $static.'/script.js', ['wp-color-picker', 'jquery-ui-autocomplete', ...(wp_is_mobile() ? ['jquery-touch-punch'] : [])], $ver);
 
 		wp_localize_script('wpjam-script', 'wpjam_page_setting', array_map('maybe_closure', $this->vars)+[
-			'admin_url'	=> $GLOBALS['current_admin_url'],
-			'loading'	=> includes_url('js/thickbox/loadingAnimation.gif'),
+			'upload_files'	=> current_user_can('upload_files'),
+			'admin_url'		=> $GLOBALS['current_admin_url'],
+			'loading'		=> includes_url('js/thickbox/loadingAnimation.gif'),
 		]+$this->pick(['query_data', 'query_url', 'block']));
 
 		$this->block && wp_enqueue_script('wpjam-blocks', $static.'/blocks.js', ['wp-plugins', 'wp-editor', 'wp-element', 'wp-components', 'wp-data'], '1.0', true);
