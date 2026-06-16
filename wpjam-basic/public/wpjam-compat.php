@@ -922,6 +922,22 @@ function wpjam_get_chart_parameter(...$args){
 	return wpjam_chart('get_parameter', ...$args);
 }
 
+function wpjam_method_allow($method){
+	return ($m = $_SERVER['REQUEST_METHOD']) == strtoupper($method) ? true : wp_die('method_not_allow', '接口不支持 '.$m.' 方法，请使用 '.$method.' 方法！');
+}
+
+function wpjam_get_post_parameter($name='', $args=[]){
+	return wpjam_get_parameter($name, $args, 'POST');
+}
+
+function wpjam_get_data_parameter($name='', $args=[]){
+	return wpjam_get_parameter($name, $args, 'data');
+}
+
+function wpjam_get_request_parameter($name='', $args=[]){
+	return wpjam_get_parameter($name, $args, 'REQUEST');
+}
+
 function wpjam_stats_header($args=[]){
 	global $wpjam_stats_labels;
 
@@ -929,9 +945,7 @@ function wpjam_stats_header($args=[]){
 
 	$object	= WPJAM_Chart::get_instance($args);
 
-	if(array_get($args, 'show_form') !== false){
-		echo $object->render();
-	}
+	echo $object->render();
 
 	// do_action('wpjam_stats_header');
 

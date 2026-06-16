@@ -197,11 +197,10 @@ function wpjam_get_cron($hook){
 }
 
 function wpjam_schedule_event($hook, $data){
-	$data	+= ['timestamp'=>time(), 'args'=>[], 'recurrence'=>false];
-	$args	= $data['recurrence'] ? [$data['recurrence']] : [];
-	$cb		= $args ? 'wp_schedule_event' : 'wp_schedule_single_event';
+	$args	= array_filter([$data['recurrence'] ?? '']);
+	$cb		= 'wp_schedule_'.($args ? '' : 'single_').'event';
 
-	return $cb($data['timestamp'], ...[...$args, $hook, $data['args']]);
+	return $cb($data['timestamp'] ?? time(), ...[...$args, $hook, $data['args'] ?? []]);
 }
 
 function wpjam_is_scheduled_event($hook){	// 不用判断参数

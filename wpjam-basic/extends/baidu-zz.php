@@ -104,7 +104,7 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 		}
 
 		$per_page	= 500;
-		$offset		= (int)wpjam_get_data_parameter('offset',	['default'=>0]);
+		$offset		= (int)wpjam_get_parameter('offset', 'data');
 		$query		= new WP_Query([
 			'post_type'			=> 'any',
 			'post_status'		=> 'publish',
@@ -150,7 +150,7 @@ class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
 			return;
 		}
 
-		self::submit_post($post_id, (wpjam_get_post_parameter('baidu_zz_daily') ? 'daily' : ''));
+		self::submit_post($post_id, (wpjam_get_parameter('baidu_zz_daily', 'post') ? 'daily' : ''));
 	}
 
 	public static function on_post_submitbox_misc_actions(){ ?>

@@ -65,15 +65,14 @@ jQuery(function($){
 
 		let id		= this.attr('id');
 		let name	= this.attr('name')+(mu ? '[]' : '');
+		let $wrap;
 
 		if(type == 'color'){
-			let $picker	= this.attr('type', 'text').val(value).wpColorPicker().closest('.wp-picker-container');
-			let show_if	= $picker.append($picker.next('.description')).find('[data-show_if]').attr('data-show_if');
+			$wrap	= this.attr('type', 'text').addClass('expandable').val(value).wpColorPicker().closest('.wp-picker-container');
 
-			$('<label>').prependTo($picker).append(['.before', '> button', '> span', '.after'].map(s => $picker.find(s)));
+			$wrap.prepend($('<label>').append(['.before', '> button', '> span', '.after'].map(s => $wrap.find(s)))).append($wrap.next('.description'));
 
-			show_if	&& $picker.attr('data-show_if', show_if);
-			btn		&& $picker.find('.wp-color-result-text').text(btn);
+			btn && $wrap.find('.wp-color-result-text').text(btn);
 		}else if(type == 'timestamp'){
 			if(value){
 				let pad2	= num => (num.toString().length < 2 ? '0' : '')+num;
@@ -87,36 +86,34 @@ jQuery(function($){
 			value && this.prop('checked', true);
 		}else if(['img', 'image', 'file'].includes(type)){
 			if(!this.closest('.wpjam-'+type)[0]){
-				this.wrap($('<div>', {class: 'wpjam-'+type}));
+				$wrap	= this.wrap('<div class="wpjam-'+type+'">').parent();
 
-				if(wpjam.upload_files){
-					this.after('<a class="add-media button"><span class="dashicons dashicons-admin-media"></span>'+btn+'</a>');
-				
-					(type == 'img' ? this.parent() : this.next('a.button')).on('click.wpjam', (e)=> {
-						$(e.target).is('.del-img') ? this.data('value', '').wpjam_field() : this.wpjam_media(value => this.data('value', value).wpjam_field());
-					});
-				}else{
-					this.prop('disabled', true).addClass('disabled');
+				if(!wpjam.upload_files){
+					this.prop('disabled', true);
+					$wrap.addClass('disabled');
 				}
+
+				this.after('<a class="add-media button"><span class="dashicons dashicons-admin-media"></span>'+btn+'</a>');
+			
+				(type == 'img' ? this.parent() : this.next('a.button')).on('click.wpjam', (e)=> {
+					$(e.target).is('.del-img') ? this.data('value', '').wpjam_field() : this.wpjam_media(value => this.data('value', value).wpjam_field());
+				});
 			}
 
 			if(type == 'img'){
 				this.prevAll('img, a.del-img')[value ? 'remove' : 'wpjam_remove']();
-				this.val(value ? value.value : '').before(value ? [
-					$('<img>', {src: value.url+data.thumb_args}),
-					this.prop('disabled') ? '' : $('<a>', {class: 'del-img dashicons dashicons-no-alt'})
-				] : '');
+				this.val(value ? value.value : '').before(value ? '<img src="'+value.url+data.thumb_args+'" /><a class="del-img dashicons dashicons-no-alt"></a>' : '');
 			}else{
-				this.val(value).next('a.button');
+				this.val(value);
 			}
 		}else if(type == 'uploader'){
-			let $wrap	= this.add(this.prev('.before')).add(this.next('.after')).wrapAll('<div class="wpjam-uploader">').parent().addClass(this.attr('disabled'));
+			$wrap	= this.add(this.prev('.before')).add(this.next('.after')).wrapAll('<div class="wpjam-uploader">').parent();
 
-			this.before($('<label class="button">'+btn+'</label>').append($('<input type="file">').attr({accept: data.params.accept}).hide().on('change', e => {
+			this.before($('<label class="button">'+btn+'</label>').append($('<input type="file" accept="'+this.attr('accept')+'" hidden>').on('change', e => {
 				e.target.files[0] && this.wpjam_upload(e.target.files[0]);
-				$(e.target).val('');
+				e.target.value	= '';
 			})));
-
+	
 			data.drag_drop && $wrap.addClass('drag-drop').append([
 				'<p class="drag-drop-info">'+wp.i18n.__('Drop files to upload', 'default')+'</p>',
 				$('<p class="drag-drop-buttons"></p>').append(this)
@@ -148,7 +145,7 @@ jQuery(function($){
 			let keys	= ['data-data_type', 'data-query_args', 'data-filter_key'];
 			let attr	= _.object(keys, _.map(keys, k => this.attr(k)));
 
-			this.removeAttr(keys.join(' '));
+			this.addClass('wpjam-cascade').removeAttr(keys.join(' '));
 
 			_.each(data.options, (options, i)=> {
 				let $select	= $('<select>', {id: id+'_'+i, name: name+'[]'}).addClass('field-key-'+key+'_'+i).appendTo(this).wpjam_options(options);
@@ -187,7 +184,7 @@ jQuery(function($){
 			if(this.is('select')){
 				this.val(value != null && this.find(`option[value="${value}"]`)[0] ? value : this.find('option:first').val());
 			}else{
-				let $btn	= type === 'select' && $('<button>', {type: 'button', text: data.show_option_all, popovertarget: id+'_options'}).insertBefore(this.attr('popover', 'auto').wrap('<div class="mu-select"></div>'));
+				let $btn	= type === 'select' && $('<button>', {type: 'button', text: data.show_option_all || '请选择'}).prop('popoverTargetElement', this[0]).insertBefore(this.attr('popover', 'auto').wrap('<div class="mu-select"></div>'));
 
 				this.addClass('wpjam-choice direction-'+(data.direction || ($btn || data.sep ? 'column' : 'row')));
 
@@ -198,7 +195,7 @@ jQuery(function($){
 
 					$el.closest('label').toggleClass('checked', $el.is(':checked'));
 
-					$btn && $btn.text(this.find('label.checked').toArray().map(el => $(el).text().trim()).join(', ') || this.data('show_option_all'));
+					$btn && $btn.text(this.find('label.checked').toArray().map(el => $(el).text().trim()).join(', ') || data.show_option_all || '请选择');
 				});
 
 				this.find(':checkbox')[0] && this.attr('data-validation', true).on('validate.wpjam', (e)=> {
@@ -224,10 +221,18 @@ jQuery(function($){
 			this.is('.tiny-text, .small-text') && this.addClass('expandable');
 		}
 
+		if($wrap){
+			let show_if	= $wrap.find('[data-show_if]').attr('data-show_if');
+
+			show_if	&& $wrap.attr('data-show_if', show_if);
+
+			$wrap.addClass(['disabled', 'readonly', 'hidden'].filter(v => this.hasClass(v)));
+		}
+
 		return this.removeAttr('data-value data-options data-custom');
 	};
 
-	$.fn.wpjam_field.selector	= 'input[data-type], textarea[data-type], [data-type][data-options]';
+	$.fn.wpjam_field.selector	= 'input[data-type], select[data-type], textarea[data-type], fieldset[data-type]';
 
 	$.fn.wpjam_options = function(options){
 		let $field	= this.data('type') ? this : this.closest('[data-type]');
@@ -238,16 +243,14 @@ jQuery(function($){
 		let select	= $field.is('select') || type === 'cascade';
 
 		if(type === 'cascade'){
-			options	= [{value: '', label: $field.data('show_option_all')}, ...options];
+			options	= [{value: '', label: $field.data('show_option_all') || '请选择'}, ...options];
 		}
 
 		return this.append(options.map((opt, i) => {
-			let s	= select || i == options.length - 1 ? '' : sep;
-
 			if(opt.options){
-				let {label: gl, options: go, data: gd={}, ...ga}	= opt;
+				let {options: go, data={}, ...attr}	= opt;
 
-				return (select ? $('<optgroup>').attr('label', gl) : $('<label>').text(gl).append('<br />').after(s)).attr(ga).wpjam_data(gd).appendTo(this).wpjam_options(go);
+				return select ? $('<optgroup>').attr(attr).wpjam_data(data).appendTo(this).wpjam_options(go) : '';
 			}
 
 			let {label, alias, description, image, class: cls, data={}, ...attr}	= opt;
@@ -275,30 +278,34 @@ jQuery(function($){
 
 			image && $el.addClass('image-'+$input.attr('type')).append(([].concat(image)).slice(0, 2).map(src => $('<img>').attr({src, alt: label})));
 
-			return $el.append(label).after(s);
+			return $el.append(label).after(select || i == options.length - 1 ? '' : sep);
 		}));
 	};
 
 	$.fn.wpjam_upload	= function(file){
-		let max_size	= this.data('max_size');
-		let params		= this.data('params');
+		let {max_size, key: name, nonce}	= this.data();
 
 		if(max_size && file.size > max_size){
 			return alert('文件大小不能超过 '+Math.round(max_size/1024/1024)+'MB');
 		}
 
-		let $progress	= $('<div class="media-item"><div class="progress"><div class="percent">0%</div><div class="bar"></div></div></div>');
-
-		this.after($progress).prev('span').remove();
+		this.after('<div class="media-item"><div class="progress"><div class="percent">0%</div><div class="bar"></div></div></div>').prev('span').remove();
 
 		let data	= new FormData();
 		let xhr		= new XMLHttpRequest();
 
+		_.each(wpjam.with_page({
+			name,
+			accept:	this.attr('accept'),
+			action:	'wpjam-upload',
+			[name]:	file,
+			_ajax_nonce:	nonce
+		}), (v, k)=> data.append(k, v));
+
 		xhr.upload.onprogress	= e => { 
 			let p = Math.round(e.loaded/e.total*100);
 
-			$progress.find('.bar').width(p*2);
-			$progress.find('.percent').text(p+'%');
+			this.next('.media-item').find('.bar').width(p*2).end().find('.percent').text(p+'%');
 		};
 
 		xhr.onload	= ()=> {
@@ -306,10 +313,8 @@ jQuery(function($){
 			
 			res.errcode ? alert(res.errmsg) : this.val(res.path).wpjam_label();
 
-			$progress.remove();
+			this.next('.media-item').remove();
 		};
-
-		_.each(wpjam.with_page({...params, action: 'wpjam-upload', [params.name]: file}), (v, k)=> data.append(k, v));
 		
 		xhr.open('POST', ajaxurl);
 		xhr.send(data);
@@ -344,10 +349,22 @@ jQuery(function($){
 
 		if(!args.length){
 			let key	= show_if.key;
-			let dep	= this.closest('form').find('.field-key-'+key)[0] || $('.field-key-'+key)[0] || $('#'+key)[0];
+			let sk	= show_if.current?.includes('__') && show_if.current.split('__').slice(0,-1).concat(key).join('__');
+			let sib	= sk && this.closest('form').find('.field-key-'+sk)[0];
+			let dep	= sib || this.closest('form').find('.field-key-'+key)[0] || $('.field-key-'+key)[0] || $('#'+key)[0];
 			let $el	= dep ? $(dep).wpjam_control() : '';
 
-			return dep ? this.addClass('dep-on-'+($el.data('dep-id') || $el.attr('data-dep-id', 'dep-'+$.guid++).data('dep-id'))) : this;
+			if(dep){
+				this.addClass('dep-on-'+($el.data('dep-id') || $el.attr('data-dep-id', 'dep-'+$.guid++).data('dep-id')));
+
+				if(sib){
+					this.data('show_if', {...show_if, key: sk});
+				}else{
+					sk && this.wpjam_show_if($el.wpjam_val());
+				}
+			}
+
+			return this;
 		}
 
 		let val		= args[0];
@@ -359,7 +376,7 @@ jQuery(function($){
 			this.prop('disabled', !show).is(':selected') && !show && this.closest('select').prop('selectedIndex', 0).wpjam_depend();
 		}else{
 			(this.is(':input') ? this : this.find(':input')).wpjam_each($el => {
-				$el.is('.disabled') || $el.prop('disabled', !show);
+				$el.closest('.disabled')[0] || $el.prop('disabled', !show);
 
 				if($el.is(this) || $el.parent().is(this)){
 					let {filter_key: fk, query_args: qv}	= $el.data() || {};
@@ -554,10 +571,7 @@ jQuery(function($){
 					$tmpl.find(':input').is(':visible') && $new.insertAfter($tmpl).find(':input').val('').after($tmpl.find('.new-item'));
 				}
 			}else if(type == 'fields'){
-				$mu.data('i', ($mu.data('i') || $mu.children().length-2) + 1);
-				$new.find('template').replaceWith((i, html) => html.replace(/\$\{i\}/g, $mu.data('i')));
-
-				$new.prevAll().wpjam_each($el => $el.wpjam_mu('tag_label'));
+				$new.wpjam_mu('template').prevAll().wpjam_each($el => $el.wpjam_mu('tag_label'));
 			}
 
 			_.isUndefined(value) && $new.wpjam_mu('focus');
@@ -637,17 +651,19 @@ jQuery(function($){
 
 				$('<span class="tag-label">'+label+'</span>').append(this.find('.del-item').clone()).prependTo(this).on('dblclick', (e)=>$(e.target).remove());
 			}
+		}else if(action == 'template'){
+			return this.find('template').replaceWith((_, html) => html.replace(/\$\{i\}/g, $mu.data('i', ($mu.data('i') || 0)+ 1).data('i'))).end();
 		}
 
 		if(e){
 			return;
 		}
 
-		if(type == 'fields'){
-			$mu.children().addClass('mu-item');
-		}else{
-			$mu.wrapInner('<div class="mu-item"></div>');
+		$mu.children().addClass('mu-item');
 
+		if(type == 'fields'){
+			$mu.children().not(':last-child').wpjam_each($el => $el.wpjam_mu('template').wpjam_init());
+		}else{
 			_.each($mu.data('value'), v => $mu.wpjam_mu('add_item', v));
 		}
 
@@ -715,7 +731,7 @@ jQuery(function($){
 		if(this.prop('disabled')){
 			return null;
 		}else if(this.is('span')){
-			return this.data('val');
+			return this.data('value');
 		}else if(this.is('.mu-text')){
 			return this.find('input').toArray().map(el=> el.value).filter(v => v !== '');
 		}else if(this.is('.wpjam-choice')){
@@ -848,13 +864,13 @@ jQuery(function($){
 	$.fn.wpjam_modal.events		= [{name: 'click',	selector: '.show-modal, .is-dismissible .notice-dismiss'}];
 
 	$.fn.wpjam_chart = function(){
-		let {type, options}	= this.data();
+		let {type, options}	= this.data('chart');
 
-		if(['Line', 'Bar', 'Donut'].includes(type)){
-			type == 'Donut' && this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
+		type == 'Donut' && this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
 
-			Morris[type]({...options, element: this.prop('id')});
-		}
+		['Line', 'Bar', 'Donut'].includes(type) && Morris[type]({...options, element: this.prop('id')});
+
+		this.removeAttr('data-chart');
 	}
 
 	$.fn.wpjam_chart.selector	= '[data-chart]';
@@ -880,7 +896,7 @@ jQuery(function($){
 
 		if($modal[0]){
 			$modal.animate({scrollTop: this[0].offsetTop - 80}, 300);
-		}else{
+		}else if(this[0]){
 			let top	= this.offset().top;
 			let dis	= $(window).height() * 0.4;
 
@@ -1106,7 +1122,10 @@ jQuery(function($){
 							($dialog[0] ? $dialog.find('.content') : $('div.wrap')).wpjam_place($('<div class="card wrap-text">'+data.data+'</div>'), '.response.card').hide().fadeIn(400).wpjam_scroll();
 						}
 					}else if(data.type == 'redirect'){
-						$('body').one(dismiss ? 'wpjam:dialog:closed' : type+'_action_success', ()=> data.url ? window.open(data.url.replace('admin/page=', 'admin/admin.php?page='), data.target) : window.location.reload());
+						$('body').one(dismiss ? 'wpjam:dialog:closed' : type+'_action_success', ()=> {
+							let url	= data.url ? data.url.replace('admin/page=', 'admin/admin.php?page=') : (_.isObject(data.args) ? wpjam.admin_url+(wpjam.admin_url.includes('?') ? '&' : '?')+$.param(data.args) : null);
+							url ? window.open(url, data.target) : window.location.reload();
+						});
 					}
 
 					action?.response?.(data, args);
@@ -1473,7 +1492,9 @@ jQuery(function($){
 
 				$col.wpjam_each($td => {
 					if(data.check){
-						return $td.find('input, span')[0] || $td.append('<span class="dashicons dashicons-minus"></span>');
+						let $input	= $td.find('input');
+
+						return $input[0] ? $input.attr('title', '选择'+($td.next('.column-primary')[0].childNodes[0].textContent.trim() || $input.val())) : ($td.find('span')[0] || $td.append('<span class="dashicons dashicons-minus"></span>'));
 					}
 
 					let value	= $td.text();
@@ -1505,30 +1526,29 @@ jQuery(function($){
 				});
 			});
 
-			$el.find('.items.sortable').add($el.is('table') && this.sortable && this.$tbody).wpjam_each($s => $s.sortable({
-				handle: '.list-table-move-action',
-				cursor:	'move',
-				...($s.is('tbody') ? {items: this.sortable.items, axis: 'y'} : {items: '> div.item'}),
-				start:	(e, ui)=> {
-					ui.placeholder.css({
-						'background-color':	'#eeffffcc',
-						visibility:			'visible',
-						height:				ui.helper.height()+'px'
-					});
-				},
+			$el.find('.items.sortable').add($el.is('table') && this.sortable && this.$tbody).wpjam_each($s => {
+				let tbody	= $s.is('tbody');
+				let handle	= '.list-table-move-'+(tbody ? '' : 'item-')+'action';
 
-				update:	(e, ui)=> {
-					let {action, nonce, id, data}	= ui.item.find('.ui-sortable-handle').data();
+				$s.sortable({
+					...(tbody ? {items: this.sortable.items, axis:	'y'} : {items:	'> div.item'}),
+					handle,
+					cursor:	'move',
+					start:	(e, ui)=> {
+						tbody && ui.placeholder.css({
+							visibility:	'visible',
+							height:		ui.helper.outerHeight()+'px',
+							width:		ui.helper.outerWidth()+'px'
+						});
+					},
+					update:	(e, ui)=> {
+						let $handle	= ui.item.find(handle);
+						let parts	= [$handle.data('data'), 'pos='+ui.item.prevAll().length, $s.sortable('serialize')].filter(Boolean);
 
-					list_table.action({
-						action_type:	'direct',
-						list_action:	action,
-						_ajax_nonce:	nonce,
-						data:	(data || '')+'&pos='+ui.item.prevAll().length+'&'+$s.sortable('serialize'),
-						id
-					});
-				}
-			}));
+						$handle.data('data', parts.join('&')).wpjam_action();
+					}
+				});
+			});
 
 			return this;
 		},

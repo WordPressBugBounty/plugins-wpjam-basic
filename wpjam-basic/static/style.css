@@ -428,10 +428,11 @@ input[type=checkbox].switch{
 	field-sizing:content;
 
 	&:is(input){
-		min-width:var(--line-height);
+		min-width:36px;
 		width:unset !important;
 
 		&.regular-text{min-width:25em;}
+		&.small-text{min-width:50px;}
 	}
 
 	&:is(textarea){
@@ -579,10 +580,13 @@ div.donut-chart-wrap{
 
 fieldset{
 	> .field-group, > .inline{
-		display:inline-flex;
 		margin:0 0 .5em !important;
 
 		&.hidden{display:none;}
+	}
+
+	> .field-group{
+		display:inline-flex;
 	}
 
 	> .field-group:has(> label) > *{
@@ -596,8 +600,8 @@ fieldset{
 	}
 
 	> .inline{
-		line-height:1.4;
 		display:inline-block;
+		line-height:1.4;
 
 		> label{margin-top:0 !important;}
 	}
@@ -680,7 +684,12 @@ label.image-radio{
 	}
 }
 
-div.wpjam-uploader{
+.wpjam-cascade{
+	display:inline-flex;
+	gap:6px;
+}
+
+.wpjam-uploader{
 	display:inline-flex;
 	justify-content:flex-start;
 	align-items:center;
@@ -717,13 +726,13 @@ div.wpjam-uploader{
 	}
 }
 
-div.wpjam-file,
-div.wpjam-image{
-	display:flex;
+.wpjam-file,
+.wpjam-image{
+	display:inline-flex;
 	gap:4px;
 }
 
-div.wpjam-img{
+.wpjam-img{
 	position:relative;
 	cursor:pointer;
 	text-decoration:none;
@@ -739,11 +748,11 @@ div.wpjam-img{
 	&:has(img) ~ .description{display:none;}
 }
 
-div.wpjam-file,
-div.wpjam-image,
-div.wpjam-img{
+.wpjam-file,
+.wpjam-image,
+.wpjam-img{
 	.add-media{
-		display:flex;
+		display:inline-flex;
 		align-items:center;
 		gap:4px;
 	}
@@ -753,7 +762,7 @@ div.wpjam-img{
 	}
 }
 
-div.mu-img .del-item,
+.mu-img .del-item,
 .del-img,
 .del-img:hover,
 .del-icon{
@@ -1060,17 +1069,25 @@ form table.form-table{
 		.before{
 			margin:0px;
 
-			p&{margin-bottom:4px;}
+			p&{
+				margin:0 0 4px 0;
+			}
 
-			span&{margin-right:4px;}
+			span&{
+				margin:0 4px 0 0;
+			}
 		}
 
 		.after{
 			margin:0px;
 
-			p&{margin-top:4px;}
+			p&{
+				margin:4px 0 0 0;
+			}
 
-			span&{margin-left:4px;}
+			span&{
+				margin:0 0 0 4px;
+			}
 		}
 
 		.description{font-size:13px;}
@@ -1172,9 +1189,13 @@ table.wp-list-table{
 		margin-top:1px;
 	}
 
-	a.ui-sortable-handle{cursor:move;}
+	.ui-sortable-handle{
+		cursor:move;
+	}
 
-	tr.ui-sortable-helper, tr.ui-sortable-placeholder{background:#eeffee;}
+	.ui-sortable-helper{
+		background-color:#eeffffcc;
+	}
 
 	tbody tr{
 		&:nth-child(1 of tr:has(span.move)) span.up,

@@ -799,10 +799,17 @@ function wpjam_map($arr, $cb, $args=[]){
 		return $arr;
 	}
 
-	$args	= (is_bool($args) || $args === 'deep' ? ['deep'=>(bool)$args] : (is_string($args) ?  ['mode'=>$args] : $args))+['deep'=>false];
+	$args	= is_bool($args) || $args === 'deep' ? ['deep'=>(bool)$args] : (is_string($args) ?  ['mode'=>$args] : $args);
 	$mode	= in_array($args['mode'] ?? '', ['vk', 'kv', 'k', 'v']) ? $args['mode'] : 'vk';
+	$deep	= $args['deep'] ?? false;
 
-	return wpjam_array($arr, fn($k, $v)=> [$k, ($args['deep'] && is_array($v)) ? wpjam_map($v, $cb, $args) : $cb(...array_map(fn($c) => $c === 'k' ? $k : $v, str_split($mode)))]);
+	return wpjam_array($arr, fn($k, $v)=> [$k, ((is_array($v) && $deep === true) ? 
+		wpjam_map($v, $cb, $args) : 
+		((is_string($deep) && is_array($v) && isset($v[$deep]) && is_array($v[$deep])) ? 
+			[$deep=>wpjam_map($v[$deep], $cb, $args)]+$v : 
+			$cb(...array_map(fn($c) => $c === 'k' ? $k : $v, str_split($mode)))
+		)
+	)]);
 }
 
 function wpjam_reduce($arr, $cb, $carry=null, ...$args){
@@ -1351,8 +1358,11 @@ if(!function_exists('try_remove_suffix')){
 }
 
 if(!function_exists('explode_last')){
-	function explode_last($sep, $str){
-		return ($pos = strrpos($str, $sep)) === false ? [$str] : [substr($str, 0, $pos), substr($str, $pos + strlen($sep))];
+	function explode_last($sep, $str, $limit=2){
+		$parts	= explode($sep, $str);
+		$count	= count($parts);
+
+		return $limit >= $count ? $parts : [implode($sep, array_splice($parts, 0, $count - $limit + 1)), ...$parts];
 	}
 }
 
@@ -1393,15 +1403,13 @@ function wpjam_serialize($data){
 
 function wpjam_unserialize($serialized, $cb=null){
 	if($serialized){
-		$result	= @unserialize($serialized);
+		$result	= @unserialize($serialized, ['allowed_classes'=>false]);
 
 		if(!$result){
 			$fixed	= preg_replace_callback('!s:(\d+):"(.*?)";!', fn($m)=> 's:'.strlen($m[2]).':"'.$m[2].'";', $serialized);
-			$result	= @unserialize($fixed);
+			$result	= @unserialize($fixed, ['allowed_classes'=>false]);
 
-			if($result && $cb){
-				$cb($fixed);
-			}
+			$result && $cb && $cb($fixed);
 		}
 
 		return $result;

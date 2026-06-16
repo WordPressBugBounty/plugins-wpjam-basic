@@ -42,7 +42,7 @@ class WPJAM_Enhance extends WPJAM_Option_Model{
 
 class WPJAM_Gravatar extends WPJAM_Option_Model{
 	public static function get_fields(){
-		return ['gravatar'=>['title'=>'Gravatar加速', 'label'=>true, 'type'=>'fieldset', 'fields'=>[
+		return ['gravatar'=>['title'=>'Gravatar加速', 'type'=>'fieldset', 'fields'=>[
 			'gravatar'=>['after'=>'加速服务', 'options'=>wpjam_options(self::get_items(), ['type'=>'select'])+['custom'=>[
 				'title'		=> '自定义',	
 				'fields'	=> ['gravatar_custom'=>['placeholder'=>'请输入 Gravatar 加速服务地址']]
@@ -108,7 +108,7 @@ class WPJAM_Google_Font extends WPJAM_Option_Model{
 	}
 
 	public static function get_fields(){
-		return ['google_fonts'=>['title'=>'Google字体加速', 'type'=>'fieldset', 'label'=>true, 'fields'=>[
+		return ['google_fonts'=>['title'=>'Google字体加速', 'type'=>'fieldset', 'fields'=>[
 			'google_fonts'=>['type'=>'select', 'after'=>'加速服务', 'options'=>wpjam_options(self::get_items(), ['type'=>'select'])+['custom'=>[
 				'title'		=> '自定义',
 				'fields'	=> wpjam_map(self::get_search(), fn($v)=> ['placeholder'=>'请输入'.str_replace('//', '', $v).'加速服务地址'])

@@ -20,10 +20,14 @@ trait WPJAM_Call_Trait{
 
 	public function catch($name, ...$args){
 		return wpjam_catch([$this, 'call'], $name, ...$args);
-	}
+	} 
 
 	protected function call_dynamic_method($name, ...$args){
 		return $this->call(wpjam_dynamic_method(static::class, $name), ...$args);
+	}
+
+	protected static function get_param($name='', $method='data'){
+		return wpjam_get_parameter($name, $method);
 	}
 
 	public static function add_dynamic_method($name, $closure){
@@ -139,10 +143,10 @@ trait WPJAM_Items_Trait{
 	public static function get_item_actions(){
 		$args	= [
 			'row_action'	=> false,
-			'data_callback'	=> fn($id)=> wpjam_try([static::class, 'get_item'], $id, ...array_values(wpjam_get_data_parameter(['i', '_field']))),
+			'data_callback'	=> fn($id)=> wpjam_try([static::class, 'get_item'], $id, ...array_values(static::get_param(['i', '_field']))),
 			'value_callback'=> fn()=> '',
 			'callback'		=> function($id, $data, $action){
-				$args	= array_values(wpjam_get_data_parameter(['i', '_field']));
+				$args	= array_values(static::get_param(['i', '_field']));
 				$args	= $action == 'del_item' ? $args : wpjam_add_at($args, 1, null, $data);
 
 				return wpjam_try([static::class, $action], $id, ...$args);
@@ -683,8 +687,8 @@ class WPJAM_Option_Setting extends WPJAM_Register{
 	public function __invoke(){
 		flush_rewrite_rules();
 
-		$submit	= wpjam_get_post_parameter('submit_name');
-		$values	= $this->validate_by_fields(wpjam_get_data_parameter()) ?: [];
+		$submit	= $_POST['submit_name'] ?? '';
+		$values	= $this->validate_by_fields(wpjam_params('data')) ?: [];
 		$fix	= is_network_admin() ? 'site_option' : 'option';
 
 		if($this->option_type == 'array'){
@@ -1299,7 +1303,7 @@ class WPJAM_JSON extends WPJAM_Register{
 			$results	= array_map(['WPJAM_JSON_Module', 'parse'], wp_is_numeric_array($modules) ? $modules : [$modules]);
 		}elseif($this->callback){
 			$fields		= wpjam_try('maybe_callback', $this->fields ?: [], $this->name);
-			$data		= $this->fields ? ($fields ? wpjam_fields($fields)->get_parameter($method) : []) : $this->args;
+			$data		= $this->fields ? ($fields ? wpjam_params($method, $fields) : []) : $this->args;
 			$results[]	= wpjam_try($this->pull('callback'), $data, $this->name);
 		}elseif($this->template){
 			$results[]	= is_file($this->template) ? include $this->template : '';
@@ -1538,7 +1542,7 @@ class WPJAM_JSON_Module{
 		isset($_FILES[$media]) || wpjam_throw('invalid_parameter', [$media]);
 
 		if($format == 'media'){
-			$id		= wpjam_try('media_handle_upload', $media, (int)wpjam_get_post_parameter('post_id',	['default'=>0]));
+			$id		= wpjam_try('media_handle_upload', $media, (int)wpjam_get_parameter('post_id', 'post'));
 			$url	= wp_get_attachment_url($id);
 			$query	= wpjam_get_image_size($id);
 		}else{
@@ -1622,17 +1626,18 @@ class WPJAM_AJAX extends WPJAM_Args{
 
 		(!$cb || !is_callable($cb)) && wp_die('invalid_callback');
 
-		if($this->admin){
-			$data	= $this->fields ? wpjam_fields($this->fields)->get_parameter('POST') : wpjam_get_post_parameter();
-			$verify	= wpjam_get($data, 'action_type') !== 'form';
-		}else{
-			$data	= array_merge(wpjam_get_data_parameter(), wpjam_except(wpjam_get_post_parameter(), ['action', 'defaults', 'data', '_ajax_nonce']));
-			$data	= array_merge($data, $this->fields ? wpjam_fields($this->fields)->validate($data, 'parameter') : []);
-			$verify	= $this->verify !== false;
+		$data	= wpjam_params('post');
+
+		if(!$this->admin){
+			$data	= array_merge(wpjam_params('data'), wpjam_except($data, ['action', 'defaults', 'data', '_ajax_nonce']));
 		}
 
-		$action	= $verify ? $this->get_attr($this->name, $data, 'nonce_action') : '';
-		$action && !check_ajax_referer($action, false, false) && wpjam_send_json(['errcode'=>'invalid_nonce', 'errmsg'=>'验证失败，请刷新重试。']);
+		if($this->fields){
+			$data	= array_merge($data, wpjam_fields($this->fields)->validate($data, 'parameter'));
+		}
+
+		$action	= $this->verify !== false ? $this->get_attr($this->name, $data, 'nonce_action') : '';
+		$action && !check_ajax_referer($action, false, false) && wp_die('验证失败，请刷新重试。', 'invalid_nonce');
 
 		$this->allow && !wpjam_call($this->allow, $data) && wp_die('access_denied');
 
@@ -1720,9 +1725,10 @@ class WPJAM_Notice{
 	}
 
 	public static function callback(){
-		if($key	= wpjam_get_data_parameter('notice_key')){
-			return ($type = wpjam_get_data_parameter('notice_type')) == 'admin' && !current_user_can('manage_options') ? wp_die('bad_authentication') : (self::get_instance($type))->delete($key);
-		}
+		$key	= wpjam_get_parameter('notice_key', 'data');
+		$type	= wpjam_get_parameter('notice_type', 'data');
+
+		return $type == 'admin' && !current_user_can('manage_options') ? wp_die('bad_authentication') : ($key && (self::get_instance($type))->delete($key));
 	}
 
 	public static function init(){

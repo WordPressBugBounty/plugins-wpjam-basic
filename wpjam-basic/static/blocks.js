@@ -358,7 +358,7 @@
 				}
 			}, el('ColorIndicator', {
 				colorValue: value
-			}), value || field.button_text),
+			}), value || field.button_text || wp.i18n.__('Select Color', 'default')),
 			renderContent: ()=> el('ColorPicker', {
 				color: value,
 				enableAlpha: field.alpha || false,
@@ -638,12 +638,15 @@
 			args.callback(name, val);
 		};
 
-		if(field.options){
-			field.options	= _.reduce(field.options, (acc, opt)=> {
-				const { show_if, ...props } = opt;
+		let options	= field.options;
+
+		if(options){
+			options	= _.reduce(options, (acc, opt)=> {
+				const { data, ...props } = opt;
+				const show_if	= data?.show_if;
 
 				if(!show_if || wpjam.compare(getValue(show_if.key, args), show_if.compare, show_if.value)){
-					acc.push(props);
+					acc.push({ ...props, ...(data && data) });
 				}
 
 				return acc;
@@ -653,7 +656,7 @@
 		let Control	= '';
 
 		if(component == 'Radio'){
-			if(field.options?.some(o => o.image)){
+			if(options?.some(o => o.image)){
 				Control	= ImageRadioControl;
 			}
 		}else if(component == 'Select'){
@@ -703,6 +706,7 @@
 			...(supportsSize ? { __next40pxDefaultSize: true } : {}),
 			className,
 			..._.omit(field, ['component', 'show_if', 'schema', 'multiple', 'value', 'update', 'mu']),
+			...(options ? { options } : {}),
 			...(component === 'Toggle' ? { checked: !!value } : (component === 'Radio' ? { selected: value } : { value: value ?? '' })),
 		onChange: (val)=> field.update(val)
 		});

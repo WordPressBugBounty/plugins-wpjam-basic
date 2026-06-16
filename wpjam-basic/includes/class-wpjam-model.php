@@ -1174,9 +1174,9 @@ class WPJAM_DB extends WPJAM_Args{
 			return $this->query(...($args+['', 'array']));
 		}
 
-		wpjam_map(['orderby'=>'orderby', 'order'=>'order', 's'=>'search_term'], fn($v, $k)=> is_null($this->$v) && $this->$v(wpjam_get_data_parameter($k)));
+		wpjam_map(['orderby'=>'orderby', 'order'=>'order', 's'=>'search_term'], fn($v, $k)=> is_null($this->$v) && $this->$v($this->get_param($k)));
 
-		wpjam_map($this->filterable_fields ?: [], fn($key)=> $this->where($key, wpjam_get_data_parameter($key)));
+		wpjam_map($this->filterable_fields ?: [], fn($k)=> $this->where($k, $this->get_param($k)));
 
 		return $this->limit($args[0])->offset($args[1])->found_rows()->get_results([], true);
 	}

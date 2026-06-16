@@ -255,10 +255,9 @@ class WPJAM_Verify{
 		return [
 			'submit_text'	=> '验证',
 			'response'		=> 'redirect',
-			'callback'		=> function(){
-				$user	= self::request(wpjam_get_post_parameter('data', ['sanitize_callback'=>'wp_parse_args']), true);
-
-				update_user_meta(get_current_user_id(), 'wpjam_weixin_user', array_merge($user, ['last_update'=>time(), 'subscribe'=>1]));
+			'validate'		=> true,
+			'callback'		=> function($data){
+				update_user_meta(get_current_user_id(), 'wpjam_weixin_user', array_merge(self::request($data, true), ['last_update'=>time(), 'subscribe'=>1]));
 
 				return ['url'=>admin_url('page=wpjam-extends')];
 			},

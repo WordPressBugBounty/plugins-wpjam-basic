@@ -134,6 +134,7 @@ function wpjam_callback($cb, $parse=false, &$args=[]){
 			$inst	= [$cb[0], 'get_instance'];
 			$num	= wpjam_get_reflection($inst, 'NumberOfRequiredParameters');
 			$num	= isset($num) && count($args) >= $num ? ($num ?: 1) : wpjam_throw('invalid_callback', [implode($sep ?? '::', $cb)]);
+
 			$cb[0]	= $inst(...array_splice($args, 0, $num)) ?: wpjam_throw('invalid_id', [$cb[0]]);
 		}
 
@@ -565,7 +566,7 @@ function wpjam_load_pending($name, $cb){
 }
 
 function wpjam_pattern($key, ...$args){
-	return wpjam('pattern', $key, ...($args ? [array_combine(['pattern', 'custom_validity'], $args)] : []));
+	return $key ? wpjam('pattern', $key, ...($args ? [array_combine(['pattern', 'custom_validity'], $args)] : [])) : [];
 }
 
 function wpjam_default(...$args){
@@ -579,85 +580,75 @@ function wpjam_get_current_user($required=false){
 }
 
 // Parameter
-function wpjam_parameter($name, $method='GET'){
-	if(in_array($method, ['DATA', 'DEFAULTS'])){
-		if($method == 'DATA' && $name && isset($_GET[$name])){
-			return wp_unslash($_GET[$name]);
-		}
+function wpjam_params($type, $fields=[]){
+	$type = strtolower($type);
 
-		$types	= ['defaults', ...($method == 'DATA' ? ['data'] : [])];
-		$data	= wpjam_var('parameter:'.$method, fn()=> array_reduce($types, fn($c, $t)=> wpjam_merge($c, ($v = wpjam_parameter($t, 'REQUEST')) && is_string($v) && str_starts_with($v, '{') ? wpjam_json_decode($v) : wp_parse_args($v ?: [])), []));
+	if(in_array($type, ['get', 'request'])){
+		$data	= wp_unslash($type == 'get' ? $_GET : $_REQUEST);
+	}elseif($type == 'post'){
+		$data	= $_POST ? wp_unslash($_POST) : wpjam_params('input');
 	}else{
-		$data	= ['POST'=>$_POST, 'REQUEST'=>$_REQUEST][$method] ?? $_GET;
+		$data	= wpjam('params', $type);
 
-		if($name){
-			if(isset($data[$name])){
-				return wp_unslash($data[$name]);
+		if(is_null($data)){
+			if($type == 'input'){
+				$v		= file_get_contents('php://input');
+				$v		= $v && is_string($v) ? @wpjam_json_decode($v) : $v;
+				$data	= is_array($v) ? $v : [];
+			}else{
+				foreach(array_unique(['defaults', $type]) as $t){
+					$v		= wpjam_params('request')[$t] ?? [];
+					$v		= $v && is_string($v) && str_starts_with($v, '{') ? wpjam_json_decode($v) : wp_parse_args($v ?: []);
+					$data	= wpjam_merge($data ?? [], $v);
+				}
 			}
-
-			if($_POST || !in_array($method, ['POST', 'REQUEST'])){
-				return null;
-			}
-		}else{
-			if($data || in_array($method, ['GET', 'REQUEST'])){
-				return wp_unslash($data);
-			}
+		
+			wpjam('params', $type, $data);
 		}
-
-		$data	= wpjam_var('parameter:input', function(){
-			$v	= file_get_contents('php://input');
-			$v	= $v && is_string($v) ? @wpjam_json_decode($v) : $v;
-
-			return is_array($v) ? $v : [];
-		});
 	}
 
-	return wpjam_get($data, $name ?: null);
+	if($fields){
+		$fields	= is_array($fields) ? wpjam_fields($fields) : $fields;
+		$data	= array_merge($data, $fields->validate($data, 'parameter'));
+	}
+
+	return $data;
 }
 
 function wpjam_get_parameter($name='', $args=[], $method=''){
-	$args	= array_merge($args, $method ? compact('method') : []);
+	if(is_string($args)){
+		$args	= ['method'=>$args];
+	}else{
+		$args	= array_filter(['method'=>$method])+$args;
+	}
 
 	if(is_array($name)){
 		return $name ? wpjam_map(wp_is_numeric_array($name) ? array_fill_keys($name, $args) : $name, 'wpjam_get_parameter', 'kv') : [];
 	}
 
 	$method	= strtoupper(wpjam_pull($args, 'method') ?: 'GET');
-	$value	= wpjam_parameter($name, $method);
+	$data	= wpjam_params($method);
 
-	if($name){
-		$fallback	= wpjam_pull($args, 'fallback');
-		$default	= wpjam_pull($args, 'default', wpjam_default($name));
-		$send		= wpjam_pull($args, 'send', true);
-		$value		??= ($fallback ? wpjam_parameter($fallback, $method) : null) ?? $default;
+	if(!$name){
+		return $data;
+	}
+	
+	$fallback	= wpjam_pull($args, 'fallback');
+	$default	= wpjam_pull($args, 'default', wpjam_default($name));
+	$send		= wpjam_pull($args, 'send', true);
+	$values		= ['POST'=>$_POST, 'REQUEST'=>$_REQUEST][$method] ?? $_GET;
+	$value		= isset($values[$name]) ? wp_unslash($values[$name]) : wpjam_get($data, $name);
+	$value		??= ($fallback ? wpjam_get_parameter($fallback, $method) : null) ?? $default;
 
-		if($args){
-			$type	= $args['type'] ??= '';
-			$args	= ['type'=>$type == 'int' ? 'number' : $type]+$args;	// 兼容
-			$field	= wpjam_field(['key'=>$name]+$args);
-			$value	= wpjam_catch([($type ? $field : $field->schema(false)), 'validate'], $value, 'parameter');
-
-			$send && wpjam_if_error($value, 'send');
-		}
+	if($args){
+		$type	= $args['type'] ??= '';
+		$args	= ['type'=>$type == 'int' ? 'number' : $type]+$args;	// 兼容
+		$field	= wpjam_field(['key'=>$name]+($type ? [] : ['_schema'=>[]])+$args);
+		$value	= wpjam_catch([$field, 'validate'], $value, 'parameter');
+		$send	&& wpjam_if_error($value, 'send');
 	}
 
 	return $value;
-}
-
-function wpjam_get_post_parameter($name='', $args=[]){
-	return wpjam_get_parameter($name, $args, 'POST');
-}
-
-function wpjam_get_request_parameter($name='', $args=[]){
-	return wpjam_get_parameter($name, $args, 'REQUEST');
-}
-
-function wpjam_get_data_parameter($name='', $args=[]){
-	return wpjam_get_parameter($name, $args, 'data');
-}
-
-function wpjam_method_allow($method){
-	return ($m = $_SERVER['REQUEST_METHOD']) == strtoupper($method) ? true : wp_die('method_not_allow', '接口不支持 '.$m.' 方法，请使用 '.$method.' 方法！');
 }
 
 // Request
@@ -798,7 +789,7 @@ function wpjam_route($module, $args, $query_var=false){
 	}
 
 	if($query_var){
-		$action	= wpjam_get_parameter($module, ['method'=> wp_doing_ajax() ? 'DATA' : 'GET']);
+		$action	= wpjam_get_parameter($module, wp_doing_ajax() ? 'data' : 'get');
 		$action	&& add_action((wp_doing_ajax() ? 'admin_init' : 'parse_request'), fn()=> wpjam_dispatch($module, $action), 0);
 	}
 

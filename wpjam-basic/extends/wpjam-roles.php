@@ -127,7 +127,7 @@ class WPJAM_Role{
 
 			wpjam_map(['show', 'edit'], fn($v)=> wpjam_hook('echo', $v.'_user_profile', fn($user)=> '<h3>额外权限</h3>'.self::get_additional($user, 'fields')));
 
-			wpjam_map(['personal_options_update', 'edit_user_profile_update'], fn($v)=> add_action($v, fn($id)=> self::set_additional($id, wpjam_get_post_parameter('capabilities') ?: [])));
+			wpjam_map(['personal_options_update', 'edit_user_profile_update'], fn($v)=> add_action($v, fn($id)=> self::set_additional($id, $_POST['capabilities'] ?? [])));
 		}
 	}
 }

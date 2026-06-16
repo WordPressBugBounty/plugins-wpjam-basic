@@ -21,7 +21,7 @@ class WPJAM_Mobile_Stylesheet extends WPJAM_Option_Model{
 			'direct'		=> true,
 			'confirm'		=> true,
 			'response'		=> 'redirect',
-			'callback'		=> fn()=> self::update_setting('mobile_stylesheet', wpjam_get_data_parameter('stylesheet'))
+			'callback'		=> fn()=> self::update_setting('mobile_stylesheet', wpjam_get_parameter('stylesheet', 'data'))
 		])->get_button(['data'=>['stylesheet'=>'slug']]);
 
 		wpjam_script(sprintf(<<<'JS'

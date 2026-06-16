@@ -91,7 +91,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 	}
 
 	public static function upload_external_images($id){
-		$bulk		= (int)wpjam_get_post_parameter('bulk') == 2;
+		$bulk		= (int)($_POST['bulk'] ?? 0) == 2;
 		$content	= get_post($id)->post_content;
 
 		if($content && !is_serialized($content) && preg_match_all('/<img.*?src=[\'"](.*?)[\'"].*?>/i', $content, $matches)){
@@ -121,7 +121,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 					'orderby'			=> 'post_count',
 					'order'				=> 'DESC',
 					'show_option_all'	=> $ptype == 'attachment' ? '所有上传者' : '所有作者',
-					'selected'			=> (int)wpjam_get_data_parameter('author'),
+					'selected'			=> (int)wpjam_get_parameter('author', 'data'),
 					'hide_if_only_one_author'	=> true,
 				]);
 			}, 1);
@@ -136,7 +136,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 					'order'		=> ['options'=>['desc'=>'降序','asc'=>'升序']]
 				], [
 					'fields_type'		=> '',
-					'value_callback'	=> fn($k)=> wpjam_get_data_parameter($k, ['sanitize_callback'=>'sanitize_key'])
+					'value_callback'	=> fn($k)=> sanitize_key(wpjam_get_parameter($k, 'data'))
 				])."\n";
 			}, 99);
 
