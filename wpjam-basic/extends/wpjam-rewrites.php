@@ -64,13 +64,15 @@ class WPJAM_Rewrite{
 	}
 
 	public static function add_hooks(){
-		self::get_setting('remove_comment_rewrite') && add_filter('comments_rewrite_rules', fn()=> []);
-		self::get_setting('remove_date_rewrite') && add_filter('date_rewrite_rules', fn()=> []) && add_action('init', fn()=> array_map('remove_rewrite_tag', ['%year%', '%monthnum%', '%day%', '%hour%', '%minute%', '%second%']));
-		
-		add_action('generate_rewrite_rules', fn($wp_rewrite)=> wpjam_map(['rules', 'extra_rules_top'], fn($k)=> self::cleanup($wp_rewrite->$k)));
+		self::get_setting('remove_comment_rewrite') && wpjam_hook('comments_rewrite_rules', []);
+		self::get_setting('remove_date_rewrite') && wpjam_hook('date_rewrite_rules', []) && add_action('init', fn()=> array_map('remove_rewrite_tag', ['%year%', '%monthnum%', '%day%', '%hour%', '%minute%', '%second%']));
 
 		$custom	= wpjam_array(self::get_setting('rewrites') ?: [], fn($k, $v)=> $v['regex'] && !is_numeric($v['regex']) ? [$v['regex'], $v['query']] : null);
-		$custom && add_filter('rewrite_rules_array', fn($rules)=> $custom+$rules);
+
+		return [
+			['generate_rewrite_rules', fn($wp_rewrite)=> wpjam_map(['rules', 'extra_rules_top'], fn($k)=> self::cleanup($wp_rewrite->$k))],
+			$custom ? ['rewrite_rules_array', '+', $custom] : []
+		];
 	}
 }
 

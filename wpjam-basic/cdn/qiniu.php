@@ -103,7 +103,7 @@ function wpjam_get_qiuniu_timestamp($img_url){
 function wpjam_get_qiniu_image_info($img_url){
 	$img_url 	= add_query_arg(array('imageInfo'=>''),$img_url);
 	
-	$response	= wp_remote_get($img_url);
+	$response	= wp_safe_remote_get($img_url);
 	if(is_wp_error($response)){
 		return $response;
 	}

@@ -43,7 +43,7 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 
 			$title	= wpjam_get_taxonomy_setting($tax, 'title');
 
-			$tax_fields[$tax]	= ['title'=>$title,	'group'=>'tax'] + $field;
+			$tax_fields[$tax]	= ['title'=>$title,	'group'=>'tax']+$field;
 
 			if($tax_object->hierarchical){
 				$individual[$tax.'_individual']	= ['label'=>'每个'.$title.'可独立设置',	'show_if'=>[$tax, '!=', '']];
@@ -51,8 +51,8 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 		}
 
 		$other_fields		= wpjam_map(['author'=>'作者页','search'=>'搜索页','archive'=>'存档页'], fn($v)=>$field+['title'=>$v]);
-		$fields['other']	= ['title'=>'其他页面',	'wrap_tag'=>'fieldset',	'group'=>true,	'fields'=>$other_fields];
-		$fields['tax']		= ['title'=>'分类模式',	'wrap_tag'=>'fieldset',	'fields'=>$tax_fields + (empty($individual) ? [] : $individual)];
+		$fields['other']	= ['title'=>'其他页面',	'wrap_tag'=>'fieldset',	'group'=>true,	'sep'=>'<br />',	'fields'=>$other_fields];
+		$fields['tax']		= ['title'=>'分类模式',	'wrap_tag'=>'fieldset',	'fields'=>$tax_fields+(empty($individual) ? [] : $individual)];
 
 		foreach(get_post_types(['public'=>true, 'has_archive'=>true]) as $post_type){
 			if(wpjam_get_post_type_setting($post_type, 'posts_per_page')){
@@ -63,7 +63,7 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 		}
 
 		if(!empty($pt_field)){
-			$fields['post_type_set']	= ['title'=>'文章类型<br />存档页面',	'group'=>true,	'wrap_tag'=>'fieldset','fields'=>$pt_field];
+			$fields['post_type_set']	= ['title'=>'文章类型<br />存档页面',	'group'=>true,	'sep'=>'<br />',	'wrap_tag'=>'fieldset','fields'=>$pt_field];
 		}
 
 		return $fields;
@@ -83,7 +83,7 @@ class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
 				]
 			]);
 
-			add_filter($screen->taxonomy.'_row_actions', fn($actions, $term)=> array_merge($actions, ($v = get_term_meta($term->term_id, 'posts_per_page', true)) ? ['posts_per_page'=>str_replace('>文章数量<', '>文章数量'.'（'.$v.'）'.'<', $actions['posts_per_page'])] : []), 10, 2);	
+			wpjam_hook($screen->taxonomy.'_row_actions', '+', fn($term, $actions)=> ($v = get_term_meta($term->term_id, 'posts_per_page', true)) ? ['posts_per_page'=>str_replace('>文章数量<', '>文章数量'.'（'.$v.'）'.'<', $actions['posts_per_page'])] : [], 10, 2);	
 		}
 	}
 

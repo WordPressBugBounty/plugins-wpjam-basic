@@ -45,11 +45,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 
 		if(in_array($name, ['head', 'footer']) && is_singular() && self::get_setting('custom_post')){
 			if($value = get_post_meta(get_the_ID(), 'custom_'.$name, true)){
-				if($name == 'head'){
-					wpjam_hook('echo', 'wp_'.$name, fn()=> $value, 100);
-				}else{
-					echo $value;
-				}
+				wpjam_echo($value, ...($name == 'head' ? ['wp_'.$name, 100] : []));
 			}
 		}
 	}
@@ -87,7 +83,7 @@ class WPJAM_Custom extends WPJAM_Option_Model{
 				['login_footer',		fn()=> self::echo('login_footer')],
 				['login_redirect',		fn($to, $requested)=> $requested ? $to : (self::get_setting('login_redirect') ?: $to), 10, 2],
 
-				self::get_setting('disable_language_switcher') ? ['login_display_language_dropdown',	'__return_false'] : []
+				self::get_setting('disable_language_switcher') ? ['login_display_language_dropdown', false] : []
 			]);
 		}else{
 			wpjam_hooks([

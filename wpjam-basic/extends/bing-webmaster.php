@@ -123,7 +123,7 @@ class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
 
 		$per_page	= 500;
 		$per_day	= 9000;
-		$offset		= (int)wpjam_get_parameter('offset', 'data');
+		$offset		= (int)wpjam_param('offset', 'data');
 
 		if($offset >= $per_day){
 			self::update_setting('last', time());

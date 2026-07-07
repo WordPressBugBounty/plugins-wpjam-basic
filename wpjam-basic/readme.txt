@@ -53,6 +53,14 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
+= 7.0.2 =
+* 新增函数 wpjam_once 实现一次 Hook
+* 新增函数 wpjam_visitor 获取当前访客的唯一标识
+* 新增函数 wpjam_remainin 访客频率限制，返回当前访客在剩余次数，0 表示超限。
+* 新增函数 wpjam_operate 基础运算执行器
+* 新增函数 wpjam_rotate 将数组循环移步（正数向前，负数向后）
+* 其他优化和bug修复
+
 = 7.0 =
 * 新增古腾堡编辑器组件渲染（侧边栏/弹窗）
 * 去掉 jQuery UI Tab，使用 hashchange 实现 Tab 切换
@@ -66,7 +74,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 增强函数 wpjam_chart 支持图表各种操作
 * 新增函数 wpjam_formula 解析数学表达式
 * 新增函数 wpjam_calc 计算数学表达式
-* 其他优化和bug修复
 
 = 6.9 =
 * 新增函数 get_term_level
@@ -163,7 +170,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 = 6.2 =
 * 新增函数 wpjam_match - 各种数据匹配
 * 新增函数 wpjam_try / wpjam_call 处理异常
-* 新增函数 wpjam_register_config / wpjam_get_config - 生成和获取全局配置接口
+* 新增函数 wpjam_config 生成和获取全局配置接口
 * 新增函数 wpjam_register_meta_option / wpjam_get_meta_options - 注册和获取 meta option。
 * 新增函数 get_screen_option - 获取界面选项
 * 新增函数 wpjam_add_option_section 向已有的设置页面添加标签页

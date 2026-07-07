@@ -137,7 +137,7 @@ class WPJAM_Postviews{
 	public static function add_hooks(){
 		wpjam_route('postviews', self::class);
 
-		add_filter('the_content', fn($content)=> $content.(is_feed() ? "\n".'<p><img src="'.home_url('postviews/'.get_the_ID().'.png').'" /></p>'."\n" : ''), 999);
+		wpjam_hook('the_content', '.', fn()=> is_feed() ? "\n".'<p><img src="'.home_url('postviews/'.get_the_ID().'.png').'" /></p>'."\n" : '', 999);
 
 		// 不指定 post_type ，默认查询 post，这样custom post type 的文章页面就会显示 404
 		// add_action('pre_get_posts',	fn($query)=> $query->get('module') == 'postviews' && $query->set('post_type', 'any'));
@@ -148,10 +148,7 @@ class WPJAM_Postviews{
 		
 		$views && add_action('wp_after_insert_post', fn($post_id, $post, $update)=> (!$update && $post->post_type != 'attachment' && is_post_type_viewable($post->post_type)) && update_post_meta($post_id, 'views', $views), 999, 3);
 
-		wpjam_hook('once', 'wpjam_post_json', [
-			'callback'	=> fn($json, $id)=> $json+['views'=>wpjam_update_post_views($id)],
-			'check'		=> fn($json, $id, $args)=> wpjam_is(wpjam_get($args, 'query'), 'single, page', $id)
-		], 10, 3);
+		wpjam_once('wpjam_post_json', '+', fn($id, $args)=> wpjam_is(wpjam_get($args, 'query'), 'single, page', $id) ? ['views'=>wpjam_update_post_views($id)] : [], 10, 3);
 	}
 }
 

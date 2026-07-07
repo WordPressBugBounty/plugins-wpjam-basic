@@ -14,37 +14,38 @@ class WPJAM_Site_Stats{
 	}
 
 	public static function add_hooks(){
-		wpjam_hook('once', 'wp_head', [
-			'check'		=> fn()=> !is_preview(),
-			'callback'	=> function(){
-				$id	= WPJAM_Custom::get_setting('google_analytics_id');
-
-				$id && wpjam_echo(<<<JS
-				<script async src="https://www.googletagmanager.com/gtag/js?id=$id"></script>
-				<script>
-					window.dataLayer = window.dataLayer || [];
-					function gtag(){dataLayer.push(arguments);}
-					gtag('js', new Date());
-
-					gtag('config', '$id');
-				</script>
-				JS);
-
-				$id	= WPJAM_Custom::get_setting('baidu_tongji_id');
-
-				$id && wpjam_echo(<<<JS
-				<script type="text/javascript">
-					var _hmt = _hmt || [];
-					(function(){
-					var hm = document.createElement("script");
-					hm.src = "https://hm.baidu.com/hm.js?$id";
-					hm.setAttribute('async', 'true');
-					document.getElementsByTagName('head')[0].appendChild(hm);
-					})();
-				</script>
-				JS);
+		wpjam_once('wp_head', function(){
+			if(is_preview()){
+				return;
 			}
-		], 11);
+
+			$id	= WPJAM_Custom::get_setting('google_analytics_id');
+
+			$id && wpjam_echo(<<<JS
+			<script async src="https://www.googletagmanager.com/gtag/js?id=$id"></script>
+			<script>
+				window.dataLayer = window.dataLayer || [];
+				function gtag(){dataLayer.push(arguments);}
+				gtag('js', new Date());
+
+				gtag('config', '$id');
+			</script>
+			JS);
+
+			$id	= WPJAM_Custom::get_setting('baidu_tongji_id');
+
+			$id && wpjam_echo(<<<JS
+			<script type="text/javascript">
+				var _hmt = _hmt || [];
+				(function(){
+				var hm = document.createElement("script");
+				hm.src = "https://hm.baidu.com/hm.js?$id";
+				hm.setAttribute('async', 'true');
+				document.getElementsByTagName('head')[0].appendChild(hm);
+				})();
+			</script>
+			JS);
+		}, 11);
 	}
 }
 

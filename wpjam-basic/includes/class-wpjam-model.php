@@ -13,11 +13,8 @@ abstract class WPJAM_Instance{
 	}
 
 	public function builtin($key){
-		$class	= get_class($this);
-		$class	= wpjam_at(class_parents($class, false), -2) ?: $class;
-		$type	= strtolower(wpjam_remove_prefix($class, 'WPJAM_'));
-		$cb		= 'get_'.$type;
-		$object	= function_exists($cb) ? $cb($this->id) : null;
+		$type	= static::get_builtin_type();
+		$object	= $type && function_exists('get_'.$type) ? ('get_'.$type)($this->id) : null;
 
 		if(!$object || !$key || $key === $type){
 			return $object;
@@ -49,13 +46,23 @@ abstract class WPJAM_Instance{
 	abstract protected static function call_method($method, ...$args);
 
 	public static function get_meta_type(){
-		return static::call_method('get_meta_type');
+		return static::call_method('get_meta_type') ?: static::get_builtin_type();
+	}
+
+	public static function get_builtin_type(){
+		$class	= static::class;
+		$class	= wpjam_at(class_parents($class, false), -2) ?: $class;
+
+		if(try_remove_prefix($class, 'WPJAM_')){
+			return class_exists('WP_'.$class) ? strtolower($class) : null;
+		}
 	}
 
 	public static function write($data, $id=0){
 		wpjam_try(fn()=> static::validate_data($data, $id));
 
-		$input	= ($type = static::get_meta_type()) ? wpjam_pull($data, 'meta_input') : [];
+		$type	= static::get_meta_type();
+		$input	= $type ? wpjam_pull($data, 'meta_input') : [];
 		$data	= static::sanitize_data($data, $id);
 		$result	= static::call_method(...($id ? ['update', $id, $data] : ['insert', $data]));
 
@@ -91,10 +98,21 @@ abstract class WPJAM_Instance{
 	}
 
 	public static function instance(...$args){
+		static $objects  = [];
+
 		[$key, $cb]	= count($args) == 2 && is_callable($args[1]) ? $args : [($args ? implode(':', $args) : 'singleton'), null];
 		$called		= self::get_called();
+		$object		= $objects[$called][$key] ?? null;
 
-		return wpjam($called, $key) ?: wpjam_tap(($cb ? $cb($key) : static::create_instance(...$args)), fn($value)=> (!is_wp_error($value) && !is_null($value)) && wpjam($called, $key, $value));
+		if(!$object){
+			 $object	= $cb ? $cb($key) : static::create_instance(...$args);
+
+			 if(!is_wp_error($object) && !is_null($object)){
+			 	$objects[$called][$key]	= $object;
+			 }
+		}
+
+		return $object;
 	}
 
 	protected static function create_instance(...$args){
@@ -228,92 +246,23 @@ abstract class WPJAM_Model extends WPJAM_Instance implements ArrayAccess, Iterat
 	}
 
 	public static function call_method($method, ...$args){
-		return static::handler('call', static::get_handler(), $method, ...$args);
+		$name	= static::get_handler();
+
+		if($method == 'insert_multi'){
+			array_walk($args[0], fn($v)=> wpjam_try(fn()=> static::validate_data($v)));
+		}elseif($method == 'delete_multi'){
+			array_walk($args[0], fn($v)=> static::before_delete($v));
+		}
+
+		return wpjam_call_handler($name, $method, ...$args);
 	}
 
 	public static function get_handler(){
-		return static::handler(self::get_called()) ?: (property_exists(static::class, 'handler') ? static::$handler : null);
+		return wpjam_get_handler(self::get_called()) ?: (property_exists(static::class, 'handler') ? static::$handler : null);
 	}
 
 	public static function set_handler($handler){
-		return static::handler(self::get_called(), $handler, true);
-	}
-
-	public static function handler($name, ...$args){
-		if($name == 'call'){
-			$name	= array_shift($args);
-			$object	= is_object($name) ? $name : static::handler($name);
-			$method	= strtolower(array_shift($args));
-
-			if(!$object){
-				return new WP_Error('undefined_handler');
-			}
-
-			if(in_array($method, ['get_primary_key', 'get_meta_type', 'get_searchable_fields', 'get_filterable_fields'])){
-				return $object->{substr($method, 4)};
-			}
-
-			if(str_ends_with($method, '_multi')){
-				if($method == 'insert_multi'){
-					array_walk($args[0], fn($v)=> wpjam_try(fn()=> static::validate_data($v)));
-				}elseif($method == 'delete_multi'){
-					array_walk($args[0], fn($v)=> static::before_delete($v));
-				}
-
-				if(!method_exists($object, $method)){
-					return wpjam_catch(fn()=> array_walk($args[0], fn($item)=> wpjam_try([$object, wpjam_remove_suffix($method, '_multi')], $item)) || true);
-				}
-			}
-
-			$cb		= [$object, $method];
-			$cb[1]	= ['get_ids'=>'get_by_ids', 'get_all'=>'get_results'][$cb[1]] ?? $cb[1];
-
-			return is_callable($cb) ? wpjam_catch($cb, ...$args) : new WP_Error('undefined_method', [$method]);
-		}
-
-		$force	= $args[1] ?? false;
-
-		if($name && is_array($name)){
-			$args	= $name;
-			$name	= wpjam_pull($args, 'name') ?: ($force ? '' : md5(serialize($args)));
-		}else{
-			$args	= array_shift($args);
-		}
-
-		if(!$force){
-			$object	= $name ? wpjam('handler', $name) : null;
-
-			if($object || !$name || !$args){
-				return $object;
-			}
-
-			$args	= maybe_closure($args, $name);
-		}
-
-		if(is_object($args)){
-			$object	= $args;
-		}elseif(!empty($args['table_name'])){
-			$name	= $name ?: $args['table_name'];
-			$object	= new WPJAM_DB($args['table_name'], $args);
-		}else{
-			if(!empty($args['option_name'])){
-				$args	+= array_filter(['setting_name'=>wpjam_pull($args, 'items_field')]);
-				$args	+= ['type'=>(!empty($args['setting_name']) ? 'setting' : 'option')];
-				$name	= $name ?: wpjam_join(':', wpjam_pick($args, ['option_name', 'setting_name']));
-			}elseif(!empty($args['items_model'])){	// 不建议
-				$args	+= wpjam_fill(['get_items', 'update_items'], fn($k)=> [$args['items_model'], $k]);
-			}elseif(wpjam_pull($args, 'type') == 'option_items'){	// 不建议
-				$args	+= ['type'=>'option', 'option_name'=>$name];
-			}else{
-				$args	= (!empty($args['items_type']) || array_all(['get_items', 'update_items'], fn($m)=> !empty($args[$m]))) ? $args : [];
-			}
-
-			$object	= $args ? new WPJAM_Items($args) : null;
-		}
-
-		if($name && $object){
-			return wpjam('handler', $name, $object);
-		}
+		return wpjam_register_handler(self::get_called(), $handler);
 	}
 
 	public static function __callStatic($method, $args){
@@ -325,8 +274,72 @@ abstract class WPJAM_Model extends WPJAM_Instance implements ArrayAccess, Iterat
 	}
 }
 
-class WPJAM_Query{
-	public static function query($vars, &$args=[]){
+class WPJAM_Handler extends WPJAM_Args{
+	public function __call($method, $args){
+		$method	= strtolower($method);
+		$name	= array_shift($args);
+		$object	= is_object($name) ? $name : ($this)($name);
+
+		if(!$object){
+			return new WP_Error('undefined_handler');
+		}
+
+		if(in_array($method, ['get_primary_key', 'get_meta_type', 'get_searchable_fields', 'get_filterable_fields'])){
+			return $object->{substr($method, 4)};
+		}
+
+		if(!method_exists($object, $method) && try_remove_suffix($method, '_multi')){
+			return wpjam_catch(fn()=> array_walk($args[0], fn($item)=> wpjam_try([$object, $method], $item)) || true);
+		}
+
+		$cb	= [$object, ['get_ids'=>'get_by_ids', 'get_all'=>'get_results'][$method] ?? $method];
+
+		return is_callable($cb) ? wpjam_catch($cb, ...$args) : new WP_Error('undefined_method', [$method]);
+	}
+
+	public function __invoke($name, $args=[], $force=false){
+		if(!$name){
+			return;
+		}
+
+		if(is_array($name)){
+			$args	= $name;
+			$name	= wpjam_pull($args, 'name') ?: md5(serialize($args));
+		}
+
+		$object	= $force ? null : $this->get_arg('handlers['.$name.']');
+
+		if(!$object && $args){
+			$args	= maybe_closure($args, $name);
+			$object	= is_object($args) ? $args : (!empty($args['table_name']) ? WPJAM_DB::create($args) : WPJAM_Items::create($args, $name));
+
+			$object && $this->update_arg('handlers['.$name.']', $object);
+		}
+
+		return $object;
+	}
+}
+
+class WPJAM_Query extends WPJAM_Args{
+	public function __invoke($vars, ...$args){
+		$method	= is_string($vars) ? $vars : (is_bool($vars) ? ($vars ? 'parse' : 'render') : '');
+
+		if(!$method){
+			return $this->query($vars, ...$args);
+		}
+
+		if($this->type == 'post' && in_array($method, ['parse', 'render'], true)){
+			if(empty($args[0])){
+				return $method == 'parse' ? [] : '';
+			}
+
+			$args[1]	= ($args[1] ?? [])+['list_query'=>true];
+		}
+
+		return $this->$method(...$args);
+	}
+
+	public function query($vars, &$args=[]){
 		if(!empty($vars['related_query'])){
 			$post	= get_post(wpjam_pull($vars, 'post') ?? get_the_ID());
 			$type	= get_post_type($post);
@@ -346,7 +359,7 @@ class WPJAM_Query{
 			$vars	+= ['post_status'=>'publish', 'post__not_in'=>[$post->ID], 'post_type'=>array_unique($type), 'orderby'=>'related', 'term_taxonomy_ids'=>wpjam_filter($tt_ids, 'unique')];
 		}
 
-		$vars	= self::parse_vars($vars);
+		$vars	= $this->parse_vars($vars);
 
 		if($args){
 			$vars	= array_filter(['posts_per_page'=>wpjam_pull($args, 'number')])+wpjam_pull($args, ['post_type', 'orderby', 'posts_per_page'])+$vars;
@@ -359,12 +372,12 @@ class WPJAM_Query{
 		return new WP_Query($vars+['no_found_rows'=>true, 'ignore_sticky_posts'=>true]);
 	}
 
-	public static function parse($vars, $args=[], $type='post'){
+	public function parse($vars, $args=[]){
 		$format	= wpjam_pull($args, 'format');
 		$parse	= $args['parse'] ?? true;
 
-		if($type == 'post'){
-			$query	= is_object($vars) ? $vars : self::query($vars, $args);
+		if($this->type == 'post'){
+			$query	= is_object($vars) ? $vars : $this->query($vars, $args);
 
 			if(!$query || !$parse){
 				return $query ? $query->posts : [];
@@ -384,7 +397,7 @@ class WPJAM_Query{
 			$query->is_main_query() || wp_reset_postdata();
 
 			return $parsed;
-		}elseif($type == 'term'){
+		}elseif($this->type == 'term'){
 			$tax	= ($tax	= $vars['taxonomy'] ?? '') && is_string($tax) ? $tax : null;
 			$object	= wpjam_get_taxonomy($tax);
 			$depth	= $args['depth'] ?? ($object ? $object->max_depth : null);
@@ -423,9 +436,11 @@ class WPJAM_Query{
 
 			return $terms ?: [];
 		}
+
+		return [];
 	}
 
-	public static function parse_vars($vars, $param=false){
+	public function parse_vars($vars, $param=false){
 		if(($post_type = $vars['post_type'] ?? '') && is_string($post_type) && str_contains($post_type, ',')){
 			$vars['post_type'] = wp_parse_list($post_type);
 		}
@@ -435,7 +450,7 @@ class WPJAM_Query{
 				$qk		= wpjam_get_taxonomy_query_key($tax);
 				$keys	= $tax == 'category' ? ['category_id', 'cat_id'] : [$qk];
 
-				if($value = ($param ? array_reduce($keys, fn($c, $k)=> (int)wpjam_get_parameter($k) ?: $c, 0) : 0) ?: wpjam_pull($vars, $qk)){
+				if($value = ($param ? array_reduce($keys, fn($c, $k)=> (int)wpjam_param($k) ?: $c, 0) : 0) ?: wpjam_pull($vars, $qk)){
 					$term_ids[$tax]	= $value;
 				}
 			}
@@ -466,7 +481,7 @@ class WPJAM_Query{
 		}
 
 		foreach(['cursor'=>'before', 'since'=>'after'] as $k => $v){
-			if($value = (int)(($param ? wpjam_get_parameter($k) : 0) ?: wpjam_pull($vars, $k))){
+			if($value = (int)(($param ? wpjam_param($k) : 0) ?: wpjam_pull($vars, $k))){
 				$vars['date_query'][]	= [$v => wpjam_date('Y-m-d H:i:s', $value)];
 
 				$vars['ignore_sticky_posts']	= true;
@@ -476,15 +491,66 @@ class WPJAM_Query{
 		return $vars;
 	}
 
-	public static function render($query, $args=[]){
-		$cb		= wpjam_fill(['item_callback', 'wrap_callback'], fn($k)=> $args[$k] ?? [self::class, $k]);
-		$query	= is_object($query) ? $query : self::query($query, $args);
+	public function render($vars, $args=[]){
+		$cb		= wpjam_fill(['item_callback', 'wrap_callback'], fn($k)=> $args[$k] ?? [$this, $k]);
+		$query	= is_object($vars) ? $vars : $this->query($vars, $args);
 		$args	+= ['query'=>$query];
 
 		return $query ? $cb['wrap_callback'](implode(wpjam_map($query->posts, fn($p, $i)=> $cb['item_callback']($p->ID, $args+['i'=>$i]))), $args) : '';
 	}
 
-	public static function item_callback($post_id, $args){
+	public function filter_clauses($clauses, $query){
+		$wpdb		= $GLOBALS['wpdb'];
+		$orderby	= $query->get('orderby');
+		$order		= strtoupper($query->get('order')) == 'ASC' ? 'ASC' : 'DESC';;
+
+		if($orderby == 'related'){
+			if($tt_ids = array_filter(wp_parse_id_list($query->get('term_taxonomy_ids')))){
+				$clauses['join']	.= "INNER JOIN {$wpdb->term_relationships} AS tr ON {$wpdb->posts}.ID = tr.object_id";
+				$clauses['where']	.= " AND tr.term_taxonomy_id IN (".implode(",", $tt_ids).")";
+				$clauses['groupby']	.= " tr.object_id";
+				$clauses['orderby']	= " count(tr.object_id) DESC, {$wpdb->posts}.ID DESC";
+			}
+		}elseif($orderby == 'comment_date'){
+			$ct		= $query->get('comment_type') ?: 'comment';
+			$str	= $ct == 'comment' ? "'comment', ''" : "'".esc_sql($ct)."'";
+			$where	= "ct.comment_type IN ({$str}) AND ct.comment_parent=0 AND ct.comment_approved NOT IN ('spam', 'trash', 'post-trashed')";
+
+			$clauses['join']	= "INNER JOIN {$wpdb->comments} AS ct ON {$wpdb->posts}.ID = ct.comment_post_ID AND {$where}";
+			$clauses['groupby']	= "ct.comment_post_ID";
+			$clauses['orderby']	= "MAX(ct.comment_ID) {$order}";
+		}elseif(in_array($orderby, ['views', 'comment_type'])){
+			$clauses['join']	.= $wpdb->prepare("LEFT JOIN {$wpdb->postmeta} jam_pm ON {$wpdb->posts}.ID = jam_pm.post_id AND jam_pm.meta_key = %s ", sanitize_key($orderby == 'comment_type' ? $query->get('comment_count') : 'views'));
+			$clauses['orderby']	= "(COALESCE(jam_pm.meta_value, 0)+0) {$order}, " . $clauses['orderby'];
+			$clauses['groupby']	= "{$wpdb->posts}.ID";
+		}elseif(in_array($orderby, ['', 'date', 'post_date'])){
+			$clauses['orderby']	.= ", {$wpdb->posts}.ID {$order}";
+		}
+
+		return $clauses;	
+	}
+
+	public function filter_results($posts, $query){
+		$q	= &$query->query_vars;
+
+		$sticky_posts	= array_diff(wp_parse_id_list(wpjam_pull($q, 'sticky_posts') ?: []), $q['post__not_in']);
+		
+		if($sticky_posts && ($stickies = get_posts([
+			'orderby'			=> 'post__in',
+			'post__in'			=> $sticky_posts,
+			'post_type'			=> $q['post_type'] ?: 'post',
+			'post_status'		=> 'publish',
+			'posts_per_page'	=> count($sticky_posts),
+		]+wpjam_pick($q, ['suppress_filters', 'cache_results', 'update_post_meta_cache', 'update_post_term_cache', 'lazy_load_term_meta'])))){
+			$q['sticky_posts']	= array_column($stickies, 'ID');
+
+			return array_merge($stickies, array_filter($posts, fn($post)=> !in_array($post->ID, $q['sticky_posts'], true)));
+		}
+
+		return $posts;
+	}
+
+	public function item_callback($post_id, $args){
 		$args	+= ['title_number'=>'', 'excerpt'=>false, 'thumb'=>true, 'size'=>'thumbnail', 'thumb_class'=>'wp-post-image', 'wrap_tag'=>'li'];
 		$title	= get_the_title($post_id);
 		$item	= wpjam_wrap($title);	
@@ -497,7 +563,7 @@ class WPJAM_Query{
 		return $item->wrap('a', ['href'=>get_permalink($post_id), 'title'=>strip_tags($title)])->wrap($args['wrap_tag'])->render();
 	}
 
-	public static function wrap_callback($output, $args){
+	public function wrap_callback($output, $args){
 		if(!$output){
 			return '';
 		}
@@ -510,6 +576,11 @@ class WPJAM_Query{
 		$args['div_id']		&& $output->wrap('div', ['id'=>$args['div_id']]);
 
 		return $output->render();
+	}
+
+	public static function get_instance($type='post'){
+		static $objects	= [];
+		return $objects[$type] ??= new self(['type'=>$type]);
 	}
 }
 
@@ -547,7 +618,7 @@ class WPJAM_DB extends WPJAM_Args{
 				return $this->where('', ...$args);
 			}
 
-			return wpjam_get_operator($method) ? $this->where(array_shift($args).'__'.$method, ...$args) : $this;
+			return $this->operator($method) ? $this->where(array_shift($args).'__'.$method, ...$args) : $this;
 		}elseif(array_key_exists($method, $this->query_vars)){
 			$key	= $method;
 			$value	= $args ? $args[0] : ($key == 'found_rows' ? true : null);
@@ -649,6 +720,10 @@ class WPJAM_DB extends WPJAM_Args{
 
 	public function get($id){
 		return $this->get_by($this->primary_key, $id);
+	}
+
+	public function operator($name){
+		return ($this->operator ?? ['not'=>'!=', 'lt'=>'<', 'lte'=>'<=', 'gt'=>'>', 'gte'=>'>=']+array_reduce(['in', 'like', 'between', 'exists', 'regexp'], fn($c, $v)=>$c+[$v=>strtoupper($v), 'not_'.$v=>'NOT '.strtoupper($v)], []))[$name] ?? null;
 	}
 
 	public function get_by($field, $value=null, $order='ASC'){
@@ -986,12 +1061,13 @@ class WPJAM_DB extends WPJAM_Args{
 
 		if(is_array($field)){
 			$type	= $args[0];
-			$query	= $args = [];
 
 			if($type == 'fields'){
 				$query	= array_fill(0, count($field), '%i');
 				$args	= $field;
 			}else{
+				$query	= $args = [];
+
 				foreach($field as $k => $v){
 					$query[]	= ($type == 'data' ? "%i = " : '').(is_null($v) ? 'NULL' : ($types[$k] ?? '%s'));
 					$args		= array_merge($args, ($type == 'data' ? [$k] : []), (is_null($v) ? [] : [$v]));
@@ -1000,28 +1076,37 @@ class WPJAM_DB extends WPJAM_Args{
 
 			$query	= implode(', ', $query);
 		}else{
-			[$op, $value]	= $args;
-
-			$format	= $types[$field] ?? '%s';
+			$op	= $args[0];
+			$v	= $args[1];
+			$f	= $types[$field] ?? '%s';
 			
-			if(in_array($op, ['IN', 'NOT IN'])){
-				$value	= is_array($value) ? $value : array_map('trim', explode(',', $value));
-
-				if(count($value) <= 1){
-					$value	= $value ? array_first($value) : '';
-					$op		= $op == 'IN' ? '=' : '!=';
+			if(in_array($op, ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])){
+				$v	= is_array($v) ? $v : array_map('trim', explode(',', $v));
+				$c	= count($v);
+			
+				if(in_array($op, ['IN', 'NOT IN'])){
+					if($c <= 1){
+						$v	= array_first($v ?: ['']);
+						$op	= $op == 'IN' ? '=' : '!=';
+					}else{
+						$f	= '('.implode(', ', array_fill(0, $c, $f)).')';
+					}
 				}else{
-					$format	= '('.implode(', ', array_fill(0, count($value), $format)).')';
+					$f	= $f.' AND '.$f;
 				}
 			}elseif(in_array($op, ['LIKE', 'NOT LIKE'])){
-				$left	= try_remove_prefix($value, '%') ? '%' : '';
-				$right	= try_remove_suffix($value, '%') ? '%' : '';
-				$value	= $left.$this->esc_like_by_db($value).$right;
-				$format	= '%s';
+				$f	= '%s';
+				$v	= (str_starts_with($v, '%') ? '%' : '').$this->esc_like_by_db(trim($v, '%')).(str_ends_with($v, '%') ? '%' : '');
+			}elseif(in_array($op, ['REGEXP', 'NOT REGEXP', 'RLIKE'])){
+				$f	= '%s';
+			}elseif(in_array($op, ['EXISTS', 'NOT EXISTS'])){
+				$query	= '%i IS '.($op == 'EXISTS' ? 'NOT NULL' : 'NULL');
+
+				return $this->prepare_by_db($query, [$field]);
 			}
 
-			$args	= [$field, ...(array)$value];
-			$query	= '%i '.$op.' '.$format;
+			$args	= [$field, ...(array)$v];
+			$query	= '%i '.$op.' '.$f;
 		}
 
 		return $args ? $this->prepare_by_db($query, $args) : $query;
@@ -1037,16 +1122,10 @@ class WPJAM_DB extends WPJAM_Args{
 		if(!$field){
 			$value	= $value ? '('.$value.')' : '';
 		}elseif(isset($value)){
-			if(str_contains($field, '__')){
-				$parts	= explode('__', $field);
-
-				if($op	= wpjam_get_operator($parts[1])){
-					$field		= $parts[0];
-					$compare	= $op;
-				}
-			}
-
-			$value	= $this->format($field, $compare ?? (is_array($value) ? 'IN' : '='), $value);
+			$parts	= str_contains($field, '__') ? explode('__', $field) : [];
+			$op		= $parts ? $this->operator($parts[1]) : '';
+			$field	= $op ? $parts[0] : $field;
+			$value	= $this->format($field, $op ?: (is_array($value) ? 'IN' : '='), $value);
 		}
 
 		if($output == 'object'){
@@ -1199,6 +1278,10 @@ class WPJAM_DB extends WPJAM_Args{
 	public function get_wheres(){
 		return $this->where();
 	}
+
+	public static function create($args, $name=null){
+		return ($name ??= $args['table_name'] ?? '') ? new static($name, $args) : null;
+	}
 }
 
 class WPJAM_Items extends WPJAM_Args{
@@ -1244,9 +1327,9 @@ class WPJAM_Items extends WPJAM_Args{
 						$object	= wpjam_get_post_object($this->post_id);
 
 						if($method == 'get_items'){
-							return $object->get_unserialized();
+							$result	= $object->get_unserialized();
 						}elseif($method == 'update_items'){
-							return $object->save(['content'=>$args[0] ?: '']);
+							$result	= $object->save(['content'=>$args[0] ?: '']);
 						}
 					}
 				}elseif($type == 'cache'){
@@ -1255,30 +1338,37 @@ class WPJAM_Items extends WPJAM_Args{
 
 						if($method == 'get_items'){
 							$result	= [$object, 'get_with_cas']($key);
-						
-							[$result, $this->cas_token]	= $result === false ? [false, null] : [$result['value'], $result['cas']];
 
-							return $result ?: [];
+							[$result, $this->cas_token]	= $result === false ? [false, null] : [$result['value'], $result['cas']];
 						}elseif($method == 'update_items'){
 							$cas	= $this->cas_token;
-
-							return [$object, $cas ? 'cas' : 'add'](...[...($cas ? [$cas] : []), $key, ...$args]);
+							$result	= [$object, $cas ? 'cas' : 'add'](...[...($cas ? [$cas] : []), $key, ...$args]);
 						}
 					}
 				}
 
-				if(isset($map[$method]) && array_all($keys, fn($k)=> $this->$k)){
-					$result	= ($map[$method])(...[...array_values(wpjam_pick($this, $keys)), ...$args]);
+				if(!isset($result)){
+					if(isset($map[$method]) && array_all($keys, fn($k)=> $this->$k)){
+						$result	= ($map[$method])(...[...array_values(wpjam_pick($this, $keys)), ...$args]);
 
-					if($type == 'meta' && $method == 'get_items'){
-						$this->pre_value	= $result;
+						if($type == 'meta' && $method == 'get_items'){
+							$this->pre_value	= $result;
+						}
+					}else{
+						$result	= $method == 'delete_items' ? $this->update_items([]) : true;
 					}
-				}else{
-					$result	= $method == 'delete_items' ? $this->update_items([]) : true;
 				}
 			}
 
-			return $method == 'get_items' ? ($result ?: []) : $result;
+			if($method == 'get_items'){
+				if($result && $this->filter_items){
+					$result	= $this->filter_items($result);
+				}
+
+				return $result ?: [];
+			}
+
+			return $result;
 		}elseif(str_contains($method, '_setting')){
 			if($this->option_name){
 				$i		= str_starts_with($method, 'update_') ? 2 : 1;
@@ -1425,6 +1515,139 @@ class WPJAM_Items extends WPJAM_Args{
 	public function get($id){
 		return ($items = wpjam_pick($this->get_items(), [$id])) ? $this->parse_items($items)[$id] : null;
 	}
+
+	public static function create($args, $name=null){
+		if(!empty($args['option_name'])){
+			$args	+= array_filter(['setting_name'=>wpjam_pull($args, 'items_field')]);
+			$args	+= ['type'=>(!empty($args['setting_name']) ? 'setting' : 'option')];
+		}elseif(!empty($args['items_model'])){	// 不建议
+			$args	+= wpjam_fill(['get_items', 'update_items'], fn($k)=> [$args['items_model'], $k]);
+		}elseif(wpjam_pull($args, 'type') == 'option_items'){	// 不建议
+			$args	+= ['type'=>'option', 'option_name'=>$name];
+		}else{
+			$args	= (!empty($args['items_type']) || (!empty($args['get_items']) && !empty($args['update_items']))) ? $args : [];
+		}
+
+		return $args ? new static($args) : null;
+	}
+}
+
+class WPJAM_Notice extends WPJAM_Items{
+	public function render(){
+		foreach($this->get_items() as $key => $item){
+			$data	= ['notice_key'=>$key, 'notice_type'=>$this->notice_type];
+			$item	+= ['class'=>'is-dismissible', 'title'=>'', 'modal'=>0];
+			$notice	= trim($item['notice']);
+			$notice	.= !empty($item['admin_url']) ? (($item['modal'] ? "\n\n" : ' ').'<a href="'.add_query_arg($data, home_url($item['admin_url'])).'">点击查看<span class="dashicons dashicons-arrow-right-alt"></span></a>') : '';
+
+			echo wpjam_tag('div', [
+				'class' => $item['modal'] ? 'hidden notice-modal' : 'notice notice-'.$item['type'].' '.$item['class'],
+				'data'	=> $item['modal'] ? ['title'=>$item['title'] ?: '消息'] : [],
+			], wpautop($notice).wpjam_get_page_button('delete_notice', ['data'=>$data]))."\n";
+		}
+	}
+
+	public static function add($item, $type='admin', $id=''){
+		if(!$id || ($type == 'admin' ? (!is_multisite() || get_site($id)) : get_userdata($id))){
+			$item	= is_array($item) ? $item+['notice'=>''] : ['notice'=>$item];
+
+			return (self::get_instance($type, $id))->insert($item+['type'=>'error', 'time'=>time(), 'key'=>md5(serialize($item))]);
+		}
+	}
+
+	public static function on_admin_init(){
+		$objects	= wpjam_fill([...(current_user_can('manage_options') ? ['admin'] : []), 'user'], [self::class, 'get_instance']);
+
+		if(($type = $_GET['notice_type'] ?? '') && ($key = $_GET['notice_key'] ?? '') && isset($objects[$type])){
+			$objects[$type]->delete($key);
+		}
+
+		add_action('all_admin_notices', fn()=> wpjam_map($objects, fn($object)=>$object->render()));
+
+		wpjam_register_page_action('delete_notice', [
+			'button_text'	=> '删除',
+			'tag'			=> 'span',
+			'class'			=> 'hidden delete-notice',
+			'validate'		=> true,
+			'direct'		=> true,
+			'callback'		=> fn($data)=> isset($objects[$data['notice_type']]) ? $objects[$data['notice_type']]->delete($data['notice_key']) : wp_die('无效的类型'),
+		]);
+	}
+
+	public static function get_instance($type='admin', $id=0){
+		$name	= 'wpjam_notices';
+		$id		= (int)$id ?: ($type == 'user' ? get_current_user_id() : get_current_blog_id());
+
+		return wpjam_get_handler('notice:'.$type.':'.$id, static::create(($type == 'user' ? [
+			'items_type'	=> 'meta',
+			'meta_type'		=> 'user',
+			'meta_key'		=> $name,
+			'object_id'		=> $id
+		] : [
+			'get_items'		=> fn()=> wpjam_get_option($name, $id),
+			'update_items'	=> fn($items)=> wpjam_update_option($name, $items, $id),
+		])+[
+			'notice_type'	=> $type,
+			'primary_key'	=> 'key',
+			'filter_items'	=> fn($items)=> array_filter(($items ?: []), fn($v)=> $v['time']>(time()-MONTH_IN_SECONDS*3) && trim($v['notice']))
+		]));
+	}
+}
+
+class WPJAM_Lazyloader extends WPJAM_Args{
+	public function __call($method, $args){
+		$name	= $method.'['.array_shift($args).']';
+
+		return $args ? $this->update_arg($name, ...$args) : $this->get_arg($name);
+	}
+
+	public function queue($name, $ids){
+		if(!$name || !($ids = array_filter($ids))){
+			return;
+		}
+
+		if(is_array($name)){
+			return array_walk($name, fn($n, $k)=> $this->queue($n, is_numeric($k) ? $ids : array_column($ids, $k)));
+		}
+
+		$ids	= array_unique($ids);
+
+		if($name == 'post'){
+			_prime_post_caches($ids, false, false);
+
+			wpjam_lazyload('post_meta', $ids);
+		}elseif(in_array($name, ['blog', 'site', 'term', 'comment'])){
+			('_prime_'.($name == 'blog' ? 'site' : $name).'_caches')($ids);
+		}elseif(in_array($name, ['term_meta', 'comment_meta', 'blog_meta'])){
+			wp_metadata_lazyloader()->queue_objects(substr($name, 0, -5), $ids);
+		}else{
+			$pending	= $this->pending($name);
+
+			if(!$pending){
+				$loader	= $this->loader($name) ?: (str_ends_with($name, '_meta') ? [
+					'filter'	=> 'get_'.$name.'data',
+					'callback'	=> fn($v)=> update_meta_cache(substr($name, 0, -5), $v)
+				] : []);
+
+				$loader && wpjam_once($loader['filter'], 'tap', fn()=> $this->load($name, $loader['callback']));
+			}
+
+			$this->pending($name, array_merge($pending ?: [], $ids));
+		}
+	}
+
+	public function load($name, $cb){
+		if($name && ($pending = $this->pending($name))){
+			wpjam_call($cb, array_unique($pending));
+
+			$this->pending($name, []);
+		}
+	}
+
+	public static function get_instance(){
+		static $object;
+		return $object ??= new self();
+	}
 }
 
 class WPJAM_Cache extends WPJAM_Args{
@@ -1501,5 +1724,97 @@ class WPJAM_Cache extends WPJAM_Args{
 
 			return new self($args);
 		}
+	}
+
+	public static function remember($key, $group, $cb=null, $args=[]){
+		$fix	= is_bool($group) ? ($group ? 'site_' : '').'transient' : '';
+
+		if($cb === false){
+			return $fix ? ('delete_'.$fix)($key) : wp_cache_delete($key, $group);
+		}
+
+		$args	= is_numeric($args) ? ['expire'=>$args] : $args;
+		$force	= $args['force'] ?? false;
+		$value	= $fix ? ('get_'.$fix)($key) : wp_cache_get($key, $group, ($force === 'get' || $force === true));
+
+		if($cb && ($value === false || $force === 'set' || $force === true)){
+			$value	= $cb($value, $key, ...($fix ? [] : [$group ?: 'default']));
+
+			if(!is_wp_error($value) && $value !== false){
+				$expire	= ($args['expire'] ?? '') ?: 86400;
+				$result	= $fix ? ('set_'.$fix)($key, $value, $expire) : wp_cache_set($key, $value, $group, $expire);
+			}
+		}
+
+		return $value;
+	}
+
+	public static function table($name, $key, ...$args){
+		$clean	= $args && $args[0];
+		$table	= in_array($name, ['post', 'term', 'user']) ? $GLOBALS['wpdb']->{$name.'s'} : $name;
+		$status	= static::remember($table.':status', false, $clean ? false : fn()=> $GLOBALS['wpdb']->get_row("SHOW TABLE STATUS LIKE '{$table}'"));
+
+		return !$clean && $key == 'max_id' ? ($status ? $status->Auto_increment : null) : $status;
+	}
+
+	public static function deleted_ids($name, ...$args){
+		$key	= 'deleted_ids:'.$name;
+		$items	= get_transient($key) ?: [];
+
+		if($args && $args[0]){
+			if(is_string($args[0]) && try_remove_suffix($args[0], '-')){
+				static::table($name, 'max_id', true);
+
+				$id		= (int)$args[0];
+				$update	= in_array($id, $items) ? array_diff($items, [$id]) : null;
+			}else{
+				$ids	= array_diff((array)$args[0], $items);
+				$max	= static::table($name, 'max_id');
+				$ids	= $ids && $max ? array_filter($ids, fn($id)=> $id < $max) : $ids;
+				$update	= $ids ? array_merge($items, $ids) : null;
+			}
+
+			if(isset($update)){
+				$items	= array_values($update);
+
+				set_transient($key, $items, 30);
+			}
+		}
+
+		return $items;
+	}
+
+	public static function verification($group, $key, ...$args){
+		$group	= (is_array($group) ? $group : ['group'=>$group])+['max_attempts'=>5, 'interval'=>1, 'expire'=>30, 'global'=>true];
+		$cache	= self::get_instance(['group'=>'verification_code', 'prefix'=>$group['group'] ?: 'default']+$group);
+
+		if($max = $group['max_attempts']){
+			$times	= (int)$cache->get($key.':failed_times');
+			($times > $max) && wpjam_throw('too_many_attempts', sprintf(__('Failed attempts exceeded, Please try again in %d minutes.', 'wpjam'), $group['expire']/2));
+		}
+
+		if($action == 'verify'){
+			$code	= $args[0];
+
+			if(!$code || (int)$code !== (int)$cache->get($key.':code')){
+				$max && $cache->set($key.':failed_times', $times+1, $group['expire']*30);
+
+				wpjam_throw('invalid_code');
+			}
+
+			return true;
+		}
+
+		if($group['interval']){
+			$cache->get($key.':time') && wpjam_throw('error', sprintf(__('A verification code was sent %d minutes ago.', 'wpjam'), $group['interval']));
+
+			$cache->set($key.':time', time(), $group['interval']*60);
+		}
+
+		$code	= rand(100000, 999999);
+
+		$cache->set($key.':code', $code, $group['expire']*60);
+
+		return $code;
 	}
 }

@@ -209,7 +209,7 @@ class WPJAM_Field extends WPJAM_Attr{
 			$this->_fields	= WPJAM_Fields::create($this->fields, $this->_fields_args ?: [], $this);
 			$this->fields	= $this->_fields->fields;
 		}else{
-			$this->attr(wpjam_pattern($this->pattern) ?: []);
+			$this->attr(wpjam_pattern($this) ?: []);
 		}
 	}
 
@@ -325,7 +325,7 @@ class WPJAM_Field extends WPJAM_Attr{
 		}elseif($this->is('img, image, file, mu-img, mu-image, mu-file')){
 			return  __('Select '.($this->is('file, mu-file') ? 'file' : 'image'), 'wpjam').($this->is('mu') ? '[多选]' : '');
 		}elseif($this->is('mu-text, mu-fields')){
-			return '添加'.(wpjam_between(mb_strwidth($this->title ?: ''), 4, 8) ? $this->title : '选项');
+			return '添加'.(wpjam_compare(mb_strwidth($this->title ?: ''), 'between', 4, 8) ? $this->title : '选项');
 		}
 	}
 
@@ -633,10 +633,10 @@ class WPJAM_Field extends WPJAM_Attr{
 
 					$size['width'] && $size['height'] && ($this->description ??= '建议尺寸：'.$size['width'].'x'.$size['height']);
 
-					$size	= wpjam_parse_size($this->size ?: '480x0', [480, 480]);
+					$size	= wpjam_constrain_dimensions($this->size ?: '480x0', [480, 480]);
 				}
 
-				$field->data('thumb_args', wpjam_get_thumbnail_args($size ?? [200, 200]));
+				$field->data('thumb_args', wpjam_get_thumbnail('args', $size ?? [200, 200]));
 			}
 
 			if($this->_mu){
@@ -650,7 +650,7 @@ class WPJAM_Field extends WPJAM_Attr{
 				'nonce'		=> wp_create_nonce('upload-'.$key.'-'.$accept)
 			];
 
-			$field	= $this->el('input', ['type'=>'hidden', 'disabled'=>!wpjam_accept_to_mime_types($accept)]);
+			$field	= $this->el('input', ['type'=>'hidden', 'disabled'=>!wpjam_mimes($accept)]);
 		}else{
 			$field	= $this->el('input');
 			$data	+= array_filter(['class'=>$this->class]);
@@ -772,7 +772,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 					if($field->show_in_rest === false){
 						continue;
 					}
-				
+
 					$_args	= [!empty($args[1]) ? $field->unpack($args[0]) : ($args[0] ?? [])+$this->_args, $args[1] ?? ''];
 				}
 
@@ -997,7 +997,7 @@ class WPJAM_Fields extends WPJAM_Attr{
 		$attr	= ['_fields_args'=>$args, '_prop'=>$prop]+wpjam_pick($parent ?: [], ['readonly', 'disabled']);
 
 		foreach(self::parse($fields) as $key => $field){
-			if(($field['show_admin_column'] ?? '') !== 'only' && ($field = WPJAM_Field::create($attr+$field, $key))){
+			if(($field['show_admin_column'] ?? ($field['column']['show'] ?? '')) !== 'only' && ($field = WPJAM_Field::create($attr+$field, $key))){
 				if($prop && (count($field->_names) > 1 || $field->is('fieldset'))){
 					trigger_error($parent->_title.'子字段不允许'.($field->is('fieldset') ? $field->type : '[]模式').':'.$field->name); continue;
 				}
@@ -1132,7 +1132,7 @@ class WPJAM_Platform extends WPJAM_Register{
 			return wpjam_get($this->get_paths(), str_ends_with($page_key, '[]') ? substr($page_key, 0, -2) : $page_key);
 		}
 
-		if($item	= $this->get_path($page_key.'[]')){
+		if($item = $this->get_path($page_key.'[]')){
 			$cb		= wpjam_pull($item, 'callback');
 			$args	= is_array($args) ? array_filter($args, fn($v)=> !is_null($v))+$item : $args;
 			$path	= $cb ? (is_callable($cb) ? ($cb($args, $item) ?: '') : null) : $this->get_path_by_page_type($args, $item);
@@ -1176,91 +1176,22 @@ class WPJAM_Platform extends WPJAM_Register{
 			'template'	=> ['bit'=>8,	'order'=>10,	'title'=>'网页',		'verify'=>'__return_true']
 		];
 	}
-
-	public static function call_platforms($action, $platforms=null, ...$args){
-		$platforms	= array_filter(self::get_by((array)($platforms ?? ['path'=>true])));
-		$multi		= count($platforms) > 1;
-
-		if($action == 'get_fields'){
-			if(!$platforms){
-				return [];
-			}
-
-			$args		= $args ? (is_array($args[0]) ? $args[0] : ['strict'=>$args[0]]) : [];
-			$strict		= (bool)wpjam_pull($args, 'strict');
-			$prepend	= array_filter(wpjam_pull($args, ['prepend_name']));
-			$suffix		= wpjam_pull($args, 'suffix');
-			$title		= wpjam_pull($args, 'title') ?: '页面';
-			$key		= 'page_key'.$suffix;
-			$paths		= WPJAM_Path::get_by($args);
-			$fields_key	= 'fields['.md5(serialize($prepend+['suffix'=>$suffix, 'strict'=>$strict, 'platforms'=>array_keys($platforms), 'page_keys'=>array_keys($paths)])).']';
-
-			static $caches	= [];
-
-			if(!empty($caches[$fields_key])){
-				[$fields, $show_if]	= $caches[$fields_key];
-			}else{
-				$pks	= [$key=>['OR', $suffix]]+($multi && !$strict ? [$key.'_backup'=>['AND', $suffix.'_backup']] : []);
-				$fields	= wpjam_map($pks, fn()=> ['tabbar'=>['title'=>'菜单栏/常用', 'options'=>($strict ? [] : ['none'=>'只展示不跳转'])]]+wpjam('path_group')+['others'=>['title'=>'其他页面']]);
-
-				foreach($paths as $path){
-					$name	= $path->name;
-					$group	= $path->group ?: ($path->tabbar ? 'tabbar' : 'others');
-					$i		= 0;
-
-					foreach($pks as $pk => [$op, $fix]){
-						if(wpjam_matches($platforms, fn($pf)=> $pf->has_path($name, $strict && $op == 'OR'), $op)){
-							$i++;
-
-							$fields	= wpjam_set($fields, $pk.'['.$group.'][options]['.$name.']', [
-								'label'		=> $path->title,
-								'fields'	=> wpjam_array(array_reduce($platforms, fn($c, $pf)=> array_merge($c, $pf->get_fields($name)), []), fn($k, $v)=> [$k.$fix, wpjam_except($v, 'title')+$prepend])
-							]);
-						}
-					}
-
-					if($multi && !$strict && $i == 1){
-						$show_if[]	= $name;
-					}
-				}
-
-				$caches[$fields_key] = [$fields, $show_if ?? []];
-			}
-
-			return wpjam_array($fields, fn($k, $v)=> [$k.'_set', ['type'=>'fieldset', 'fields'=>[$k=>['options'=>array_filter($v, fn($item)=> !empty($item['options']))]+$prepend]]+($k != $key ? ['title'=>'备用'.$title, 'show_if'=>[$key, 'IN', $show_if]] : ['title'=>$title])]);
-		}
-
-		$args[]	= $multi;
-
-		if($action == 'parse_item'){
-			return $platforms ? [$multi ? array_find($platforms, fn($v)=> $v->verify()) : array_first($platforms), $action](...$args) : ['type'=>'none'];
-		}
-
-		return array_reduce($platforms, fn($c, $v)=> $c && $v->$action(...$args), true);
-	}
 }
 
 class WPJAM_Path extends WPJAM_Args{
 	public static function create($name, ...$args){
-		$object	= self::get_instance($name) ?: wpjam('path', $name, new static(['name'=>$name]));
+		$object	= static::get_instance($name) ?: new static(['name'=>$name]);
 
-		if($args){
-			[$pf, $args]	= count($args) >= 2 ? $args : [array_find(wpjam_pull($args[0], ['platform', 'path_type']), fn($v)=> $v), $args[0]];
+		[$pf, $args]	= count($args) > 1 ? $args : [array_find(wpjam_pull($args[0], ['platform', 'path_type']), fn($v)=> $v), $args[0]];
 
-			$args	+= in_array(($args['page_type'] ?? ''), ['post_type', 'taxonomy']) ? [$args['page_type']=>$name] : [];
-			$group	= $args['group'] ?? '';
+		$args	+= in_array(($args['page_type'] ?? ''), ['post_type', 'taxonomy']) ? [$args['page_type']=>$name] : [];
 
-			if(is_array($group)){
-				isset($group['key'], $group['title']) && wpjam('path_group', $group['key'], ['title'=>$group['title']]);
-
-				$args['group']	= $group['key'] ?? null;
+		foreach((array)$pf as $pf){
+			if($platform = WPJAM_Platform::get($pf)){
+				$platform->add_path($name, array_merge($args, ['platform'=>$pf, 'path_type'=>$pf, 'object'=>$object]));
 			}
 
-			foreach((array)$pf as $pf){
-				($platform = WPJAM_Platform::get($pf)) && $platform->add_path($name, array_merge($args, ['platform'=>$pf, 'path_type'=>$pf]));
-
-				$object->update_arg('platform[]', $pf)->update_args($args, false);
-			}
+			$object->update_arg('platform[]', $pf)->update_args($args, false);
 		}
 
 		return $object;
@@ -1269,12 +1200,14 @@ class WPJAM_Path extends WPJAM_Args{
 	public static function remove($name, $pf=''){
 		if($object = self::get_instance($name)){
 			foreach($pf ? (array)$pf : $object->get_arg('platform[]') as $pf){
-				($platform = WPJAM_Platform::get($pf)) && $platform->delete_path($name);
+				if($platform = WPJAM_Platform::get($pf)){
+					$platform->delete_path($name);
+				}
 
 				$object->delete_arg('platform[]', $pf);
 			}
 
-			return $pf ? $object : wpjam('path', $name, null);
+			return $pf ? $object : null;
 		}
 	}
 
@@ -1282,11 +1215,90 @@ class WPJAM_Path extends WPJAM_Args{
 		$type	= wpjam_pull($args, 'path_type');
 		$args	+= $type ? ['platform'=>$type] : [];
 
-		return wpjam_filter(wpjam('path'), $args, 'AND');
+		return wpjam_filter(array_reduce(WPJAM_Platform::get_by(), fn($c, $v)=> array_merge($c, array_column($v->get_paths(), 'object')), []), $args, 'AND');
 	}
 
 	public static function get_instance($name){
-		return wpjam('path', $name);
+		foreach(WPJAM_Platform::get_by() as $v){
+			if($object = $v->get_path($name.'[object]')){
+				return $object;
+			}
+		}
+	}
+
+	public static function __callStatic($method, $args){
+		$platforms	= array_filter(WPJAM_Platform::get_by((array)(array_shift($args) ?? ['path'=>true])));
+		$multi		= count($platforms) > 1;
+
+		if(str_ends_with($method, '_item')){
+			$args[]	= $multi;
+
+			if($method == 'parse_item'){
+				return $platforms ? [$multi ? array_find($platforms, fn($v)=> $v->verify()) : array_first($platforms), $method](...$args) : ['type'=>'none'];
+			}
+
+			return array_reduce($platforms, fn($c, $v)=> $c && $v->$method(...$args), true);
+		}
+
+		if(!$platforms){
+			return [];
+		}
+
+		$args		= $args ? (is_array($args[0]) ? $args[0] : ['strict'=>$args[0]]) : [];
+		$strict		= (bool)wpjam_pull($args, 'strict');
+		$prepend	= array_filter(wpjam_pull($args, ['prepend_name']));
+		$suffix		= wpjam_pull($args, 'suffix');
+		$title		= wpjam_pull($args, 'title') ?: '页面';
+		$key		= 'page_key'.$suffix;
+		$paths		= static::get_by($args);
+		$fields_key	= 'fields['.md5(serialize($prepend+['suffix'=>$suffix, 'strict'=>$strict, 'platforms'=>array_keys($platforms), 'page_keys'=>array_keys($paths)])).']';
+
+		static $caches	= [];
+
+		if(!empty($caches[$fields_key])){
+			[$fields, $show_if]	= $caches[$fields_key];
+		}else{
+			$pks	= [$key=>['OR', $suffix]]+($multi && !$strict ? [$key.'_backup'=>['AND', $suffix.'_backup']] : []);
+			$fields	= wpjam_map($pks, fn()=> ['tabbar'=>['title'=>'菜单栏/常用', 'options'=>($strict ? [] : ['none'=>'只展示不跳转'])]]);
+
+			foreach($paths as $path){
+				$i		= 0;
+				$name	= $path->name;
+				$group	= $path->group;
+
+				[$group, $label]	= is_array($group) ? [$group['key'] ?? '', $group['title'] ?? ''] : [$group, ''];
+
+				if(!$group){
+					$group	= $path->tabbar ? 'tabbar' : 'others';
+				}
+
+				foreach($pks as $pk => [$op, $fix]){
+					if(wpjam_matches($platforms, fn($pf)=> $pf->has_path($name, $strict && $op == 'OR'), $op)){
+						$i++;
+
+						if($label){
+							$fields	= wpjam_set($fields, $pk.'['.$group.'][label]', $label);
+						}
+
+						$fields	= wpjam_set($fields, $pk.'['.$group.'][options]['.$name.']', [
+							'label'		=> $path->title,
+							'fields'	=> wpjam_array(array_reduce($platforms, fn($c, $pf)=> array_merge($c, $pf->get_fields($name)), []), fn($k, $v)=> [$k.$fix, wpjam_except($v, 'title')+$prepend])
+						]);
+					}
+				}
+
+				if($multi && !$strict && $i == 1){
+					$show_if[]	= $name;
+				}
+			}
+
+			$caches[$fields_key] = [
+				wpjam_map($fields, fn($v)=> ($o = wpjam_pull($v, 'others')) ? $v+['others'=>$o+['label'=>'其他页面']] : $v),
+				$show_if ?? []
+			];
+		}
+
+		return wpjam_array($fields, fn($k, $v)=> [$k.'_set', ['type'=>'fieldset', 'fields'=>[$k=>['options'=>$v]+$prepend]]+($k != $key ? ['title'=>'备用'.$title, 'show_if'=>[$key, 'IN', $show_if]] : ['title'=>$title])]);
 	}
 }
 
@@ -1296,7 +1308,7 @@ class WPJAM_Path extends WPJAM_Args{
 #[config(model:false)]
 class WPJAM_Data_Type extends WPJAM_Register{
 	public function get_path($args, $item){
-		return wpjam_if_error(wpjam_call($this->model.'::get_path', $args, $item), 'throw');
+		return wpjam_if_error(wpjam_call_method($this->model.'::get_path', $args, $item), 'throw');
 	}
 
 	public function with_field($action, $value, $field){
@@ -1309,7 +1321,7 @@ class WPJAM_Data_Type extends WPJAM_Register{
 	public function query_label($value){
 		if($value && $this->model && $this->label_field){
 			if(is_array($value)){
-				wpjam_call($this->model.'::update_caches', $value);
+				wpjam_call_method($this->model.'::update_caches', $value);
 
 				return array_map(fn($v)=> ($l = $this->query_label($v)) ? ['label'=>$l, 'value'=>$v] : $v, $value);
 			}

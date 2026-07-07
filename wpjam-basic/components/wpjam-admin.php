@@ -125,7 +125,7 @@ class WPJAM_Basic_Admin{
 
 			$args	= ['post_type'=>get_post_types(['show_ui'=>true, 'public'=>true, '_builtin'=>false])+['post']];
 
-			wpjam_hooks('dashboard_recent_posts_query_args, dashboard_recent_drafts_query_args', fn($query_args)=> array_merge($query_args, $args+['cache_results'=>true]));
+			wpjam_hooks('dashboard_recent_posts_query_args, dashboard_recent_drafts_query_args', '+', $args+['cache_results'=>true]);
 
 			add_action('pre_get_comments', fn($query)=> $query->query_vars	= array_merge($query->query_vars, $args+['type'=>'comment']));
 

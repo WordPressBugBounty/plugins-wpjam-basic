@@ -121,7 +121,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 					'orderby'			=> 'post_count',
 					'order'				=> 'DESC',
 					'show_option_all'	=> $ptype == 'attachment' ? '所有上传者' : '所有作者',
-					'selected'			=> (int)wpjam_get_parameter('author', 'data'),
+					'selected'			=> (int)wpjam_param('author', 'data'),
 					'hide_if_only_one_author'	=> true,
 				]);
 			}, 1);
@@ -136,7 +136,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 					'order'		=> ['options'=>['desc'=>'降序','asc'=>'升序']]
 				], [
 					'fields_type'		=> '',
-					'value_callback'	=> fn($k)=> sanitize_key(wpjam_get_parameter($k, 'data'))
+					'value_callback'	=> fn($k)=> sanitize_key(wpjam_param($k, 'data'))
 				])."\n";
 			}, 99);
 
@@ -211,7 +211,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 		self::get_setting('remove_page_thumbnail')	&& remove_post_type_support('page', 'thumbnail');
 		self::get_setting('add_page_excerpt')		&& add_post_type_support('page', 'excerpt');
 
-		self::get_setting('404_optimization') && add_filter('old_slug_redirect_post_id', fn($id)=> $id ?: self::find_by_name(get_query_var('name'), get_query_var('post_type')));
+		self::get_setting('404_optimization') && wpjam_hook('old_slug_redirect_post_id', fn($id)=> $id ?: self::find_by_name(get_query_var('name'), get_query_var('post_type')));
 
 		if(self::get_setting('excerpt_optimization')){
 			remove_filter('get_the_excerpt', 'wp_trim_excerpt');
@@ -220,7 +220,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 				remove_filter('the_excerpt', 'wp_filter_content_tags');
 				remove_filter('the_excerpt', 'shortcode_unautop');
 
-				add_filter('get_the_excerpt', fn($text='', $post=null)=> $text ?: wpjam_get_post_excerpt($post, (self::get_setting('excerpt_length') ?: 200)), 9, 2);
+				wpjam_hook('get_the_excerpt', fn($text='', $post=null)=> $text ?: wpjam_get_post_excerpt($post, (self::get_setting('excerpt_length') ?: 200)), 9, 2);
 			}
 		}
 	}

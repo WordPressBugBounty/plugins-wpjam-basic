@@ -98,19 +98,12 @@ class WPJAM_Thumbnail extends WPJAM_Option_Model{
 	}
 
 	public static function add_hooks(){
-		self::get_setting('disable_pdf_preview') && add_filter('fallback_intermediate_image_sizes', fn() => []);
-
-		self::get_setting('auto') && add_filter('has_post_thumbnail', fn($has, $post)=> $has ?: (bool)wpjam_get_post_thumbnail_url($post), 10, 2);
-
-		wpjam_hook('wpjam_post_thumbnail_url', [
-			'check'		=> fn($url, $post)=> is_object_in_taxonomy($post, 'category'),
-			'callback'	=> fn($url, $post)=> self::get_post_thumbnail_url($post) ?: ($url ?: self::get_default())
-		], 1, 2);
-
-		wpjam_hook('post_thumbnail_html',		[
-			'check'		=> fn($html, $post_id)=> !post_type_supports(get_post_type($post_id), 'thumbnail') || empty($html),
-			'callback'	=> fn($html, $post_id, $post_thumbnail_id, $size, $attr)=> self::get_post_thumbnail_html($post_id, $size, $attr) ?: ''
-		], 10, 5);
+		return [
+			self::get_setting('disable_pdf_preview') ? ['fallback_intermediate_image_sizes', []] : '',
+			self::get_setting('auto') ? ['has_post_thumbnail', fn($has, $post)=> $has ?: (bool)wpjam_get_post_thumbnail_url($post), 10, 2] : '',
+			['wpjam_post_thumbnail_url', fn($url, $post)=> is_object_in_taxonomy($post, 'category') ? (self::get_post_thumbnail_url($post) ?: ($url ?: self::get_default())) : $url, 1, 2],
+			['post_thumbnail_html', fn($html, $id, $_thumb_id, $size, $attr)=> self::get_post_thumbnail_html($id, $size, $attr) ?: $html, 10, 5]
+		];
 	}
 }
 

@@ -106,12 +106,12 @@ class WPJAM_Cron extends WPJAM_Args{
 			}
 
 			return $items;
-		}else{
-			return wpjam_map(wpjam_get_cron('wpjam_scheduled')->get_jobs(), fn($item)=> $item+[
-				'job_id'	=> wpjam_build_callback_unique_id($item['callback']),
-				'function'	=> wpjam_callback($item['callback'], 'render')
-			]);
 		}
+
+		return wpjam_map(wpjam_get_cron('wpjam_scheduled')->get_jobs(), fn($item)=> $item+wpjam_map([
+			'job_id'	=> 'uniqid',
+			'function'	=> 'render'
+		], fn($v)=> wpjam_callback($v, $item['callback'])));
 	}
 
 	public static function get_actions(){
@@ -159,7 +159,7 @@ class WPJAM_Cron extends WPJAM_Args{
 	}
 
 	public static function add_hooks(){
-		add_filter('cron_schedules', fn($schedules)=> $schedules+[
+		wpjam_hook('cron_schedules', '+', [
 			'five_minutes'		=> ['interval'=>300,	'display'=>'每5分钟一次'],
 			'fifteen_minutes'	=> ['interval'=>900,	'display'=>'每15分钟一次']
 		]);

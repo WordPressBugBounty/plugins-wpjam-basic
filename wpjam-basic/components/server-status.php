@@ -154,7 +154,7 @@ class WPJAM_Server_Status{
 			}elseif($id == 'efficiency'){
 				return wpjam_map(['get_hits'=>'命中', 'get_misses'=>'未命中', 'cmd_get'=>'获取', 'cmd_set'=>'设置'], fn($v, $k)=> ['每秒'.$v.'次数', round($stats[$k]/$stats['uptime'])]);
 			}elseif($id == 'options'){
-				return wpjam_array(wpjam_get_reflection(['Memcached'], 'Constants'), fn($k, $v)=> str_starts_with($k, 'OPT_') ? [$k, [$k, $GLOBALS['wp_object_cache']->get_mc()->getOption($v)]] : null);
+				return wpjam_array(wpjam_get_reflection('class', 'Memcached', 'Constants'), fn($k, $v)=> str_starts_with($k, 'OPT_') ? [$k, [$k, $GLOBALS['wp_object_cache']->get_mc()->getOption($v)]] : null);
 			}
 		}
 	}

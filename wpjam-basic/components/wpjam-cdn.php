@@ -196,8 +196,8 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		$exts	= array_unique(array_merge($exts, self::get_setting('img_exts') ? wp_get_ext_types()['image'] : []));
 
 		wpjam_hooks([
-			['wp_resource_hints',		fn($urls, $type)=> array_merge($urls, $type == 'dns-prefetch' ? [CDN_HOST] : []), 10, 2],
-			['wpjam_is_external_url',	fn($status, $url, $scene)=> $status && !wpjam_is_cdn_url($url) && ($scene != 'fetch' || !self::is_exception($url)), 10, 3],
+			['wp_resource_hints', '+', fn($type)=> $type == 'dns-prefetch' ? [CDN_HOST] : [], 10, 2],
+			['wpjam_is_external_url', fn($status, $url, $scene)=> $status && !wpjam_is_cdn_url($url) && ($scene != 'fetch' || !self::is_exception($url)), 10, 3],
 		]);
 
 		if(self::get_setting('image')){
@@ -206,12 +206,11 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 			$file && file_exists($file) && ($cb = include $file) && is_callable($cb) && add_filter('wpjam_thumbnail', $cb, 10, 2);
 
 			self::get_setting('no_subsizes', 1) && wpjam_hooks([
-				['wp_calculate_image_srcset_meta',		fn()=> []],
-				['embed_thumbnail_image_size',			fn()=> '160x120'],
+				['wp_calculate_image_srcset_meta',		[]],
+				['embed_thumbnail_image_size',			'160x120'],
 				['intermediate_image_sizes_advanced',	fn($sizes)=> wpjam_pick($sizes, ['full'])],
 				['wp_get_attachment_metadata',			[self::class, 'filter_metadata'], 10, 2],
-
-				['wp_img_tag_add_srcset_and_sizes_attr, wp_img_tag_add_width_and_height_attr',	fn()=> false]
+				['wp_img_tag_add_srcset_and_sizes_attr, wp_img_tag_add_width_and_height_attr',	false]
 			]);
 
 			self::get_setting('thumbnail', 1) && wpjam_hooks([

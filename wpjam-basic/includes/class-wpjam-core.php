@@ -5,7 +5,9 @@
 #[config('menu_page', 'admin_load', 'register_json', 'init')]
 class WPJAM_Post_Type extends WPJAM_Register{
 	public function __get($key){
-		return ($this->builtin($key) ?? parent::__get($key)) ?: (['model'=>'WPJAM_Post', 'plural'=>$this->name.'s'][$key] ?? null);
+		$value	= $this->builtin($key) ?? parent::__get($key);
+
+		return $value ?: (['model'=>'WPJAM_Post', 'plural'=>$this->name.'s'][$key] ?? $value);
 	}
 
 	public function __set($key, $value){
@@ -18,12 +20,11 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		$this->filter_args();
 
 		$name	= $this->name;
-		$struct	= $this->_builtin ? '' : $this->get_arg('permastruct');
-		$struct	= $struct ? str_replace(['%'.$name.'_id%', '%postname%'], ['%post_id%', '%'.$name.'%'], $struct) : '';
+		$struct	= $this->_builtin ? '' : str_replace(['%'.$name.'_id%', '%postname%'], ['%post_id%', '%'.$name.'%'], $this->get_arg('permastruct') ?: '');
 
 		if(strpos($struct, '%post_id%')){
 			if($this->hierarchical){
-				$struct	= false;
+				$struct	= '';
 			}else{
 				$this->query_var	??= false;
 
@@ -116,6 +117,61 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		return $data;
 	}
 
+	public function parse_images($images, $args=[]){
+		foreach(['large', 'thumbnail'] as $k){
+			$v	= $args[$k.'_size'] ?? '';
+
+			if($v !== false){
+				continue;
+			}
+
+			if(!$v){
+				if($setting	= $this->images_sizes){
+					$i	= $k == 'large' ? 0 : 1;
+					$v	= $setting[$i];
+
+					if($i && count($images) == 1){
+						$image	= array_first($images);
+						$query	= wpjam_image($image, 'query');
+
+						if(!$query){
+							$query	= wpjam_image($image, 'size') ?: ['width'=>0, 'height'=>0];
+
+							update_post_meta($args['post_id'], 'images', [add_query_arg($query, $image)]);
+						}
+
+						if(!empty($query['orientation'])){
+							$i	= $query['orientation'] == 'landscape' ? 2 : 3;
+							$v	= $setting[$i] ?? $v;
+						}
+					}
+				}else{
+					$v	= $this->{$k.'_size'};
+				}
+			}
+
+			$sizes[$k]	= $v ?: $k;
+		}
+
+		if(empty($sizes) || ($args['full_size'] ?? true)){
+			$sizes['full']	= 'full';
+		}
+
+		foreach($images as $image){
+			$parsed	= array_map(fn($s)=> wpjam_get_thumbnail($image, $s), $sizes);
+			$parsed	= array_merge($parsed, ($query	= wpjam_image($image, 'query')) ? wpjam_pick($query, ['orientation', 'width', 'height'])+['width'=>0, 'height'=>0] : []);
+
+			if(isset($sizes['thumbnail'])){
+				$size	= wpjam_parse_size($sizes['thumbnail']);
+				$parsed	= array_reduce(['width', 'height'], fn($c, $k)=> $c+['thumbnail_'.$k=>$size[$k] ?? 0], $parsed);
+			}
+
+			$results[]	= count($sizes) == 1 ? array_first($parsed) : $parsed;
+		}
+
+		return $results;
+	}
+
 	public function reset_invalid_parent($value=0){
 		$wpdb	= $GLOBALS['wpdb'];
 		$ids	= $wpdb->get_col($wpdb->prepare("SELECT p1.ID FROM {$wpdb->posts} p1 LEFT JOIN {$wpdb->posts} p2 ON p1.post_parent = p2.ID WHERE p1.post_type=%s AND p1.post_parent > 0 AND p2.ID is null", $this->name)) ?: [];
@@ -144,61 +200,15 @@ class WPJAM_Post_Type extends WPJAM_Register{
 	public static function add_hooks(){
 		$args	= ['content_save_pre', 'wp_filter_post_kses'];
 
-		add_filter($args[0], fn($c)=> [$c, is_serialized($c) && remove_filter(...$args) && wpjam_hook('once', $args[0], fn($c)=> [$c, add_filter(...$args)][0], 11)][0], 1);
+		wpjam_hook($args[0], 'tap', fn($c)=> 
+			is_serialized($c)
+			&& remove_filter(...$args)
+			&& wpjam_once($args[0], 'tap', fn()=> add_filter(...$args), 11),
+		1);
 
 		add_filter('post_type_link', fn($link, $post)=> str_replace('%post_id%', $post->ID, $link), 1, 2);
 
-		add_filter('posts_clauses', function($clauses, $query){
-			$wpdb		= $GLOBALS['wpdb'];
-			$orderby	= $query->get('orderby');
-			$order		= $query->get('order') ?: 'DESC';
-
-			if($orderby == 'related'){
-				if($tt_ids = $query->get('term_taxonomy_ids')){
-					$clauses['join']	.= "INNER JOIN {$wpdb->term_relationships} AS tr ON {$wpdb->posts}.ID = tr.object_id";
-					$clauses['where']	.= " AND tr.term_taxonomy_id IN (".implode(",", $tt_ids).")";
-					$clauses['groupby']	.= " tr.object_id";
-					$clauses['orderby']	= " count(tr.object_id) DESC, {$wpdb->posts}.ID DESC";
-				}
-			}elseif($orderby == 'comment_date'){
-				$ct		= $query->get('comment_type') ?: 'comment';
-				$str	= $ct == 'comment' ? "'comment', ''" : "'".esc_sql($ct)."'";
-				$where	= "ct.comment_type IN ({$str}) AND ct.comment_parent=0 AND ct.comment_approved NOT IN ('spam', 'trash', 'post-trashed')";
-
-				$clauses['join']	= "INNER JOIN {$wpdb->comments} AS ct ON {$wpdb->posts}.ID = ct.comment_post_ID AND {$where}";
-				$clauses['groupby']	= "ct.comment_post_ID";
-				$clauses['orderby']	= "MAX(ct.comment_ID) {$order}";
-			}elseif(in_array($orderby, ['views', 'comment_type'])){
-				$meta_key			= $orderby == 'comment_type' ? $query->get('comment_count') : 'views';
-				$clauses['join']	.= "LEFT JOIN {$wpdb->postmeta} jam_pm ON {$wpdb->posts}.ID = jam_pm.post_id AND jam_pm.meta_key = '{$meta_key}' ";
-				$clauses['orderby']	= "(COALESCE(jam_pm.meta_value, 0)+0) {$order}, " . $clauses['orderby'];
-				$clauses['groupby']	= "{$wpdb->posts}.ID";
-			}elseif(in_array($orderby, ['', 'date', 'post_date'])){
-				$clauses['orderby']	.= ", {$wpdb->posts}.ID {$order}";
-			}
-
-			return $clauses;
-		}, 1, 2);
-
-		add_filter('posts_results', function($posts, $query){
-			$q	= &$query->query_vars;
-
-			$sticky_posts	= array_diff(wp_parse_id_list(wpjam_pull($q, 'sticky_posts') ?: []), $q['post__not_in']);
-			
-			if($sticky_posts && ($stickies = get_posts([
-				'orderby'			=> 'post__in',
-				'post__in'			=> $sticky_posts,
-				'post_type'			=> $q['post_type'] ?: 'post',
-				'post_status'		=> 'publish',
-				'posts_per_page'	=> count($sticky_posts),
-			]+wpjam_pick($q, ['suppress_filters', 'cache_results', 'update_post_meta_cache', 'update_post_term_cache', 'lazy_load_term_meta'])))){
-				$q['sticky_posts']	= array_column($stickies, 'ID');
-
-				return array_merge($stickies, array_filter($posts, fn($post)=> !in_array($post->ID, $q['sticky_posts'], true)));
-			}
-
-			return $posts;
-		}, 1, 2);
+		wpjam_map(['clauses', 'results'], fn($v)=> add_filter('posts_'.$v, [wpjam_query('post'), 'filter_'.$v], 1, 2));
 	}
 }
 
@@ -210,19 +220,21 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 	public function __get($key){
 		$value	= $this->builtin($key) ?? parent::__get($key);
 
-		if($value){
-			return $value;
+		if(!isset($value)){
+			if($key == 'show_in_posts_rest'){
+				return $this->show_in_rest;
+			}elseif($key == 'selectable'){
+				return wp_count_terms(['taxonomy'=>$this->name, 'hide_empty'=>false]+($this->levels > 1 ? ['parent'=>0] : [])) <= 30;
+			}
+		}elseif(!$value){
+			if($key == 'model'){
+				return 'WPJAM_Term';
+			}elseif($key == 'plural'){
+				return $this->name === 'category' ? 'categories' : $this->name.'s';
+			}
 		}
 
-		if($key == 'model'){
-			return 'WPJAM_Term';
-		}elseif($key == 'plural'){
-			return $this->name === 'category' ? 'categories' : $this->name.'s';
-		}elseif($key == 'show_in_posts_rest'){
-			return $value ?? $this->show_in_rest;
-		}elseif($key == 'selectable'){
-			return $value ?? wp_count_terms(['taxonomy'=>$this->name, 'hide_empty'=>false]+($this->levels > 1 ? ['parent'=>0] : [])) <= 30;
-		}
+		return $value;
 	}
 
 	public function __set($key, $value){
@@ -247,12 +259,11 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 		$this->{$this->levels == 1 ? 'remove_support' : 'add_support'}('parent');
 
 		$struct	= $this->get_arg('permastruct');
-		$struct	= $struct ? str_replace('%'.$this->query_key.'%', '%term_id%', trim($struct, '/')) : '';
 
 		if($struct == '%'.$name.'%'){
-			wpjam('no_base_taxonomy[]', $name);
+			$this->no_base	= true;
 		}elseif($struct){
-			$this->rewrite	= $this->rewrite ?: true;
+			$struct	= str_replace('%'.$this->query_key.'%', '%term_id%', trim($struct, '/'));
 
 			if(str_contains($struct, '%term_id%')){
 				$this->remove_support('slug');
@@ -263,6 +274,8 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 
 				add_filter($name.'_rewrite_rules', fn($rules)=> wpjam_map($rules, fn($v)=> str_replace('?term_id=', '?taxonomy='.$name.'&term_id=', $v)));
 			}
+
+			$this->rewrite	= $this->rewrite ?: true;
 
 			add_action('registered_taxonomy_'.$name, fn()=> add_permastruct($name, trim($struct, '/'), $this->rewrite));
 		}
@@ -404,12 +417,14 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 	public static function add_hooks(){
 		wpjam_init(fn()=> add_rewrite_tag('%term_id%', '([0-9]+)', 'term_id='));
 
-		add_filter('pre_term_link',	fn($link, $term)=> in_array($term->taxonomy, wpjam('no_base_taxonomy[]')) ? '%'.$term->taxonomy.'%' : str_replace('%term_id%', $term->term_id, $link), 1, 2);
+		wpjam_hook('query_vars', '+', ['term_id'], 11);
+
+		add_filter('pre_term_link',	fn($link, $term)=> wpjam_get_taxonomy_setting($term->taxonomy, 'no_base') ? '%'.$term->taxonomy.'%' : str_replace('%term_id%', $term->term_id, $link), 1, 2);
 
 		!is_admin() && add_filter('request', function($vars){
 			$struct		= get_option('permalink_structure');
 			$request	= $GLOBALS['wp']->request;
-			$no_base	= wpjam('no_base_taxonomy[]');
+			$no_base	= WPJAM_Taxonomy::get_by('no_base', true);
 
 			if(!$struct || !$request || !$no_base || isset($vars['module'])){
 				return $vars;
@@ -432,7 +447,7 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 				$key	= !empty($vars['pagename']) && !isset($_GET['page_id']) && !isset($_GET['pagename']) ? 'pagename' : '';
 			}
 
-			foreach(!empty($key) ? $no_base : [] as $tax){
+			foreach(!empty($key) ? array_keys($no_base) : [] as $tax){
 				$name	= is_taxonomy_hierarchical($tax) ? wp_basename($request) : $request;
 
 				if(array_find(wpjam_get_all_terms($tax), fn($term)=> $term->slug == $name)){
@@ -481,11 +496,12 @@ class WPJAM_Post extends WPJAM_Instance{
 	}
 
 	public function save($data){
-		$cb		= array_find(['post_status', 'status'], fn($k)=> ($data[$k] ?? '') === 'publish') ? [$this, 'is_publishable'] : null;
-		$result	= $cb && method_exists(...$cb) ? wpjam_catch($cb) : true;
+		if(array_find(['post_status', 'status'], fn($k)=> ($data[$k] ?? '') === 'publish')){
+			$result	= ($cb = wpjam_callback([$this, 'is_publishable'])) ? wpjam_catch($cb) : null;
 
-		if(is_wp_error($result) || !$result){
-			return $result ?: new WP_Error('cannot_publish', '不可发布');
+			if(is_wp_error($result) || !$result){
+				return $result ?: new WP_Error('cannot_publish', '不可发布');
+			}
 		}
 
 		return $data ? self::update($this->id, $data, false) : true;
@@ -520,6 +536,10 @@ class WPJAM_Post extends WPJAM_Instance{
 		$query	= $args['query'] ?? null;
 		$single	= $query && $query->is_main_query() && ($query->is_single($this->id) || $query->is_page($this->id));
 		$filter	= $args['suppress_filter'] ? '' : ($args['list_query'] ? ($args['filter'] ?? '') : 'wpjam_post_json');
+
+		// var_dump($filter);
+
+		// print_r($GLOBALS['wp_filter']['wpjam_post_json']);
 
 		$json	= wpjam_pick($this, ['id', 'type', 'post_type', 'status', 'views']);
 		$json	+= ['icon'=>(string)$this->type_object->icon];
@@ -620,9 +640,7 @@ class WPJAM_Post extends WPJAM_Instance{
 	}
 
 	protected static function call_method($method, ...$args){
-		if($method == 'get_meta_type'){
-			return 'post';
-		}elseif($method == 'insert'){
+		if($method == 'insert'){
 			$data	= $args[0];
 			$type	= array_unique(array_filter([$data['post_type'] ?? '', static::get_current_post_type()]));
 			$type	= count($type) <= 1 ? (array_first($type) ?: 'post') : '';
@@ -656,12 +674,13 @@ class WPJAM_Post extends WPJAM_Instance{
 		if($post_ids = array_filter(wp_parse_id_list($post_ids))){
 			_prime_post_caches($post_ids, $update_term_cache, $update_meta_cache);
 
-			$posts	= wp_cache_get_multiple($post_ids, 'posts');
-			$args	= compact('update_term_cache', 'update_meta_cache');
+			$group	= wpjam_group(wp_cache_get_multiple($post_ids, 'posts'), fn($v)=> $v ? 1 : 0);
+			$posts	= $group[1] ?? [];
 
-			do_action('wpjam_deleted_ids', 'post', array_keys(array_filter($posts, fn($v)=> !$v)));
+			do_action('wpjam_deleted_ids', 'post', array_keys($group[0] ?? []));
+			do_action('wpjam_update_post_caches', $posts, compact('update_term_cache', 'update_meta_cache'));
 
-			return wpjam_tap(array_filter($posts), fn($posts)=> do_action('wpjam_update_post_caches', $posts, $args));
+			return $posts;
 		}
 
 		return [];
@@ -856,9 +875,7 @@ class WPJAM_Term extends WPJAM_Instance{
 	}
 
 	protected static function call_method($method, ...$args){
-		if($method == 'get_meta_type'){
-			return 'term';
-		}elseif($method == 'insert'){
+		if($method == 'insert'){
 			$data	= $args[0];
 			$tax	= array_unique(array_filter([wpjam_pull($data, 'taxonomy'), static::get_current_taxonomy()]));
 			$tax	= count($tax) == 1 ? array_first($tax) : null;
@@ -894,11 +911,11 @@ class WPJAM_Term extends WPJAM_Instance{
 		if($term_ids = array_filter(wp_parse_id_list($term_ids))){
 			_prime_term_caches($term_ids);
 
-			$terms	= wp_cache_get_multiple($term_ids, 'terms');
+			$group	= wpjam_group(wp_cache_get_multiple($term_ids, 'terms'), fn($v)=> $v ? 1 : 0);
 
-			do_action('wpjam_deleted_ids', 'term', array_keys(array_filter($terms, fn($v)=> !$v)));
+			do_action('wpjam_deleted_ids', 'term', array_keys($group[0] ?? []));
 
-			return array_filter($terms);
+			return $group[1] ?? [];
 		}
 
 		return [];
@@ -1120,13 +1137,11 @@ class WPJAM_User extends WPJAM_Instance{
 	}
 
 	public static function get($id){
-		return ($user	= get_userdata($id)) ? $user->to_array() : [];
+		return ($user = get_userdata($id)) ? $user->to_array() : [];
 	}
 
 	protected static function call_method($method, ...$args){
-		if($method == 'get_meta_type'){
-			return 'user';
-		}elseif($method == 'create'){
+		if($method == 'create'){
 			$args	= $args[0]+[
 				'user_pass'		=> wp_generate_password(12, false),
 				'user_login'	=> '',
@@ -1218,11 +1233,11 @@ class WPJAM_Bind extends WPJAM_Register{
 	}
 
 	public function bind_openid($meta_type, $object_id, $openid){
-		$bound_msg	= '已绑定其他账号，请先解绑再试！';
+		$errmsg		= '已绑定其他账号，请先解绑再试！';
 		$current	= $this->get_openid($meta_type, $object_id);
 
 		if($current && $current != $openid){
-			return new WP_Error('is_bound', $bound_msg);
+			return new WP_Error('is_bound', $errmsg);
 		}
 
 		$exists	= $this->get_by_openid($meta_type, $openid);
@@ -1232,7 +1247,7 @@ class WPJAM_Bind extends WPJAM_Register{
 		}
 
 		if($exists && $exists->id != $object_id){
-			return new WP_Error('is_bound', $bound_msg);
+			return new WP_Error('is_bound', $errmsg);
 		}
 
 		$this->update_value($openid, $meta_type.'_id', $object_id);
@@ -1594,26 +1609,26 @@ class WPJAM_User_Signup extends WPJAM_Register{
 
 	public static function on_admin_init(){
 		if($objects	= self::get_registereds()){
-			$binds	= array_filter($objects, fn($v)=> $v->bind);
+			$tabs	= wpjam_array($objects, fn($k, $v)=> $v->bind ? [$k, [
+				'title'			=> $v->title,
+				'capability'	=> 'read',
+				'function'		=> 'form',
+				'form'			=> fn()=> array_merge([
+					'callback'		=> [$v, 'ajax_response'],
+					'capability'	=> 'read',
+					'validate'		=> true,
+					'response'		=> 'redirect'
+				], $v->get_attr('bind', 'admin'))
+			]] : null);
 
-			$binds && wpjam_add_menu_page([
+			$tabs && wpjam_add_menu_page([
 				'parent'		=> 'users',
 				'menu_slug'		=> 'wpjam-bind',
 				'menu_title'	=> '账号绑定',
 				'order'			=> 20,
 				'capability'	=> 'read',
 				'function'		=> 'tab',
-				'tabs'			=> fn()=> wpjam_map($binds, fn($object)=> [
-					'title'			=> $object->title,
-					'capability'	=> 'read',
-					'function'		=> 'form',
-					'form'			=> fn()=> array_merge([
-						'callback'		=> [$object, 'ajax_response'],
-						'capability'	=> 'read',
-						'validate'		=> true,
-						'response'		=> 'redirect'
-					], $object->get_attr('bind', 'admin'))
-				])
+				'tabs'			=> $tabs
 			]);
 
 			wpjam_add_admin_load([
@@ -1628,17 +1643,18 @@ class WPJAM_User_Signup extends WPJAM_Register{
 	}
 
 	public static function on_login_init(){
-		$action		= ($_REQUEST['action'] ?? '') ?: 'login';
-		$objects	= in_array($action, ['login', 'bind']) ? self::get_registereds([$action=>true]) : [];
+		$action	= ($_REQUEST['action'] ?? '') ?: 'login';
 
-		if($objects){
+		if($objects = in_array($action, ['login', 'bind']) ? self::get_registereds([$action=>true]) : []){
 			$type	= $_REQUEST[$action.'_type'] ?? '';
 
 			if($action == 'login'){
-				$type	= $type ?: apply_filters('wpjam_default_login_type', 'login');
+				$type	= ($type ?: apply_filters('wpjam_default_login_type', $action));
 				$type	= $type ?: ($_SERVER['REQUEST_METHOD'] == 'POST' ? 'login' : array_key_first($objects));
 
-				isset($objects[$type]) && wpjam_call($objects[$type]->login_action);
+				if(isset($objects[$type])){
+					wpjam_call($objects[$type]->login_action);
+				}
 
 				if(empty($_COOKIE[TEST_COOKIE])){
 					$_COOKIE[TEST_COOKIE]	= 'WP Cookie check';
@@ -1646,28 +1662,22 @@ class WPJAM_User_Signup extends WPJAM_Register{
 
 				$objects['login']	= '使用账号和密码登录';
 			}else{
-				is_user_logged_in() || wp_die('登录之后才能执行绑定操作！');
-
-				add_filter('login_display_language_dropdown', '__return_false');
-			}
-
-			$type	= ($type == 'login' || ($type && isset($objects[$type]))) ? $type : array_key_first($objects);
-	
-			foreach($objects as $name => $object){
-				if($name == 'login'){
-					$data	= ['type'=>'login'];
-					$title	= $object;
-				}else{
-					$data	= ['type'=>$name, 'action'=>'get-'.$name.'-'.$action];
-					$title	= $action == 'bind' ? '绑定'.$object->title : $object->login_title;
+				if(!is_user_logged_in()){
+					wp_die('登录之后才能执行绑定操作！');
 				}
 
-				$append[]	= ['a', ['class'=>($type == $name ? 'current' : ''), 'data'=>$data], $title];
+				wpjam_hook('login_display_language_dropdown', false);
 			}
+
+			$type	= ($type && isset($objects[$type])) ? $type : array_key_first($objects);
+			$tag	= wpjam_tag('p', ['class'=>'types', 'data'=>['action'=>$action]])->append(wpjam_map($objects, fn($v, $k)=>['a', [
+				'class'	=> $type == $k ? 'current' : '',
+				'data'	=> ['type'=>$k]+($k == 'login' ? [] : ['action'=>'get-'.$k.'-'.$action])
+			], $k == 'login' ? $v : ($action == 'bind' ? '绑定'.$v->title : $v->login_title)]));
 
 			wp_enqueue_script('wpjam-login', wpjam_url(dirname(__DIR__).'/static/login.js'), ['wpjam-ajax']);
 
-			wpjam_hook('echo', 'login_form', fn()=> wpjam_tag('p')->add_class('types')->data('action', $action)->append($append));
+			wpjam_echo($tag, 'login_form');
 		}
 
 		wp_add_inline_style('login', join("\n", [

@@ -49,7 +49,7 @@ class WPJAM_Shortcode{
 	}
 
 	public static function query_items($args){
-		return wpjam_reduce($GLOBALS['shortcode_tags'], fn($carry, $callback, $tag)=> [...$carry, ['tag'=>wpautop($tag), 'callback'=>wpjam_callback($callback, 'render')]], []);
+		return wpjam_reduce($GLOBALS['shortcode_tags'], fn($carry, $callback, $tag)=> [...$carry, ['tag'=>wpautop($tag), 'callback'=>wpjam_callback('render', $callback)]], []);
 	}
 
 	public static function get_actions(){
@@ -65,7 +65,7 @@ class WPJAM_Shortcode{
 
 	public static function filter_video_override($override, $attr, $content){
 		$src	= $attr['src'] ?? $content;
-		$src	= $src ? wpjam_find(wpjam('video_parser'), fn($v)=> $v, fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : '') : '';
+		$src	= $src ? wpjam_find(wpjam('video_parser[]'), fn($v)=> $v, fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : '') : '';
 
 		if($src){
 			$attr	= shortcode_atts(['width'=>0, 'height'=>0], $attr);
@@ -80,16 +80,27 @@ class WPJAM_Shortcode{
 	public static function add_hooks(){
 		add_filter('wp_video_shortcode_override', [self::class, 'filter_video_override'], 10, 3);
 
-		wpjam_map(['hide', 'email', 'list', 'table', 'code', 'youku', 'qqv', 'bilibili', 'tudou', 'sohutv'], fn($tag)=> add_shortcode($tag,	[self::class, 'callback']));
+		array_map(fn($tag)=> add_shortcode($tag, [self::class, 'callback']), ['hide', 'email', 'list', 'table', 'code', 'youku', 'qqv', 'bilibili', 'tudou', 'sohutv']);
 
-		wpjam_map([
-			['//www.bilibili.com/video/(BV[a-zA-Z0-9]+)',				fn($m)=> 'https://player.bilibili.com/player.html?bvid='.esc_attr($m[1])],
-			['//v.qq.com/(.*)iframe/(player|preview).html\?vid=(.+)',	fn($m)=> 'https://v.qq.com/'.esc_attr($m[1]).'iframe/player.html?vid='.esc_attr($m[3])],
-			['//v.youku.com/v_show/id_(.*?).html',						fn($m)=> 'https://player.youku.com/embed/'.esc_attr($m[1])],
-			['//www.tudou.com/programs/view/(.*?)',						fn($m)=> 'https://www.tudou.com/programs/view/html5embed.action?code='.esc_attr($m[1])],
-			['//tv.sohu.com/upload/static/share/share_play.html\#(.+)',	fn($m)=> 'https://tv.sohu.com/upload/static/share/share_play.html#'.esc_attr($m[1])],
-			['//www.youtube.com/watch\?v=([a-zA-Z0-9\_]+)',				fn($m)=> 'https://www.youtube.com/embed/'.esc_attr($m[1])],
-		], fn($args)=> wpjam_add_video_parser(...$args));
+		array_map(fn($args)=> wpjam('video_parser[]', $args), [[
+			'//www.bilibili.com/video/(BV[a-zA-Z0-9]+)',
+			fn($m)=> 'https://player.bilibili.com/player.html?bvid='.esc_attr($m[1])
+		], [
+			'//v.qq.com/(.*)iframe/(player|preview).html\?vid=(.+)',
+			fn($m)=> 'https://v.qq.com/'.esc_attr($m[1]).'iframe/player.html?vid='.esc_attr($m[3])
+		], [
+			'//v.youku.com/v_show/id_(.*?).html',
+			fn($m)=> 'https://player.youku.com/embed/'.esc_attr($m[1])
+		], [
+			'//www.tudou.com/programs/view/(.*?)',
+			fn($m)=> 'https://www.tudou.com/programs/view/html5embed.action?code='.esc_attr($m[1])
+		], [
+			'//tv.sohu.com/upload/static/share/share_play.html\#(.+)',
+			fn($m)=> 'https://tv.sohu.com/upload/static/share/share_play.html#'.esc_attr($m[1])
+		], [
+			'//www.youtube.com/watch\?v=([a-zA-Z0-9\_]+)',
+			fn($m)=> 'https://www.youtube.com/embed/'.esc_attr($m[1])
+		]]);
 	}
 }
 

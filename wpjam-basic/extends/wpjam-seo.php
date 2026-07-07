@@ -149,11 +149,11 @@ class WPJAM_SEO extends WPJAM_Option_Model{
 		if(self::get_setting('unique')){
 			add_filter('wpjam_html', [self::class, 'filter_html']);
 		}else{
-			wpjam_hook('echo', 'wp_head', fn()=> implode(self::get_value('meta')));
+			wpjam_hook('wp_head', 'echo', fn()=> implode(self::get_value('meta')));
 		}
 
-		add_filter('robots_txt',		fn($output, $public)=> $output.($public ? self::get_setting('robots') : ''), 10, 2);
-		add_filter('document_title',	fn($title)=> self::get_value('title') ?: $title);
+		wpjam_hook('robots_txt', '.', fn($public)=> $public ? self::get_setting('robots') : '', 10, 2);
+		add_filter('document_title', fn($title)=> self::get_value('title') ?: $title);
 
 		self::get_setting('sitemap') || wpjam_route('sitemap', self::class);
 

@@ -579,7 +579,8 @@ div.donut-chart-wrap{
 }
 
 fieldset{
-	> .field-group, > .inline{
+	> .field-group,
+	> .inline{
 		margin:0 0 .5em !important;
 
 		&.hidden{display:none;}
@@ -589,7 +590,8 @@ fieldset{
 		display:inline-flex;
 	}
 
-	> .field-group:has(> label) > *{
+	> .field-group:has(> label) > *,
+	> .field-group > .inline:not(:has(> label)){
 		margin:.35em 0 .5em !important;
 	}
 

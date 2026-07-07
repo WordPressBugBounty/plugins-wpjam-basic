@@ -36,8 +36,8 @@ if(did_action('init')){
 		exit;
 	}
 
-	$response		= wp_remote_get($url);
-	$content_type	= $response['headers']['content-type'] ?? '';
+	$response		= wpjam_if_error(wp_safe_remote_get($url), 'die');
+	$content_type	= wp_remote_retrieve_header($response, 'content-type');
 
 	if(!preg_match('|^image/|', $content_type)){
 		wp_die('不是图片', '', ['response'=>403]);

@@ -485,7 +485,7 @@ jQuery(function($){
 			...(type === 'list-table' && {list_action: data.action, ..._.pick(data, ['bulk', 'id', 'ids'])}),
 			...($ae ? {
 				action_type:	'submit',
-				submit_name:	$ae.attr('name'),
+				submit:			$ae.attr('name'),
 				data:			$form.serialize(),
 				defaults:		data.data || {},
 				$ae

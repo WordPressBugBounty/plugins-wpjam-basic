@@ -19,24 +19,19 @@ class WPJAM_Enhance extends WPJAM_Option_Model{
 	}
 
 	public static function add_hooks(){
-		// 修正任意文件删除漏洞
-		add_filter('wp_update_attachment_metadata',	fn($data)=> (isset($data['thumb']) ? ['thumb'=>basename($data['thumb'])] : [])+$data);
-
 		$options	= self::get_setting('x-frame-options');
-		$options	&& add_action('send_headers', fn()=> header('X-Frame-Options: '.$options));
-
-		// 防止重名造成大量的 SQL
-		if(self::get_setting('timestamp_file_name')){
-			wpjam_hooks('wp_handle_sideload_prefilter, wp_handle_upload_prefilter', fn($file)=> array_merge($file, empty($file['md5_filename']) ? ['name'=> time().'-'.$file['name']] : []));
-		}
-
-		if(self::get_setting('no_category_base')){
-			$tax	= self::get_setting('no_category_base_for', 'category');
-
-			$tax == 'category' && str_starts_with($_SERVER['REQUEST_URI'], '/category/') && add_action('template_redirect', fn()=> wp_redirect(site_url(substr($_SERVER['REQUEST_URI'], 10)), 301));
-
-			add_filter('register_taxonomy_args', fn($args, $name)=> array_merge($args, $name == $tax ? ['permastruct'=>'%'.$tax.'%'] : []), 8, 2);
-		}
+		$ts_name	= self::get_setting('timestamp_file_name');	// 防止重名造成大量的 SQL
+		$no_base	= self::get_setting('no_category_base') ? self::get_setting('no_category_base_for', 'category') : '';
+		$no_cat		= $no_base == 'category' && str_starts_with($_SERVER['REQUEST_URI'], '/category/');
+		
+		return [
+			// 修正任意文件删除漏洞
+			['wp_update_attachment_metadata', fn($data)=> (isset($data['thumb']) ? ['thumb'=>basename($data['thumb'])] : [])+$data],
+			$options ? ['send_headers', fn()=> header('X-Frame-Options: '.$options)] : '',
+			$ts_name ? ['wp_handle_sideload_prefilter, wp_handle_upload_prefilter', '+', fn($file)=> empty($file['md5_filename']) ? ['name'=> time().'-'.$file['name']] : []] : '',
+			$no_base ? ['register_taxonomy_args', '+', fn($name)=> $name == $no_base ? ['permastruct'=>'%'.$name.'%'] : [], 8, 2] : '',
+			$no_cat ?  ['template_redirect', fn()=> wp_redirect(site_url(substr($_SERVER['REQUEST_URI'], 10)), 301)] : ''
+		];
 	}
 }
 
@@ -50,7 +45,7 @@ class WPJAM_Gravatar extends WPJAM_Option_Model{
 		]]];
 	}
 
-	public static function filter_pre_data($args, $id_or_email){
+	public static function get_data($id_or_email, $args){
 		if(is_numeric($id_or_email)){
 			$user_id	= $id_or_email;
 		}elseif(is_string($id_or_email)){
@@ -73,7 +68,7 @@ class WPJAM_Gravatar extends WPJAM_Option_Model{
 		$avatarurl	= !empty($avatarurl) ? $avatarurl : ($user_id ? get_user_meta($user_id, 'avatarurl', true) : '');
 
 		if($avatarurl){
-			return $args+['found_avatar'=>true, 'url'=>wpjam_get_thumbnail($avatarurl, $args)];
+			return ['found_avatar'=>true, 'url'=>wpjam_get_thumbnail($avatarurl, $args)];
 		}
 
 		$name	= self::get_setting('gravatar');
@@ -81,7 +76,7 @@ class WPJAM_Gravatar extends WPJAM_Option_Model{
 
 		$value && add_filter('get_avatar_url', fn($url)=> str_replace(array_map(fn($v)=>$v.'gravatar.com/avatar/', ['https://secure.', 'http://0.', 'http://1.', 'http://2.']), $value, $url));
 
-		return $args+['user_id'=>$user_id, 'email'=>$email];
+		return ['user_id'=>$user_id, 'email'=>$email];
 	}
 
 	public static function add_hooks(){
@@ -93,7 +88,7 @@ class WPJAM_Gravatar extends WPJAM_Option_Model{
 			'cravatar'	=> ['title'=>'Cravatar',	'url'=>'https://cravatar.cn/avatar/'],
 		]);
 
-		add_filter('pre_get_avatar_data', [self::class, 'filter_pre_data'], 10, 2);
+		wpjam_hook('pre_get_avatar_data', '+', [self::class, 'get_data'], 10, 2);
 	}
 }
 
