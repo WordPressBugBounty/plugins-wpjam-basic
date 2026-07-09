@@ -381,21 +381,10 @@ class WPJAM_API{
 		$this->add('cap', $cap.'[]', $map);
 	}
 
-	public function updater($type, $hostname, ...$args){
-		if(count($args) == 1){
-			$this->set('updater', $type.'['.$hostname.']', ...$args);
-
-			$hook	= 'update_'.$type.'s_'.$hostname;
-
-			return has_filter($hook) || add_filter($hook, fn($update, $data, $file, $locales)=> $this->updater($type, $hostname, $data, $file) ?: $update, 10, 4);
-		}
-
+	public function updater($type, $url, $file, $data=[]){
 		try{
-			$url	= $this->get('updater', $type.'['.$hostname.']');
 			$result	= $this->get('updater', $type.'['.$url.']') ?? $this->set('updater', $type.'['.$url.']', $this->request($url));
 			$result	= is_array($result) ? ($result['template']['table'] ?? $result[$type.'s']) : [];
-
-			[$data, $file]	= $args;
 
 			if(isset($result['fields']) && isset($result['content'])){
 				$fields	= array_column($result['fields'], 'index', 'title');
@@ -403,10 +392,10 @@ class WPJAM_API{
 				$item	= $item ? array_map(fn($i)=> $item['i'.$i] ?? '', $fields) : [];
 				$item	= $item ? [$type=>$file, 'icons'=>[], 'banners'=>[], 'banners_rtl'=>[]]+array_map(fn($v)=> $item[$v], ['url'=>'更新地址', 'package'=>'下载地址', 'new_version'=>'版本', 'requires_php'=>'PHP最低版本', 'requires'=>'最低要求版本', 'tested'=>'最新测试版本']) : [];
 			}else{
-				$item	= array_find($result, fn($item)=> $item[$type] == $file);
+				$item	= array_find($result ?: [], fn($item)=> $item[$type] == $file);
 			}
 
-			return $item ? $item+['id'=>$data['UpdateURI'], 'version'=>$data['Version']] : [];
+			return $item ? $item+($data ? ['id'=>$data['UpdateURI'], 'version'=>$data['Version']] : []) : [];
 		}catch(Exception $e){
 			return [];
 		}

@@ -70,7 +70,7 @@ class WPJAM_Basic_Admin{
 	}
 
 	public static function about_page(){
-		$jam_plugins	= wpjam_transient('about_jam_plugins', fn()=> wpjam_remote_request('https://jam.wpweixin.com/api/template/get.json?id=5644', ['field'=>'body.template.table.content']));
+		$jam_plugins	= wpjam_transient('about_jam_plugins', fn()=> wpjam_remote_request(self::api_url('about'), ['field'=>'body.template.table.content']));
 
 		?>
 		<div style="max-width: 900px;">
@@ -119,6 +119,10 @@ class WPJAM_Basic_Admin{
 		<?php 
 	}
 
+	private static function api_url($type){
+		return 'https://jam.wpweixin.com/api/template/get.json?'.($type == 'about' ? 'id=5644' : 'name=wpjam-'.$type.'-versions');
+	}
+
 	public static function builtin_page_load($screen){
 		if(in_array($screen->base, ['dashboard', 'dashboard-network', 'dashboard-user'])){
 			is_multisite() && !is_user_member_of_blog() && remove_meta_box('dashboard_quick_press', get_current_screen(), 'side');
@@ -147,7 +151,7 @@ class WPJAM_Basic_Admin{
 				'a.jam-post img{display: table-cell; width:40px; height: 40px; margin:4px 12px; }',
 				'a.jam-post span{display: table-cell; height: 40px; vertical-align: middle;}'
 			]);
-		}elseif($base	= array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base))){
+		}elseif($base = array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base))){
 			wpjam_script("
 			$('tr.plugin-update-tr').each(function(){
 				let detail_link	= $(this).find('a.open-plugin-details-modal');
@@ -162,14 +166,14 @@ class WPJAM_Basic_Admin{
 			");
 
 			if($base != 'themes'){
-				wpjam_updater('plugin', 'blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-plugin-versions');
+				wpjam_updater('plugin', 'blog.wpjam.com', self::api_url('plugin'));
 
 				add_filter('pre_set_site_transient_update_plugins', function($updates){
 					if(isset($updates->no_update) || isset($updates->response)){
 						$file	= 'wpjam-basic/wpjam-basic.php';
-						$update	= wpjam_updater('plugin', 'blog.wpjam.com', $file);
+						$update	= wpjam('updater', 'plugin', self::api_url('plugin'), $file);
 
-						if($update){
+						if($update && is_array($update)){
 							$plugin	= get_plugin_data(WP_PLUGIN_DIR.'/'.$file);
 							$key 	= version_compare($update['new_version'], $plugin['Version'], '>') ? 'response' : 'no_update';
 
@@ -185,7 +189,7 @@ class WPJAM_Basic_Admin{
 			}
 
 			if($base != 'plugins'){
-				wpjam_updater('theme', 'blog.wpjam.com', 'https://jam.wpweixin.com/api/template/get.json?name=wpjam-theme-versions');
+				wpjam_updater('theme', 'blog.wpjam.com', self::api_url('theme'));
 
 				// delete_site_transient('update_themes');
 				// wpjam_print_r(get_site_transient('update_themes'));

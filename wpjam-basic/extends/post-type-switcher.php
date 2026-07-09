@@ -36,7 +36,7 @@ if(is_admin()){
 				return;
 			}
 
-			self::set($post_id, $_REQUEST['ptype']);
+			isset($_REQUEST['ptype']) && self::set($post_id, $_REQUEST['ptype']);
 		}
 
 		public static function on_post_submitbox_misc_actions(){

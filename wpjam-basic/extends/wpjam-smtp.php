@@ -44,15 +44,18 @@ class WPJAM_SMTP extends WPJAM_Option_Model{
 				$phpmailer->Username	= self::get_setting('user');
 				$phpmailer->Password	= self::get_setting('pass');
 
-				($reply_to	= self::get_setting('reply_to_mail')) && $phpmailer->AddReplyTo($reply_to, self::get_setting('mail_from_name', ''));
+				if($reply_to = self::get_setting('reply_to_mail')){
+					$phpmailer->AddReplyTo($reply_to, self::get_setting('mail_from_name', ''));
+				}
 			});
 
 			wpjam_hook('wp_mail_from', self::get_setting('user'));
-
-			($from_name = self::get_setting('mail_from_name')) && wpjam_hook('wp_mail_from_name', $from_name);
+			wpjam_hook('wp_mail_from_name', 'maybe', self::get_setting('mail_from_name') ?: null);
 		}
 
-		(wp_doing_ajax() || wpjam_is_json_request()) && add_action('wp_mail_failed', 'wpjam_send_json');
+		if(wp_doing_ajax() || wpjam_is_json_request()){
+			add_action('wp_mail_failed', 'wpjam_send_json');
+		}
 	}
 }
 

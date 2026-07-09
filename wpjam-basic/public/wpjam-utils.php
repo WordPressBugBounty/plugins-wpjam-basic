@@ -1080,7 +1080,7 @@ function wpjam_every($arr, $cb){
 function wpjam_lines($str, ...$args){
 	[$sep, $cb]	= count($args) == 1 && is_closure($args[0]) ? ["\n", $args[0]] : ($args+["\n", null]);
 
-	return array_reduce(explode($sep, $str ?: ''), fn($c, $v)=> ($v = $cb ? $cb(trim($v)) : trim($v)) ? [...$c, $v] : $c, []);
+	return array_reduce(explode($sep, $str ?: ''), fn($c, $v)=> !is_blank($v = $cb ? $cb(trim($v)) : trim($v)) ? [...$c, $v] : $c, []);
 }
 
 if(!function_exists('array_pull')){

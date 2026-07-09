@@ -526,7 +526,9 @@ function wpjam_activation(...$args){
 }
 
 function wpjam_updater($type, $hostname, $url){
-	return in_array($type, ['plugin', 'theme']) && $url ? wpjam('updater', $type, $hostname, $url) : null;
+	if(in_array($type, ['plugin', 'theme']) && $url){
+		return add_filter('update_'.$type.'s_'.$hostname, fn($update, $data, $file, $locales)=> wpjam('updater', $type, $url, $file, $data) ?: $update, 10, 4);
+	}
 }
 
 // Capability

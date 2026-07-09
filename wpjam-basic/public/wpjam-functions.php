@@ -977,12 +977,15 @@ function wpjam_lock($name, $expire=10, $group=false){
 }
 
 function wpjam_remaining($group, $max, $time, $count=true){
+	if(str_contains($group, ':')){
+		[$group, $name]	= explode(':', $group, 2);
+	}else{
+		$name	= wpjam_visitor($group);
+	}
+
 	$group	.= '_limit';
-	$name	= wpjam_visitor($group);
 	$times	= wp_cache_get($name, $group) ?: 0;
 	$rest	= ($rest = $max - $times) > 0 ? $rest : 0;
-
-	trigger_error($group.':'.$name.':'.$rest);
 
 	$count && $rest && wp_cache_set($name, $times+1, $group, ($times+1 == $max && $time > 60) ? $time : 60);
 
@@ -990,7 +993,9 @@ function wpjam_remaining($group, $max, $time, $count=true){
 }
 
 function wpjam_visitor($context=''){
-	return apply_filters('wpjam_visitor', function_exists('is_user_logged_in') && is_user_logged_in() ? 'user:'.get_current_user_id() : 'ip:'.wpjam_get_ip(), $context); 
+	$id	= apply_filters('wpjam_visitor', '', $context);
+
+	return $id ?: (function_exists('is_user_logged_in') && is_user_logged_in() ? 'user:'.get_current_user_id() : 'ip:'.wpjam_get_ip()); 
 }
 
 // Code

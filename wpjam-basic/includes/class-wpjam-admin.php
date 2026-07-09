@@ -446,7 +446,7 @@ class WPJAM_Plugin_Page extends WPJAM_Args{
 		if($key == 'name'){
 			return $this->tab_slug ?: $this->menu_slug;
 		}elseif($key == 'type'){
-			return ($value	??= $this->function) == 'list' ? 'list_table' : (in_array($value, ['option', 'list_table', 'form', 'dashboard', 'tab']) ? $value : '');
+			return ($value ??= $this->function) == 'list' ? 'list_table' : (in_array($value, ['option', 'list_table', 'form', 'dashboard', 'tab']) ? $value : '');
 		}
 
 		return $value;
@@ -734,8 +734,8 @@ class WPJAM_Page_Action extends WPJAM_Args{
 			$result	= is_string($result) ? [($type == 'redirect' ? 'url' : 'data')=>$result] : [];
 		}
 
-		$result	+= ['type'=>$type]+$this->pick('dismiss');
-		$result	+= $result['type'] == 'redirect' ? $this->pick('target') : [];
+		$result	+= ['type'=>$type]+$this->pick(['dismiss']);
+		$result	+= $result['type'] == 'redirect' ? $this->pick(['target']) : [];
 
 		return apply_filters('wpjam_ajax_response', $result);
 	}
