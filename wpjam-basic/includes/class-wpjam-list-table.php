@@ -999,7 +999,7 @@ class WPJAM_List_Table_Column extends WPJAM_List_Table_Component{
 
 	public function __invoke($args){
 		$id		= $args['id'];
-		$value	= $this->_field->val(null)->value_callback($args) ?? wpjam_value($args, $this->name) ?? $this->default;
+		$value	= $this->_field->val(null)->value_callback($args) ?? wpjam_value_callback($args, $this->name) ?? $this->default;
 
 		if(wpjam_is_assoc_array($value)){
 			return $value;

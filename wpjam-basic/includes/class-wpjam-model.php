@@ -320,270 +320,6 @@ class WPJAM_Handler extends WPJAM_Args{
 	}
 }
 
-class WPJAM_Query extends WPJAM_Args{
-	public function __invoke($vars, ...$args){
-		$method	= is_string($vars) ? $vars : (is_bool($vars) ? ($vars ? 'parse' : 'render') : '');
-
-		if(!$method){
-			return $this->query($vars, ...$args);
-		}
-
-		if($this->type == 'post' && in_array($method, ['parse', 'render'], true)){
-			if(empty($args[0])){
-				return $method == 'parse' ? [] : '';
-			}
-
-			$args[1]	= ($args[1] ?? [])+['list_query'=>true];
-		}
-
-		return $this->$method(...$args);
-	}
-
-	public function query($vars, &$args=[]){
-		if(!empty($vars['related_query'])){
-			$post	= get_post(wpjam_pull($vars, 'post') ?? get_the_ID());
-			$type	= get_post_type($post);
-			$tt_ids	= [];
-
-			foreach($post ? get_object_taxonomies($type) : [] as $tax){
-				if($terms = $tax == 'post_format' ? [] : get_the_terms($post, $tax)){
-					$type	= array_merge((array)$type, get_taxonomy($tax)->object_type);
-					$tt_ids	= array_merge($tt_ids, array_column($terms, 'term_taxonomy_id'));
-				}
-			}
-
-			if(!$tt_ids){
-				return false;
-			}
-
-			$vars	+= ['post_status'=>'publish', 'post__not_in'=>[$post->ID], 'post_type'=>array_unique($type), 'orderby'=>'related', 'term_taxonomy_ids'=>wpjam_filter($tt_ids, 'unique')];
-		}
-
-		$vars	= $this->parse_vars($vars);
-
-		if($args){
-			$vars	= array_filter(['posts_per_page'=>wpjam_pull($args, 'number')])+wpjam_pull($args, ['post_type', 'orderby', 'posts_per_page'])+$vars;
-			$vars	= ($days = wpjam_pull($args, 'days')) ? wpjam_set($vars, 'date_query[]', [
-				'column'	=> wpjam_pull($args, 'column') ?: 'post_date_gmt',
-				'after'		=> wpjam_date('Y-m-d', time()-DAY_IN_SECONDS*$days).' 00:00:00'
-			]) : $vars;
-		}
-
-		return new WP_Query($vars+['no_found_rows'=>true, 'ignore_sticky_posts'=>true]);
-	}
-
-	public function parse($vars, $args=[]){
-		$format	= wpjam_pull($args, 'format');
-		$parse	= $args['parse'] ?? true;
-
-		if($this->type == 'post'){
-			$query	= is_object($vars) ? $vars : $this->query($vars, $args);
-
-			if(!$query || !$parse){
-				return $query ? $query->posts : [];
-			}
-
-			$args	+= ['thumbnail_size'=>wpjam_pull($args, 'size')];
-			$args	+= $query->get('related_query') ? ['filter'=>'wpjam_related_post_json'] : [];
-			$parsed	= [];
-
-			while($query->have_posts()){
-				$query->the_post();
-
-				$json	= wpjam_get_post(get_the_ID(), $args+['query'=>$query]);
-				$parsed	= $json ? wpjam_set($parsed, ($format == 'date' ? wpjam_at($json['date'], ' ', 0) : '').'[]', $json) : $parsed;
-			}
-
-			$query->is_main_query() || wp_reset_postdata();
-
-			return $parsed;
-		}elseif($this->type == 'term'){
-			$tax	= ($tax	= $vars['taxonomy'] ?? '') && is_string($tax) ? $tax : null;
-			$object	= wpjam_get_taxonomy($tax);
-			$depth	= $args['depth'] ?? ($object ? $object->max_depth : null);
-
-			if($depth != -1){
-				if($object && $object->hierarchical){
-					$depth	??= (int)$object->levels;
-					$parent	= (int)wpjam_pull($vars, 'parent');
-
-					if($parent && !get_term($parent)){
-						return [];
-					}
-
-					if(!empty($vars['terms'])){
-						$term_ids	= array_column($vars['terms'], 'term_id');
-						$term_ids	= array_reduce($vars['terms'], fn($c, $v)=> array_merge($c, get_ancestors($v->term_id, $tax, 'taxonomy')), $term_ids);
-
-						$vars['terms']	= WPJAM_Term::get_by_ids(array_unique($term_ids));
-					}
-				}else{
-					$depth	= -1;
-				}
-			}
-
-			$terms	= $vars['terms'] ?? get_terms($vars+['hide_empty'=>false]);
-
-			if($terms && !is_wp_error($terms)){
-				if($depth != -1){
-					$options	= ($parse ? ['item_callback'=>'wpjam_get_term'] : ['fields'=>['id'=>'term_id']])+($parent ? ['top'=>get_term($parent)] : []);
-
-					return wpjam_nest($terms, ['max_depth'=>$depth, 'format'=>$format]+$options);
-				}elseif($parse){
-					return array_values(array_map('wpjam_get_term', $terms));
-				}
-			}
-
-			return $terms ?: [];
-		}
-
-		return [];
-	}
-
-	public function parse_vars($vars, $param=false){
-		if(($post_type = $vars['post_type'] ?? '') && is_string($post_type) && str_contains($post_type, ',')){
-			$vars['post_type'] = wp_parse_list($post_type);
-		}
-
-		foreach(get_taxonomies([], 'objects') as $tax => $object){
-			if(in_array($tax, ['category', 'post_tag']) || !$object->_builtin){
-				$qk		= wpjam_get_taxonomy_query_key($tax);
-				$keys	= $tax == 'category' ? ['category_id', 'cat_id'] : [$qk];
-
-				if($value = ($param ? array_reduce($keys, fn($c, $k)=> (int)wpjam_param($k) ?: $c, 0) : 0) ?: wpjam_pull($vars, $qk)){
-					$term_ids[$tax]	= $value;
-				}
-			}
-		}
-
-		if(!empty($vars['taxonomy']) && empty($vars['term']) && ($value = wpjam_pull($vars, 'term_id'))){
-			if(is_numeric($value)){
-				$term_ids[wpjam_pull($vars, 'taxonomy')]	= $value;
-			}else{
-				$vars['term']	= $value;
-			}
-		}
-
-		foreach(array_filter($term_ids ?? []) as $tax => $value){
-			if($tax == 'category' && $value != 'none'){
-				$vars['cat']	= $value;
-			}else{
-				$vars['tax_query'][]	= ['taxonomy'=>$tax, 'field'=>'term_id']+($value == 'none' ? ['operator'=>'NOT EXISTS'] : ['terms'=>[$value]]);
-			}
-		}
-
-		foreach(wpjam_pull($vars, ['include', 'exclude']) as $k => $v){
-			if($ids = wp_parse_id_list($v)){
-				$vars[$k == 'include' ? 'post__in' : 'post__not_in']	= $ids;
-
-				$k == 'include' && ($vars['posts_per_page']	= count($ids));
-			}
-		}
-
-		foreach(['cursor'=>'before', 'since'=>'after'] as $k => $v){
-			if($value = (int)(($param ? wpjam_param($k) : 0) ?: wpjam_pull($vars, $k))){
-				$vars['date_query'][]	= [$v => wpjam_date('Y-m-d H:i:s', $value)];
-
-				$vars['ignore_sticky_posts']	= true;
-			}
-		}
-
-		return $vars;
-	}
-
-	public function render($vars, $args=[]){
-		$cb		= wpjam_fill(['item_callback', 'wrap_callback'], fn($k)=> $args[$k] ?? [$this, $k]);
-		$query	= is_object($vars) ? $vars : $this->query($vars, $args);
-		$args	+= ['query'=>$query];
-
-		return $query ? $cb['wrap_callback'](implode(wpjam_map($query->posts, fn($p, $i)=> $cb['item_callback']($p->ID, $args+['i'=>$i]))), $args) : '';
-	}
-
-	public function filter_clauses($clauses, $query){
-		$wpdb		= $GLOBALS['wpdb'];
-		$orderby	= $query->get('orderby');
-		$order		= strtoupper($query->get('order')) == 'ASC' ? 'ASC' : 'DESC';;
-
-		if($orderby == 'related'){
-			if($tt_ids = array_filter(wp_parse_id_list($query->get('term_taxonomy_ids')))){
-				$clauses['join']	.= "INNER JOIN {$wpdb->term_relationships} AS tr ON {$wpdb->posts}.ID = tr.object_id";
-				$clauses['where']	.= " AND tr.term_taxonomy_id IN (".implode(",", $tt_ids).")";
-				$clauses['groupby']	.= " tr.object_id";
-				$clauses['orderby']	= " count(tr.object_id) DESC, {$wpdb->posts}.ID DESC";
-			}
-		}elseif($orderby == 'comment_date'){
-			$ct		= $query->get('comment_type') ?: 'comment';
-			$str	= $ct == 'comment' ? "'comment', ''" : "'".esc_sql($ct)."'";
-			$where	= "ct.comment_type IN ({$str}) AND ct.comment_parent=0 AND ct.comment_approved NOT IN ('spam', 'trash', 'post-trashed')";
-
-			$clauses['join']	= "INNER JOIN {$wpdb->comments} AS ct ON {$wpdb->posts}.ID = ct.comment_post_ID AND {$where}";
-			$clauses['groupby']	= "ct.comment_post_ID";
-			$clauses['orderby']	= "MAX(ct.comment_ID) {$order}";
-		}elseif(in_array($orderby, ['views', 'comment_type'])){
-			$clauses['join']	.= $wpdb->prepare("LEFT JOIN {$wpdb->postmeta} jam_pm ON {$wpdb->posts}.ID = jam_pm.post_id AND jam_pm.meta_key = %s ", sanitize_key($orderby == 'comment_type' ? $query->get('comment_count') : 'views'));
-			$clauses['orderby']	= "(COALESCE(jam_pm.meta_value, 0)+0) {$order}, " . $clauses['orderby'];
-			$clauses['groupby']	= "{$wpdb->posts}.ID";
-		}elseif(in_array($orderby, ['', 'date', 'post_date'])){
-			$clauses['orderby']	.= ", {$wpdb->posts}.ID {$order}";
-		}
-
-		return $clauses;	
-	}
-
-	public function filter_results($posts, $query){
-		$q	= &$query->query_vars;
-
-		$sticky_posts	= array_diff(wp_parse_id_list(wpjam_pull($q, 'sticky_posts') ?: []), $q['post__not_in']);
-		
-		if($sticky_posts && ($stickies = get_posts([
-			'orderby'			=> 'post__in',
-			'post__in'			=> $sticky_posts,
-			'post_type'			=> $q['post_type'] ?: 'post',
-			'post_status'		=> 'publish',
-			'posts_per_page'	=> count($sticky_posts),
-		]+wpjam_pick($q, ['suppress_filters', 'cache_results', 'update_post_meta_cache', 'update_post_term_cache', 'lazy_load_term_meta'])))){
-			$q['sticky_posts']	= array_column($stickies, 'ID');
-
-			return array_merge($stickies, array_filter($posts, fn($post)=> !in_array($post->ID, $q['sticky_posts'], true)));
-		}
-
-		return $posts;
-	}
-
-	public function item_callback($post_id, $args){
-		$args	+= ['title_number'=>'', 'excerpt'=>false, 'thumb'=>true, 'size'=>'thumbnail', 'thumb_class'=>'wp-post-image', 'wrap_tag'=>'li'];
-		$title	= get_the_title($post_id);
-		$item	= wpjam_wrap($title);	
-
-		$args['title_number'] && $item->before('span', ['title-number'], zeroise($args['i']+1, strlen(count($args['query']->posts))).'. ');
-		($args['thumb'] || $args['excerpt']) && $item->wrap('h4');
-		$args['thumb'] && $item->before(get_the_post_thumbnail($post_id, $args['size'], ['class'=>$args['thumb_class']]));
-		$args['excerpt'] && $item->after(wpautop(get_the_excerpt($post_id)));
-
-		return $item->wrap('a', ['href'=>get_permalink($post_id), 'title'=>strip_tags($title)])->wrap($args['wrap_tag'])->render();
-	}
-
-	public function wrap_callback($output, $args){
-		if(!$output){
-			return '';
-		}
-
-		$args	+= ['title'=>'', 'div_id'=>'', 'class'=>[], 'thumb'=>true, 'wrap_tag'=>'ul'];
-		$output	= wpjam_wrap($output);
-
-		$args['wrap_tag']	&& $output->wrap($args['wrap_tag'])->add_class($args['class'])->add_class($args['thumb'] ? 'has-thumb' : '');
-		$args['title']		&& $output->before($args['title'], 'h3');
-		$args['div_id']		&& $output->wrap('div', ['id'=>$args['div_id']]);
-
-		return $output->render();
-	}
-
-	public static function get_instance($type='post'){
-		static $objects	= [];
-		return $objects[$type] ??= new self(['type'=>$type]);
-	}
-}
-
 class WPJAM_DB extends WPJAM_Args{
 	private $query_vars;
 
@@ -1303,8 +1039,14 @@ class WPJAM_Items extends WPJAM_Args{
 
 	public function __call($method, $args){
 		if(str_ends_with($method, '_items')){
+			if($method == 'update_items'){
+				if($this->compressed && is_array($args[0])){
+					$args[0]	= wpjam_compress($args[0]);
+				}
+			}
+
 			if($this->$method){
-				$result	= $this->call($method.'_by_prop', ...$args);
+				$res	= $this->call($method, ...$args);
 			}else{
 				$type	= $this->items_type;
 
@@ -1327,9 +1069,10 @@ class WPJAM_Items extends WPJAM_Args{
 						$object	= wpjam_get_post_object($this->post_id);
 
 						if($method == 'get_items'){
-							$result	= $object->get_unserialized();
+							$res	= $object->content;
+							$res	= (!$this->compressed || is_serialized($res)) ? $object->get_unserialized() : $res;
 						}elseif($method == 'update_items'){
-							$result	= $object->save(['content'=>$args[0] ?: '']);
+							$res	= $object->save(['content'=>$args[0] ?: '']);
 						}
 					}
 				}elseif($type == 'cache'){
@@ -1337,38 +1080,35 @@ class WPJAM_Items extends WPJAM_Args{
 						$object	= WPJAM_Cache::create($this);
 
 						if($method == 'get_items'){
-							$result	= [$object, 'get_with_cas']($key);
+							$res	= [$object, 'get_with_cas']($key);
 
-							[$result, $this->cas_token]	= $result === false ? [false, null] : [$result['value'], $result['cas']];
+							[$res, $this->cas_token]	= $res === false ? [false, null] : [$res['value'], $res['cas']];
 						}elseif($method == 'update_items'){
 							$cas	= $this->cas_token;
-							$result	= [$object, $cas ? 'cas' : 'add'](...[...($cas ? [$cas] : []), $key, ...$args]);
+							$res	= [$object, $cas ? 'cas' : 'add'](...[...($cas ? [$cas] : []), $key, ...$args]);
 						}
 					}
 				}
 
-				if(!isset($result)){
+				if(!isset($res)){
 					if(isset($map[$method]) && array_all($keys, fn($k)=> $this->$k)){
-						$result	= ($map[$method])(...[...array_values(wpjam_pick($this, $keys)), ...$args]);
+						$res	= ($map[$method])(...[...array_values(wpjam_pick($this, $keys)), ...$args]);
 
 						if($type == 'meta' && $method == 'get_items'){
-							$this->pre_value	= $result;
+							$this->pre_value	= $res;
 						}
 					}else{
-						$result	= $method == 'delete_items' ? $this->update_items([]) : true;
+						$res	= $method == 'delete_items' ? $this->update_items([]) : true;
 					}
 				}
 			}
 
 			if($method == 'get_items'){
-				if($result && $this->filter_items){
-					$result	= $this->filter_items($result);
-				}
-
-				return $result ?: [];
+				$res	= $this->compressed && $res && !is_array($res) ? wpjam_uncompress($res) : ($res ?: []);
+				$res	= $this->filter_items ? $this->filter_items($res) : $res;
 			}
 
-			return $result;
+			return $res;
 		}elseif(str_contains($method, '_setting')){
 			if($this->option_name){
 				$i		= str_starts_with($method, 'update_') ? 2 : 1;
@@ -1444,7 +1184,7 @@ class WPJAM_Items extends WPJAM_Args{
 				$add && in_array($item, $items) && wpjam_throw('duplicate_item', '不能重复');
 			}
 
-			$item	= $this->prepare_item ? $this->call('prepare_item_by_prop', $item, $id, $method, $items) : $item;
+			$item	= $this->prepare_item ? $this->call('prepare_item', $item, $id, $method, $items) : $item;
 		}
 
 		if(in_array($method, ['add', 'insert'])){
@@ -1472,7 +1212,7 @@ class WPJAM_Items extends WPJAM_Args{
 	}
 
 	public function process($cb){
-		return is_closure($cb) ? wpjam_retry($this->retry_times ?: 1, fn()=> $this->update_items($this->call($cb, $this->get_items()))) : null;
+		return is_closure($cb) ? wpjam_retry($this->retry_times ?: 1, fn()=> $this->update_items(wpjam_call($cb, $this->get_items()))) : null;
 	}
 
 	public function query_items($args){

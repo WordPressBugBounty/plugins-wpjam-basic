@@ -20,7 +20,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		$this->filter_args();
 
 		$name	= $this->name;
-		$struct	= $this->_builtin ? '' : str_replace(['%'.$name.'_id%', '%postname%'], ['%post_id%', '%'.$name.'%'], $this->get_arg('permastruct') ?: '');
+		$struct	= $this->_builtin ? '' : str_replace(['%'.$name.'_id%', '%postname%'], ['%post_id%', '%'.$name.'%'], trim($this->get_arg('permastruct') ?: '', '/'));
 
 		if(strpos($struct, '%post_id%')){
 			if($this->hierarchical){
@@ -37,7 +37,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 		if($struct){
 			$this->rewrite	= $this->rewrite ?: true;
 
-			add_action('registered_post_type_'.$name, fn()=> add_permastruct($name, trim($struct, '/'), ['feed'=>$this->rewrite['feeds']]+$this->rewrite));
+			add_action('registered_post_type_'.$name, fn()=> add_permastruct($name, $struct, ['feed'=>$this->rewrite['feeds']]+$this->rewrite));
 		}
 
 		if($this->_jam){
@@ -208,7 +208,7 @@ class WPJAM_Post_Type extends WPJAM_Register{
 
 		add_filter('post_type_link', fn($link, $post)=> str_replace('%post_id%', $post->ID, $link), 1, 2);
 
-		wpjam_map(['clauses', 'results'], fn($v)=> add_filter('posts_'.$v, [wpjam_query('post'), 'filter_'.$v], 1, 2));
+		wpjam_map(['clauses', 'results'], fn($v)=> add_filter('posts_'.$v, wpjam_query('filter_'.$v), 1, 2));
 	}
 }
 
@@ -220,18 +220,14 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 	public function __get($key){
 		$value	= $this->builtin($key) ?? parent::__get($key);
 
-		if(!isset($value)){
-			if($key == 'show_in_posts_rest'){
-				return $this->show_in_rest;
-			}elseif($key == 'selectable'){
-				return wp_count_terms(['taxonomy'=>$this->name, 'hide_empty'=>false]+($this->levels > 1 ? ['parent'=>0] : [])) <= 30;
-			}
-		}elseif(!$value){
-			if($key == 'model'){
-				return 'WPJAM_Term';
-			}elseif($key == 'plural'){
-				return $this->name === 'category' ? 'categories' : $this->name.'s';
-			}
+		if($key == 'show_in_posts_rest'){
+			return $value ?? $this->show_in_rest;
+		}elseif($key == 'selectable'){
+			return $value ?? wp_count_terms(['taxonomy'=>$this->name, 'hide_empty'=>false]+($this->levels > 1 ? ['parent'=>0] : [])) <= 30;
+		}elseif($key == 'model'){
+			return $value ?: 'WPJAM_Term';
+		}elseif($key == 'plural'){
+			return $value ?: ($this->name === 'category' ? 'categories' : $this->name.'s');
 		}
 
 		return $value;
@@ -252,18 +248,20 @@ class WPJAM_Taxonomy extends WPJAM_Register{
 
 		$name	= $this->name;
 
-		$this->query_key	= $name === 'category' ? 'cat' : ($name == 'post_tag' ? 'tag_id' : $this->name.'_id');
-		$this->column_name	= $name === 'category' ? 'categories' : ($name == 'post_tag' ? 'tags' : 'taxonomy-'.$this->name);
+		$this->query_key	= ['category'=>'cat', 'post_tag'=>'tag_id'][$name] ?? $name.'_id';
+		$this->column_name	= ['category'=>'categories', 'post_tag'=>'tags'][$name] ?? 'taxonomy-'.$name;
 		$this->supports		= wpjam_array($this->supports ?? ['slug', 'description', 'parent'], fn($k, $v)=> is_numeric($k) ? [$v, true] : [$k, $v]);
 
-		$this->{$this->levels == 1 ? 'remove_support' : 'add_support'}('parent');
+		if($this->levels == 1){
+			$this->remove_support('parent');
+		}
 
-		$struct	= $this->get_arg('permastruct');
+		$struct	= trim($this->get_arg('permastruct') ?: '', '/');
 
 		if($struct == '%'.$name.'%'){
 			$this->no_base	= true;
 		}elseif($struct){
-			$struct	= str_replace('%'.$this->query_key.'%', '%term_id%', trim($struct, '/'));
+			$struct	= str_replace('%'.$this->query_key.'%', '%term_id%', $struct);
 
 			if(str_contains($struct, '%term_id%')){
 				$this->remove_support('slug');
@@ -534,17 +532,12 @@ class WPJAM_Post extends WPJAM_Instance{
 
 		$args	+= self::get_default_args();
 		$query	= $args['query'] ?? null;
-		$single	= $query && $query->is_main_query() && ($query->is_single($this->id) || $query->is_page($this->id));
-		$filter	= $args['suppress_filter'] ? '' : ($args['list_query'] ? ($args['filter'] ?? '') : 'wpjam_post_json');
-
-		// var_dump($filter);
-
-		// print_r($GLOBALS['wp_filter']['wpjam_post_json']);
-
-		$json	= wpjam_pick($this, ['id', 'type', 'post_type', 'status', 'views']);
-		$json	+= ['icon'=>(string)$this->type_object->icon];
-		$json	+= $this->viewable ? ['name'=> urldecode($this->name), 'post_url'=>str_replace(home_url(), '', get_permalink($this->id))] : [];
-		$json	+= wpjam_fill(['title', 'excerpt'], fn($field)=> $this->supports($field) ? html_entity_decode(('get_the_'.$field)($this->id)) : '');
+		$main	= $query && $query->is_main_query();
+		$single	= $query && ($query->is_single($this->id) || $query->is_page($this->id));
+		$rest	= $single ? 'show_in_rest' : 'show_in_posts_rest';
+		$json	= wpjam_pick($this, ['id', 'type', 'post_type', 'status', 'views'])+['icon'=>(string)$this->type_object->icon];
+		$json	+= $this->viewable ? ['name'=>urldecode($this->name), 'post_url'=>str_replace(home_url(), '', get_permalink($this->id))] : [];
+		$json	+= wpjam_fill(['title', 'excerpt'], fn($k)=> $this->supports($k) ? html_entity_decode(('get_the_'.$k)($this->id)) : '');
 		$json	+= ['thumbnail'=>$this->get_thumbnail_url($args['thumbnail_size'])];
 		$json	+= $this->supports('images') ? ['images'=>$this->get_images()] : [];
 		$json	+= ['user_id'=>(int)$this->author];
@@ -554,13 +547,15 @@ class WPJAM_Post extends WPJAM_Instance{
 		$json	+= $this->supports('page-attributes') ? ['menu_order'=>(int)$this->menu_order] : [];
 		$json	+= $this->supports('post-formats') ? ['format'=>get_post_format($this->id) ?: ''] : [];
 
-		if(!$args['list_query']){
-			$rest	= $single ? 'show_in_rest' : 'show_in_posts_rest';
-			$json	+= array_reduce(wpjam_get_post_options($this->type, [$rest=>true]), fn($carry, $option)=> $carry+$option->prepare($this->id), []);
-			$json	+= array_reduce($this->get_taxonomies([$rest=>true], 'names'), fn($carry, $tax)=> $carry+[$tax=>wpjam_get_terms(['terms'=>$this->get_terms($tax), 'taxonomy'=>$tax])], []);
+		if($main || $args['options_required']){
+			$json	+= array_reduce(wpjam_get_post_options($this->type, [$rest=>true]), fn($c, $o)=> $c+$o->prepare($this->id), []);
 		}
 
-		if($single || $args['content_required']){
+		if($main || $args['taxonomy_required']){
+			$json	+= array_reduce($this->get_taxonomies([$rest=>true], 'names'), fn($c, $t)=> $c+[$t=>wpjam_get_terms(['terms'=>$this->get_terms($t), 'taxonomy'=>$t])], []);
+		}
+
+		if(($main && $single) || $args['content_required']){
 			if($this->supports('editor')){
 				$json	+= ['content'=>$this->get_content(), 'multipage'=>(bool)$GLOBALS['multipage']];
 				$json	+= $json['multipage'] ? ['numpages'=>$GLOBALS['numpages'], 'page'=>$GLOBALS['page']] : [];
@@ -568,6 +563,8 @@ class WPJAM_Post extends WPJAM_Instance{
 				$json	+= is_serialized($this->content) ? ['content'=>$this->get_unserialized()] : [];
 			}
 		}
+
+		$filter	= $args['suppress_filter'] ? '' : ($main ? 'wpjam_post_json' : ($args['filter'] ?? ''));
 
 		return $filter ? apply_filters($filter, $json, $this->id, $args) : $json;
 	}
@@ -591,7 +588,8 @@ class WPJAM_Post extends WPJAM_Instance{
 	public static function get_default_args(){
 		return [
 			'suppress_filter'	=> false,
-			'list_query'		=> false,
+			'options_required'	=> true,
+			'taxonomy_required'	=> true,
 			'content_required'	=> false,
 			'thumbnail_size'	=> null
 		];

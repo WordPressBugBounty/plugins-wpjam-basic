@@ -12,6 +12,7 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 				'disable_revisions'			=>['label'=>'屏蔽文章修订功能，精简文章表数据。',		'value'=>1],
 				'disable_trackbacks'		=>['label'=>'彻底关闭Trackback，防止垃圾留言。',		'value'=>1],
 				'disable_xml_rpc'			=>['label'=>'关闭XML-RPC功能，只在后台发布文章。',	'value'=>1],
+				'disable_batch_rest'		=>['label'=>'关闭REST API批量处理端点（<code>wp-json/batch</code>）'],
 				'disable_auto_update'		=>['label'=>'关闭自动更新功能，手动或SSH方式更新。'],
 				'disable_feed'				=>['label'=>'屏蔽站点Feed，防止文章被快速被采集。'],
 				'disable_admin_email_check'	=>['label'=>'屏蔽站点管理员邮箱定期验证功能。'],
@@ -97,6 +98,11 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 				['xmlrpc_methods',	[]],
 				['-', 'xmlrpc_rsd_apis', 'rest_output_rsd']
 			]);
+		}
+
+		//禁用 REST API 批量处理端点
+		if(self::disabled('batch_rest')){
+			wpjam_hook('rest_pre_dispatch', 'maybe', fn($server, $request)=> str_starts_with(strtolower(untrailingslashit($request->get_route())), '/batch/') ? new WP_Error('rest_batch_disabled', '批量 API 已被禁用', ['status'=>401]) : null, 0, 3);
 		}
 
 		// 屏蔽小工具区块编辑器模式

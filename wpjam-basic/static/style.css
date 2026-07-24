@@ -847,6 +847,40 @@ label.image-radio{
 	}
 }
 
+div.mix-tag-editor{
+	min-width:20em;
+	line-height:calc(var(--line-height) - 12px);
+	width:fit-content;
+	display:inline-block;
+	padding:5px;
+	border-radius:var(--border-radius);
+	box-shadow:0 0 0 transparent;
+	border:1px solid #8c8f94;
+	background-color:#fff;
+	vertical-align: middle;
+
+	&:hover{
+		border-color:#2271b1;
+		box-shadow:0 0 0 1px #2271b1;
+		outline:2px solid transparent;
+	}
+
+	span.query-label{
+		margin:0 5px;
+		display:inline-block;
+		line-height:calc(var(--line-height) - 8px);
+
+		&:first-child{
+			margin-left:2px;
+		}
+	}
+}
+
+.mix-tag-autocomplete{
+	max-height:300px;
+	overflow-y:auto;
+}
+
 div.mu-text{
 	&[data-rest="0"]:not(:has(.tag-input)) > .mu-item:last-child{
 		input, select{display:none;}

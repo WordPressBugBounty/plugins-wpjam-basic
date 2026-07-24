@@ -149,7 +149,121 @@ function wpjam_send_json($data=[], $code=null){
 	echo $jsonp ? '/**/'.$_GET['_jsonp'].'('.$data.')' : $data; exit;
 }
 
-// Compress
+function wpjam_import($file, $columns=[]){
+	$dir	= wp_get_upload_dir()['basedir']; 
+	$file	= ($file && !str_starts_with($file, $dir) ? $dir : '').$file;
+
+	if(!$file || !file_exists($file)){
+		return new WP_Error('file_not_exists', '文件不存在');
+	}
+
+	$ext	= wpjam_at($file, '.', -1);
+
+	if($ext == 'csv'){
+		if(($handle = fopen($file, 'r')) !== false){
+			while(($row = fgetcsv($handle)) !== false){
+				if(!array_filter($row)){
+					continue;
+				}
+
+				if(($encoding ??= mb_detect_encoding(implode('', $row), mb_list_encodings(), true)) != 'UTF-8'){
+					$row	= array_map(fn($v) => mb_convert_encoding($v, 'UTF-8', 'GBK'), $row);
+				}
+
+				if(isset($map)){
+					$data[]	= array_map(fn($i)=> preg_replace('/="([^"]*)"/', '$1', $row[$i]), $map);
+				}else{
+					if($columns){
+						$columns= array_flip(array_map('trim', $columns));
+						$row	= array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $row);
+						$map	= wpjam_array($row, fn($k, $v)=> isset($columns[$v]) ? [$columns[$v], $k] : (in_array($v, $columns) ? [$v, $k] : null));
+					}else{
+						$map	= array_flip(array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $row));
+					}
+				}
+			}
+
+			fclose($handle);
+		}
+	}else{
+		$data	= file_get_contents($file);
+		$data	= ($ext == 'txt' && is_serialized($data)) ? maybe_unserialize($data) : $data;
+	}
+
+	unlink($file);
+
+	return $data ?? [];
+}
+
+function wpjam_export($file, $data, $columns=[]){
+	$handle	= fopen('php://output', 'w');
+	$ext	= wpjam_at($file, '.', -1);
+
+	header('Content-Disposition: attachment;filename='.$file);
+	header('Content-Type: text/'.($ext == 'txt' ? 'plain' : $ext));
+	header('Pragma: no-cache');
+	header('Expires: 0');
+
+	if($ext == 'csv'){
+		fwrite($handle, chr(0xEF).chr(0xBB).chr(0xBF));
+
+		$columns && fputcsv($handle, $columns);
+
+		array_walk($data, fn($item)=> fputcsv($handle, $columns ? wpjam_map($columns, fn($k)=> $item[$k] ?? '', 'k') : $item));
+	}elseif($ext == 'txt'){
+		fputs($handle, is_scalar($data) ? $data : maybe_serialize($data));
+	}
+
+	fclose($handle);
+
+	exit;
+}
+
+function wpjam_columnar($items, $columns=[], $dict=[]){
+	if(!$items){
+		return [];
+	}
+
+	$columns= $columns ?: array_keys(array_first($items));
+	$dict	= $dict ? wpjam_fill(array_intersect($dict, $columns), fn($k)=> array_values(array_unique(array_column($items, $k)))) : [];
+	$rows	= [];
+
+	foreach($items as $id => $item){
+		if($dict){
+			foreach(array_intersect_key($item, $dict) as $k => $v){
+				$item[$k]	= array_search($v, $dict[$k]);
+			}
+		}
+
+		$rows[$id]	= array_map(fn($k)=> $item[$k] ?? null, $columns);
+	}
+
+	return ['columns'=>$columns, 'rows'=>$rows]+($dict ? ['dict'=>$dict] : []);
+}
+
+function wpjam_records($data){
+	if(!$data || empty($data['columns']) || empty($data['rows'])){
+		return [];
+	}
+
+	$dict	= $data['dict'] ?? [];
+	$items	= [];
+
+	foreach($data['rows'] as $id => $row){
+		$row	= array_combine($data['columns'], $row);
+
+		if($dict){
+			foreach(array_intersect_key($row, $dict) as $k => $v){
+				$row[$k]	= $dict[$k][$v];
+			}
+		}
+
+		$items[$id]	= $row;
+	}
+
+	return $items;
+}
+
 function wpjam_compress($data, $base64=true, $level=6){
 	$text	= gzcompress(wpjam_json_encode($data), $level);
 
@@ -343,7 +457,8 @@ function wpjam_calc(...$args){
 					$t	= $r === false ? ($if_errors[$k] ?? null) : $r;
 
 					if(!isset($t)){
-						$item[$key]	= $if_errors[$key] ?? (isset($v) ? '!!无法计算' : '!无法计算'); break;
+						$item[$key]	= $if_errors[$key] ?? (isset($v) ? '!!无法计算' : '!无法计算');
+						goto calced;
 					}
 				}
 			}
@@ -353,6 +468,8 @@ function wpjam_calc(...$args){
 			}catch(Throwable $e){
 				$item[$key]	= $if_errors[$key] ?? ($e instanceof DivisionByZeroError ? '!除零错误' : '!'.$e->getMessage());
 			}
+
+			calced:;
 		}
 
 		return $item;

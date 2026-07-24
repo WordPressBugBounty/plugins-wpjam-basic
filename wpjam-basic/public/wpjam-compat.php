@@ -218,6 +218,10 @@ function wpjam_loaded($action, ...$args){
 	wpjam_load('wp_loaded', fn()=> do_action($action, ...$args));
 }
 
+function wpjam_value($model, $name, ...$args){
+	return is_string($model) ? wpjam_call_method($model.'::get_'.$name, ...$args) : wpjam_value_callback($model, $name);
+}
+
 function wpjam_dynamic_method($class, $name, ...$args){
 	if($class && $name){
 		$group	= 'dynamic_method';
@@ -1671,6 +1675,6 @@ trait WPJAM_Meta_Trait{
 
 class WPJAM_Posts{
 	public static function __callStatic($method, $args){
-		return wpjam_query('post')->$method(...$args);
+		return wpjam_query($method, ...$args);
 	}
 }

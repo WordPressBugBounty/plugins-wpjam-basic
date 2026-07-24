@@ -94,7 +94,7 @@ jQuery(function($){
 				}
 
 				this.after('<a class="add-media button"><span class="dashicons dashicons-admin-media"></span>'+btn+'</a>');
-			
+
 				(type == 'img' ? this.parent() : this.next('a.button')).on('click.wpjam', (e)=> {
 					$(e.target).is('.del-img') ? this.data('value', '').wpjam_field() : this.wpjam_media(value => this.data('value', value).wpjam_field());
 				});
@@ -113,7 +113,7 @@ jQuery(function($){
 				e.target.files[0] && this.wpjam_upload(e.target.files[0]);
 				e.target.value	= '';
 			})));
-	
+
 			data.drag_drop && $wrap.addClass('drag-drop').append([
 				'<p class="drag-drop-info">'+wp.i18n.__('Drop files to upload', 'default')+'</p>',
 				$('<p class="drag-drop-buttons"></p>').append(this)
@@ -310,12 +310,12 @@ jQuery(function($){
 
 		xhr.onload	= ()=> {
 			let res = JSON.parse(xhr.responseText);
-			
+
 			res.errcode ? alert(res.errmsg) : this.val(res.path).wpjam_label();
 
 			this.next('.media-item').remove();
 		};
-		
+
 		xhr.open('POST', ajaxurl);
 		xhr.send(data);
 	}
@@ -407,13 +407,30 @@ jQuery(function($){
 		let $mu		= this.closest('.mu-text');
 		let $hidden	= !$mu[0] && this.data('filterable') && $('<input>',{type: 'hidden', name: this.attr('name'), value: this.val()}).insertAfter(this.removeAttr('name'));
 
-		this.data('label') && ($hidden ? this.val(this.data('label')) : this.wpjam_label());
+		if(!this.hasClass('mix-tag')){
+			this.data('label') && ($hidden ? this.val(this.data('label')) : this.wpjam_label());
+		}
 
 		return this.autocomplete({
 			minLength:	0,
 			delay: 400,
 			source: (request, response)=> {
-				this.wpjam_query(request.term).then(items => response(items));
+				let items	= this.data('items');
+
+				if(items){
+					let term	= request.term.toLowerCase();
+					let exclude	= $mu.wpjam_schema('uniqueItems') ? $mu.wpjam_val() : [];
+
+					response(_.filter(items, item => {
+						if(exclude.includes(item.value)){
+							return false;
+						}
+
+						return !term || item.label.toLowerCase().includes(term) || item.value.toLowerCase().includes(term);
+					}));
+				}else{
+					this.wpjam_query(request.term).then(items => response(items));
+				}
 			},
 			search: (e, ui)=> {
 				if(!this.val() && _.isMatch(e.originalEvent, {type: 'keydown', key: 'Backspace'})){
@@ -421,7 +438,12 @@ jQuery(function($){
 				}
 			},
 			select: (e, ui)=> {
-				if($hidden){
+				if(this.hasClass('mix-tag')){
+					e.preventDefault();
+					this.wpjam_mix_tag('add', ui.item);
+
+					return false;
+				}else if($hidden){
 					this.val(ui.item.label);
 					$hidden.val(ui.item.value);
 				}else{
@@ -440,7 +462,7 @@ jQuery(function($){
 		});
 	};
 
-	$.fn.wpjam_data_type.selector	= 'input[data-data_type][data-query_args]';
+	$.fn.wpjam_data_type.selector	= 'input[data-data_type][data-query_args], input[data-items]';
 
 	$.fn.wpjam_depend = function(){
 		let $el	= this.wpjam_control();
@@ -509,7 +531,7 @@ jQuery(function($){
 		let {data_type, query_args}	= this.data();
 
 		if(term){
-			query_args[(data_type == 'post_type' ? 's' : 'search')]	= term;
+			query_args.search	= term;
 		}
 
 		let $mu	= this.closest('.mu-text');
@@ -518,8 +540,129 @@ jQuery(function($){
 			query_args.exclude	= $mu.wpjam_val();
 		}
 
-		return wpjam.post({action: 'wpjam-query', data_type, query_args}).then(data => data.errcode ? (data.errmsg && alert(data.errmsg), Promise.reject(data)) : data.items);
+		return wpjam.post({
+			action:			'wpjam-query',
+			_ajax_nonce:	this.data('query_nonce'),
+			data_type,
+			query_args
+		}).then(data => data.errcode ? (data.errmsg && alert(data.errmsg), Promise.reject(data)) : data.items);
 	}
+
+	$.fn.wpjam_mix_tag = function(e, ...args){
+		let is_e	= e ? _.isObject(e) : false;
+		let action	= is_e ? (e.data.action || e.type) : e;
+
+		if(action){
+			if(action == 'keydown'){
+				if(e.key === 'Enter'){
+					e.preventDefault();
+				}
+			}
+
+			let $field, $editor, $hidden;
+
+			if(this.hasClass('mix-tag-editor')){
+				$editor	= this;
+				$hidden	= this.prev('input[type=hidden]');
+				$field	= $hidden.prev('input');
+			}else{
+				$field	= this;
+				$hidden	= this.next('input[type=hidden]');
+				$editor	= $hidden.next('.mix-tag-editor');
+			}
+
+			let sel	= window.getSelection();
+			let range, node, word;
+
+			if(sel.rangeCount){
+				range	= sel.getRangeAt(0);
+				node	= range.startContainer;
+
+				if(node){
+					if($editor[0].contains(node)){
+						$editor.data('range', range);
+					}else{
+						range	= $editor.data('range');
+						node	= range ? range.startContainer : null;
+					}
+				}
+
+				if(node && node.nodeType === Node.TEXT_NODE){
+					let sep	= [...($field.data('sep') || []), ' '];
+					let i	= range.startOffset - 1;
+
+					while(i >= 0 && !sep.includes(node.textContent[i])){
+						i--;
+					}
+
+					word = node.textContent.substring(i + 1, range.startOffset).trim();
+				}
+			}
+
+			if(action == 'add'){
+				let $tag	= $('<span class="query-label" contenteditable="false" data-value="'+args[0].value+'">'+args[0].label+'</span>');
+				let blank	= document.createTextNode(' ');
+
+				if(word){
+					range.setStart(node, range.startOffset - word.length);
+					range.deleteContents();
+				}
+
+				range.insertNode($tag[0]);
+				range.setStartAfter($tag[0]);
+				$tag.after(blank);
+				range.setStartAfter(blank);
+				range.collapse(true);
+
+				$editor.trigger('focus');
+
+				sel.removeAllRanges();
+				sel.addRange(range);
+			}else{
+				$field.autocomplete('option', 'position', {my: 'left top',  at: 'left bottom', of: e}).autocomplete('option', 'classes', {'ui-autocomplete': 'mix-tag-autocomplete'});
+				$field.val(word).autocomplete('search', word);
+
+				if(action == 'click'){
+					return false;
+				}
+			}
+
+			let parts = [];
+
+			$editor.contents().each(function(){
+				if(this.nodeType === Node.TEXT_NODE){
+					parts.push(this.textContent);
+				}else if(this.nodeType === Node.ELEMENT_NODE && $(this).hasClass('query-label')){
+					parts.push($(this).data('value'));
+				}
+			});
+
+			return $hidden.val(parts.join(' '));
+		}
+
+		this.css({position: 'absolute', left: '-9999px', width: '1px'});
+
+		let $hidden	= $('<input>', {type: 'hidden', name: this.attr('name'), value: this.val()}).insertAfter(this.removeAttr('name'));
+		let $editor	= $('<div>', {class: 'mix-tag-editor', contenteditable: 'true'}).insertAfter($hidden);
+		let value	= this.data('value');
+
+		value && value.forEach(item => {
+			if(typeof item === 'object'){
+				$('<span class="query-label" contenteditable="false" data-value="'+item.value+'">'+item.label+'</span>').appendTo($editor);
+			}else{
+				$editor.append(document.createTextNode(item));
+			}
+		});
+
+		return this;
+	};
+
+	$.fn.wpjam_mix_tag.selector = 'input.mix-tag[data-items], input.mix-tag[data-data_type]';
+	$.fn.wpjam_mix_tag.events	= [
+		{name: 'input',		selector: '.mix-tag-editor'},
+		{name: 'click',		selector: '.mix-tag-editor'},
+		{name: 'keydown',	selector: '.mix-tag-editor'}
+	];
 
 	$.fn.wpjam_mu = function(e, ...args){
 		let is_e	= e ? _.isObject(e) : false;

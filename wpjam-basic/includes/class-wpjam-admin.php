@@ -1,6 +1,10 @@
 <?php
 class WPJAM_Admin extends WPJAM_Args{
 	public function __invoke($key, ...$args){
+		if(!$key){
+			return $this;
+		}
+
 		if(method_exists($this, $key)){
 			return $this->$key(...$args);
 		}
@@ -368,9 +372,10 @@ class WPJAM_Admin extends WPJAM_Args{
 			]);
 
 			wpjam_ajax('wpjam-query', [
-				'admin'		=> true,
-				'fields'	=> ['data_type'=> ['required'=>true]],
-				'callback'	=> fn($data)=> ['items'=> wpjam_try([wpjam_get_data_type($data['data_type'], $data['query_args']), isset($data['include']) ? 'query_label' : 'query_items'], $data['include'] ?? $data['query_args'])]
+				'admin'			=> true,
+				'fields'		=> ['data_type'=> ['required'=>true]],
+				'callback'		=> fn($data)=> wpjam_query('data_type', $data),
+				'nonce_action'	=> fn($data)=> wpjam_get_data_type($data['data_type'], $data['query_args'] ?? [])->nonce_action($data['query_args'] ?? []),
 			]);
 
 			wpjam_ajax('wpjam-upload', [
