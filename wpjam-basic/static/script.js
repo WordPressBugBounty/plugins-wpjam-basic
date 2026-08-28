@@ -542,7 +542,7 @@ jQuery(function($){
 
 		return wpjam.post({
 			action:			'wpjam-query',
-			_ajax_nonce:	this.data('query_nonce'),
+			_ajax_nonce:	(this.is('select') ? this.parent() : this).data('query_nonce'),
 			data_type,
 			query_args
 		}).then(data => data.errcode ? (data.errmsg && alert(data.errmsg), Promise.reject(data)) : data.items);
@@ -1070,7 +1070,7 @@ jQuery(function($){
 
 			this.params	= this.parse_params(window.location.search, true);
 
-			this.page_title_action	&& $('.wp-heading-inline').last().wpjam_place(this.page_title_action, 'a.page-title-action', 'after');
+			this.page_title_action	&& $('.wp-heading-inline:visible').last().wpjam_place(this.page_title_action, 'a.page-title-action', 'after');
 
 			$('a[href*="/wp-admin/page="]').attr('href', (_, v)=> v.replace('/wp-admin/page=', 'admin/admin.php?page='));
 
@@ -1622,7 +1622,7 @@ jQuery(function($){
 		},
 
 		render: function($el){
-			$el.is('td') || _.each(this.columns, (column, sel)=> {
+			$el.is('td, th') || _.each(this.columns, (column, sel)=> {
 				let {sticky, left, nowrap, description, ...data}	= column;
 				let $col	= $('.'+sel);
 
@@ -1637,13 +1637,13 @@ jQuery(function($){
 					if(data.check){
 						let $input	= $td.find('input');
 
-						return $input[0] ? $input.attr('title', '选择'+($td.next('.column-primary')[0].childNodes[0].textContent.trim() || $input.val())) : ($td.find('span')[0] || $td.append('<span class="dashicons dashicons-minus"></span>'));
+						return $input[0] ? $input.attr('title', '选择'+($td.nextAll('.column-primary')[0].childNodes[0].textContent.trim() || $input.val())) : ($td.find('span')[0] || $td.append('<span class="dashicons dashicons-minus"></span>'));
 					}
 
 					let value	= $td.text();
 					let number	= Number(value);
 
-					if(isNaN(number)){
+					if(value === '' || isNaN(number)){
 						return;
 					}
 
@@ -1758,6 +1758,10 @@ jQuery(function($){
 			let $el	= $(e.currentTarget);
 
 			if(e.type == 'click'){
+				if($el.hasClass('list-table-action')){
+					return;
+				}
+
 				if($el.is('.prev-day, .next-day')){
 					let $date	= $el.siblings('[name="date"]');
 					let date	= new Date($date.val());
@@ -1776,7 +1780,7 @@ jQuery(function($){
 					return;
 				}
 
-				if($el.closest('td')[0] && (wpjam.plugin_page || !$el.attr('href').startsWith($('#adminmenu a.current').attr('href')))){
+				if($el.closest('td, th')[0] && (wpjam.plugin_page || !$el.attr('href').startsWith($('#adminmenu a.current').attr('href')))){
 					return;
 				}
 
@@ -1797,7 +1801,7 @@ jQuery(function($){
 				if($ae.is('#doaction, #doaction2')){
 					let $select	= $ae.prev('select');
 					let name	= $select.val();
-					let $ids	= this.$form.find('th.check-column input[type="checkbox"]:checked');
+					let $ids	= this.$tbody.find('.check-column input[type="checkbox"]:checked');
 					let ba		= this.bulk_actions?.[name];
 
 					if(ba && $ids[0]){
@@ -1859,7 +1863,7 @@ jQuery(function($){
 
 		response: function(data, args){
 			if(args.bulk){
-				this.$form.find('td.check-column input').prop('checked', false);
+				this.$form.find('thead, tfoot').find('.check-column input').prop('checked', false);
 			}else{
 				this.$tbody.find('> tr').not(args.id ? this.get_row(args.id) : '').wpjam_highlight();
 			}

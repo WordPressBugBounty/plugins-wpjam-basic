@@ -2,9 +2,9 @@
 Contributors: denishua
 Donate link: https://wpjam.com/
 Tags: WPJAM, Memcached, 性能优化
-Requires at least: 6.7
+Requires at least: 6.8
 Requires PHP: 7.4
-Tested up to: 6.9
+Tested up to: 7.1
 Stable tag: trunk
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
@@ -53,12 +53,14 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 7.0.3 =
+= 7.0.5 =
 * 新增函数 wpjam_once 实现一次 Hook
 * 新增函数 wpjam_visitor 获取当前访客的唯一标识
-* 新增函数 wpjam_remainin 访客频率限制，返回当前访客在剩余次数，0 表示超限。
+* 新增函数 wpjam_remainin 访客频率限制，返回当前访客在剩余次数，0 表示超限
 * 新增函数 wpjam_operate 基础运算执行器
 * 新增函数 wpjam_rotate 将数组循环移步（正数向前，负数向后）
+* 新增函数 wpjam_get_builtin_type 获取对应的内置类型
+* 新增函数 wpjam_call_option 实现调用 option_setting 对象
 * 新增 mix tag field 组件
 * WPJAM_Items 支持压缩
 * wpjam_query 支持 data_type
@@ -85,7 +87,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 新增函数 wpjam_hook，相比 add_filter 和 add_action 支持 check 和 nonce 参数
 * 新增函数 wpjam_is，判断当前 query 是 is_main_query 并且还支持判断在哪些页面
 * 新增函数 wpjam_matches，支持多条件匹配检测
-* 新增函数 current_shortcode 和 doing_shortcode，用于 shortcode 获取和判断
+* 新增函数 doing_shortcode，用于判断 shortcode
 * 新增 PHP 8.5 array_first 和 array_last 兼容
 * wpjam_try 和 wpjam_catch 函数新增 :: 和 -> 模式的支持
 * wpjam_value 函数新增 model 的支持
@@ -208,7 +210,6 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 * 新增函数 wpjam_get_post_type_setting / wpjam_update_post_type_setting
 * 新增函数 wpjam_get_taxonomy_setting / wpjam_update_taxonomy_setting
 * 新增函数 wpjam_add_post_type_field / wpjam_add_taxonomy_field
-* 新增 Class WPJAM_Option_Model - 所有设置页面的基类
 * 新增 Class WPJAM_Register - 支持 group 和独立子类两种方式注册
 * 新增 Class WPJAM_Meta_Option - 支撑所有 Meta 选项注册
 * 函数 wpjam_register 新增 priority 参数

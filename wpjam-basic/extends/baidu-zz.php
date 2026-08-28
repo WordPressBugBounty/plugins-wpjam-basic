@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/_nPXcLPS2pFZZVhCH9SNaQ
 Description: 百度站长扩展实现主动，被动，自动以及批量方式提交链接到百度站长，让博客的文章能够更快被百度收录。
 Version: 1.0
 */
-class WPJAM_Baidu_ZZ extends WPJAM_Option_Model{
+class WPJAM_Baidu_ZZ{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function submittable(){
 		return self::get_setting('baidu_zz_site') && self::get_setting('baidu_zz_token');
 	}

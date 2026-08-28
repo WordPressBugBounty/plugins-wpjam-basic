@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/J6xYFAySlaaVw8_WyDGa1w
 Description: 相关文章扩展根据文章的标签和分类自动生成相关文章列表，并显示在文章末尾。
 Version: 1.0
 */
-class WPJAM_Related_Posts extends WPJAM_Option_Model{
+class WPJAM_Related_Posts{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_fields(){
 		$options 	= self::get_options();
 

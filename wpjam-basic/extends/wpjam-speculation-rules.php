@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/DAqil-PxyL8rxzWBiwlA3A
 Description: 将网页推测加载规则放到 Head 以及支持设置规则的触发时机
 Version: 2.0
 */
-class WPJAM_Speculation_Rules extends WPJAM_Option_Model{
+class WPJAM_Speculation_Rules{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_fields(){
 		return ['speculation_rules'	=> ['title'=>'推测加载',	'type'=>'fieldset',	'fields'=>[
 			'speculation_rules_eagerness'	=> ['before'=>'触发时机：',	'options'=>[

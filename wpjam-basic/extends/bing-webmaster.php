@@ -5,7 +5,11 @@ URI: https://blog.wpjam.com/m/bing-webmaster/
 Description: Bing 站长工具扩展实现提交链接到 Microsoft Bing，让博客的文章能够更快被 Bing 收录。
 Version: 1.0
 */
-class WPJAM_Bing_Webmaster extends WPJAM_Option_Model{
+class WPJAM_Bing_Webmaster{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function submittable(){
 		return self::get_setting('bing_site_url') && self::get_setting('bing_api_key');
 	}

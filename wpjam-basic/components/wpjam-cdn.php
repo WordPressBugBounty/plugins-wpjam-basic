@@ -5,12 +5,22 @@ URI: https://mp.weixin.qq.com/s/bie4JkmExgULgvEgx-AjUw
 Description: CDN 加速使用云存储对博客的静态资源进行 CDN 加速。
 Version: 2.0
 */
-class WPJAM_CDN extends WPJAM_Option_Model{
+class WPJAM_CDN{
+	public static function __callStatic($method, $args){
+		if($method == 'get_setting'){
+			$args[0]	= ['dx'=>'distance.width', 'dy'=>'distance.height', 'wm_width'=>'wm_size.width', 'wm_height'=>'wm_size.height'][$args[0]] ?? $args[0];
+		}
+
+		$result = wpjam_call_option(self::class, $method, ...$args);
+
+		return $method == 'get_setting' && $args[0] == 'watermark' ? wpjam_at($result, '?', 0) : $result;
+	}
+
 	public static function get_sections(){
 		$cdn_fields	= [
 			'cdn_name'	=> ['title'=>'云存储',	'type'=>'select', 'options'=>[''=>'请选择']+self::get_items()+['disabled'=>['title'=>'切回本站', 'description'=>'当使用 CDN 之后想切换回使用本站图片才勾选该选项，并将原 CDN 域名填到「本地设置」的「额外域名」中。']]],
-			'host'		=> ['title'=>'CDN 域名',	'type'=>'url',	'description'=>'设置为在CDN云存储绑定的域名。']+self::show_if(),
-			'image'		=> ['title'=>'图片处理',	'class'=>'switch',	'value'=>1,	'label'=>'开启云存储图片处理功能，使用云存储进行裁图、添加水印等操作。<br /><strong>开启之后，文章和媒体库中的所有图片都会镜像到云存储。</strong>']+self::show_if('image'),
+			'host'		=> ['title'=>'CDN 域名',	'type'=>'url',	'description'=>'设置为在CDN云存储绑定的域名。', 'show_if'=>['cdn_name', self::get_by_support()]],
+			'image'		=> ['title'=>'图片处理',	'class'=>'switch',	'value'=>1,	'show_if'=>['cdn_name', self::get_by_support('image')],	'label'=>'开启云存储图片处理功能，使用云存储进行裁图、添加水印等操作。<br /><strong>开启之后，文章和媒体库中的所有图片都会镜像到云存储。</strong>'],
 		];
 
 		$local_fields	= [
@@ -29,12 +39,10 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		];
 
 		if(is_network_admin()){
-			return wpjam_except($sections, 'local.fields.local');
+			return wpjam_except($sections, 'local[fields][local]');
 		}
 
-		$external	= wpjam_basic_get_setting('upload_external_images');
-
-		if(!$external && !is_multisite() && $GLOBALS['wp_rewrite']->using_mod_rewrite_permalinks() && extension_loaded('gd')){
+		if(!($external = wpjam_basic_get_setting('upload_external_images')) && !is_multisite() && $GLOBALS['wp_rewrite']->using_mod_rewrite_permalinks() && extension_loaded('gd')){
 			$remote_summary	= '*自动将外部图片镜像到云存储需要博客支持固定链接和服务器支持GD库（不支持gif图片）';
 			$remote_fields	= ['remote'=>['title'=>'外部图片',	'options'=>[''=>'关闭外部图片镜像到云存储', '1'=>'自动将外部图片镜像到云存储（不推荐）']]];
 		}else{
@@ -50,46 +58,37 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 					'max_width'	=> ['value'=>($GLOBALS['content_width'] ?? 0), 'type'=>'number', 'class'=>'small-text', 'before'=>'文章中图片最大宽度：', 'after'=>'px。']
 				]]
 			]],
-			'image'	=> ['title'=>'格式质量',	'fields'=>[
-				'webp'		=> ['label'=>'将图片转换成 WebP 格式。']+self::show_if('webp'),
-				'interlace'	=> ['label'=>'JPEG格式图片渐进显示。']+self::show_if('quality'),
-				'quality'	=> ['type'=>'number',	'before'=>'图片质量：',	'class'=>'small-text',	'mim'=>0,	'max'=>100]+self::show_if('quality')
+			'format'	=> ['title'=>'格式质量',	'fields'=>[
+				'webp'		=> ['label'=>'将图片转换成 WebP 格式。',	'show_if'=>['cdn_name', self::get_by_support('webp')]],
+				'interlace'	=> ['label'=>'JPEG格式图片渐进显示。',	'show_if'=>['cdn_name', self::get_by_support('quality')]],
+				'quality'	=> ['type'=>'number',	'before'=>'图片质量：',	'class'=>'small-text',	'mim'=>0,	'max'=>100,	'show_if'=>['cdn_name', self::get_by_support('quality')]]
 			]],
-			'wm'	=> ['title'=>'水印设置',	'fields'=>[
+			'wm'	=> ['title'=>'水印设置',	'show_if'=>['cdn_name', self::get_by_support('wm')],	'fields'=>[
 				'view'		=> ['type'=>'view',		'title'=>'使用说明：',	'value'=>'请使用云存储域名下的图片，水印设置仅应用于文章内容中的图片'],
 				'watermark'	=> ['type'=>'image',	'title'=>'水印图片：'],
 				'dissolve'	=> ['type'=>'number',	'title'=>'透明度：',	'class'=>'small-text',	'value'=>100, 'min'=>1, 'max'=>100],
 				'gravity'	=> ['type'=>'select',	'title'=>'水印位置：',	'options'=>['SouthEast'=>'右下角', 'SouthWest'=>'左下角', 'NorthEast'=>'右上角', 'NorthWest'=>'左上角', 'Center'=>'正中间', 'West'=>'左中间', 'East'=>'右中间', 'North'=>'上中间', 'South'=>'下中间']],
 				'distance'	=> ['type'=>'size',	'title'=>'水印边距：',	'fields'=>['width'=>['value'=>10], 'height'=>['value'=>10]]],
-				'wm_size'	=> ['type'=>'size',	'title'=>'最小尺寸：',	'description'=>'小于该尺寸的图片都不会加上水印']+self::show_if('wm_size')
-			]]+self::show_if('wm'),
+				'wm_size'	=> ['type'=>'size',	'title'=>'最小尺寸：',	'description'=>'小于该尺寸的图片都不会加上水印',	'show_if'=>['cdn_name', self::get_by_support('wm_size')]]
+			]],
 
 			'volc_imagex_template'	=> ['title'=>'火山引擎图片处理模板', 'show_if'=>['cdn_name', 'volc_imagex']]
 		];
 
 		return $sections+[
 			'image'		=> ['title'=>'图片设置',	'fields'=>$image_fields,	'show_if'=>['image', 1]],
-			'remote'	=> ['title'=>'外部图片',	'fields'=>$remote_fields,	'summary'=>$remote_summary ?? '']+self::show_if(),
+			'remote'	=> ['title'=>'外部图片',	'fields'=>$remote_fields,	'summary'=>$remote_summary ?? '',	'show_if'=>['cdn_name', self::get_by_support('wm')]],
 		];
 	}
 
-	public static function show_if($feature=null){
-		return ['show_if'=>['cdn_name', array_keys(array_filter(self::get_items(), fn($v)=> $feature ? in_array($feature, $v['supports'] ?? []) : true))]];
+	public static function get_by_support($feature=null){
+		return array_keys(array_filter(self::get_items(), fn($item)=> $feature ? in_array($feature, $item['supports'] ?? []) : true));
 	}
 
-	public static function get_setting($name='', ...$args){
-		$name	= ['dx'=>'distance.width', 'dy'=>'distance.height', 'wm_width'=>'wm_size.width', 'wm_height'=>'wm_size.height'][$name] ?? $name;
-		$value	= parent::get_setting($name, ...$args);
+	public static function is($url){
+		$host	= '//'.explode('//', CDN_HOST, 2)[1];
 
-		return $name == 'watermark' ? wpjam_at($value, '?', 0) : $value;
-	}
-
-	public static function is_exception($url){
-		$object	= self::get_object();
-
-		$object->exceptions	??= wpjam_lines(self::get_setting('exceptions'));
-
-		return array_any($object->exceptions, fn($v)=> str_contains($url, $v));
+		return apply_filters('wpjam_is_cdn_url', array_any(['http:', 'https:', ''], fn($v)=> str_starts_with($url, $v.$host)), $url);
 	}
 
 	public static function downsize($size, $args){
@@ -110,22 +109,20 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 	}
 
 	public static function replace($str, $to_cdn=true, $html=false){
-		static $locals;
-
-		if(!isset($locals)){
-			$toggle	= fn($url)=> substr_replace($url, ...($url[4] === 's' ? ['', 4, 1] : ['s', 4, 0]));
-			$locals	= [$toggle(LOCAL_HOST), ...array_map('untrailingslashit', self::get_setting('locals') ?: [])];
-			$locals	= array_unique(apply_filters('wpjam_cdn_local_hosts', $locals));
-			$locals	= [$locals, [...$locals, $toggle(CDN_HOST), LOCAL_HOST]];
-		}
-
-		[$to, $i]	= $to_cdn ? [CDN_HOST, 1] : [LOCAL_HOST, 0];
+		$locals	= self::get_arg('locals');
+		$args	= $to_cdn ? [$locals, CDN_HOST] : [array_slice($locals, 0, -2), LOCAL_HOST];
 
 		if($html){
-			return strtr($str, array_fill_keys($locals[$i], $to));
+			return strtr($str, array_fill_keys(...$args));
 		}
 
-		return ($local = array_find($locals[$i], fn($v)=> str_starts_with($str, $v))) ? $to.substr($str, strlen($local)) : $str;
+		foreach($args[0] as $v){
+			if(try_prefix($str, '-', $v)){
+				return $args[1].$str;
+			}
+		}
+
+		return $str;
 	}
 
 	public static function filter_metadata($meta, $id){
@@ -164,7 +161,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		$max	= (int)self::get_setting('max_width', ($GLOBALS['content_width'] ?? 0));
 		$meta	= $id ? wp_get_attachment_metadata($id) : [];
 		$meta	= is_array($meta) ? $meta : [];
-		$size	= array_filter($size) ? $size : ($meta ? wpjam_pick((wpjam_get($meta, 'sizes.'.($proc->get_attribute('data-sizeSlug') ?: 'full')) ?: $meta), $attr) : ['width'=>$max]+$size);
+		$size	= array_filter($size) ? $size : ($meta ? wpjam_pick((wpjam_get($meta, 'sizes.'.($proc->get_attribute('data-sizeSlug') ?: 'full')) ?: $meta), $attr) : ['width'=>$max])+$size;
 
 		if(array_all($size, fn($v)=> is_numeric($v))){
 			if($max && $size['width'] > $max){
@@ -186,6 +183,10 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 		define('CDN_HOST',		untrailingslashit(self::get_setting('host') ?: site_url()));
 		define('LOCAL_HOST',	untrailingslashit(set_url_scheme(self::get_setting('local') ?: site_url())));
 
+		$hosts	= wpjam_map([LOCAL_HOST, CDN_HOST], fn($v)=> substr_replace($v, ...($v[4] === 's' ? ['', 4, 1] : ['s', 4, 0])));
+		$locals	= [$hosts[0], ...array_map('untrailingslashit', self::get_setting('locals') ?: [])];
+		$object	= self::update_arg('locals', [...array_unique(apply_filters('wpjam_cdn_local_hosts', $locals)), $hosts[1], LOCAL_HOST]);
+
 		if(CDN_NAME === 'disabled' || !CDN_NAME){
 			return CDN_NAME ? wpjam_hooks('the_content, wpjam_thumbnail'.((is_admin() || wpjam_is_json_request()) ? '' : ', wpjam_html'), fn($html)=> self::replace($html, false, true), 5) : null;
 		}
@@ -197,7 +198,7 @@ class WPJAM_CDN extends WPJAM_Option_Model{
 
 		wpjam_hooks([
 			['wp_resource_hints', '+', fn($type)=> $type == 'dns-prefetch' ? [CDN_HOST] : [], 10, 2],
-			['wpjam_is_external_url', fn($status, $url, $scene)=> $status && !wpjam_is_cdn_url($url) && ($scene != 'fetch' || !self::is_exception($url)), 10, 3],
+			['wpjam_is_external_url', fn($status, $url, $scene)=> $status && !wpjam_is_cdn_url($url) && ($scene != 'fetch' || !array_any($object->exceptions ??= wpjam_lines(self::get_setting('exceptions')), fn($v)=> str_contains($url, $v))), 10, 3],
 		]);
 
 		if(self::get_setting('image')){
@@ -277,18 +278,16 @@ function wpjam_cdn_get_setting($name, ...$args){
 	return WPJAM_CDN::get_setting($name, ...$args);
 }
 
+function wpjam_is_cdn_url($url){
+	return WPJAM_CDN::is($url);
+}
+
 function wpjam_cdn_host_replace($html, $to_cdn=true){
 	return WPJAM_CDN::replace($html, $to_cdn, true);
 }
 
 function wpjam_local_host_replace($html){
 	return str_replace(CDN_HOST, LOCAL_HOST, $html);
-}
-
-function wpjam_is_cdn_url($url){
-	$host	= '//'.explode('//', CDN_HOST, 2)[1];
-
-	return apply_filters('wpjam_is_cdn_url', array_any(['http:', 'https:', ''], fn($v)=> str_starts_with($url, $v.$host)), $url);
 }
 
 wpjam_register_option('wpjam-cdn',	[

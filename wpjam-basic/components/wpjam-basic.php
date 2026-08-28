@@ -5,44 +5,138 @@ URI: https://mp.weixin.qq.com/s/zkA0Nx4u81PCZWByQq3iiA
 Description: 优化设置通过屏蔽和增强功能来加快 WordPress 的加载
 Version: 2.0
 */
-class WPJAM_Basic extends WPJAM_Option_Model{
+class WPJAM_Basic{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_sections(){
-		return ['disabled'=>['title'=>'功能屏蔽',	'fields'=>[
-			'basic'		=>['title'=>'常规功能',	'fields'=>[
-				'disable_revisions'			=>['label'=>'屏蔽文章修订功能，精简文章表数据。',		'value'=>1],
-				'disable_trackbacks'		=>['label'=>'彻底关闭Trackback，防止垃圾留言。',		'value'=>1],
-				'disable_xml_rpc'			=>['label'=>'关闭XML-RPC功能，只在后台发布文章。',	'value'=>1],
-				'disable_batch_rest'		=>['label'=>'关闭REST API批量处理端点（<code>wp-json/batch</code>）'],
-				'disable_auto_update'		=>['label'=>'关闭自动更新功能，手动或SSH方式更新。'],
-				'disable_feed'				=>['label'=>'屏蔽站点Feed，防止文章被快速被采集。'],
-				'disable_admin_email_check'	=>['label'=>'屏蔽站点管理员邮箱定期验证功能。'],
+		$options	= array_column(get_taxonomies(['public'=>true, 'hierarchical'=>true], 'objects'), 'label', 'name');
+		$for_field	= count($options) <= 1 ? ['type'=>'hidden', 'value'=>'category'] : ['before'=>'分类模式：', 'options'=>$options];
+
+		return [
+			'disabled'	=> ['title'=>'功能屏蔽',	'fields'=>[
+				'basic'		=>['title'=>'常规功能',	'fields'=>[
+					'disable_revisions'			=>['label'=>'屏蔽文章修订功能，精简文章表数据。',		'value'=>1],
+					'disable_trackbacks'		=>['label'=>'彻底关闭Trackback，防止垃圾留言。',		'value'=>1],
+					'disable_xml_rpc'			=>['label'=>'关闭XML-RPC功能，只在后台发布文章。',	'value'=>1],
+					'disable_batch_rest'		=>['label'=>'关闭REST API批量处理端点（<code>wp-json/batch</code>）'],
+					'disable_auto_update'		=>['label'=>'关闭自动更新功能，手动或SSH方式更新。'],
+					'disable_feed'				=>['label'=>'屏蔽站点Feed，防止文章被快速被采集。'],
+					'disable_admin_email_check'	=>['label'=>'屏蔽站点管理员邮箱定期验证功能。'],
+				]],
+				'convert'	=>['title'=>'转换功能',	'fields'=>[
+					'disable_emoji'				=>['label'=>'屏蔽Emoji转换成图片功能，直接使用Emoji。',		'value'=>1],
+					'disable_texturize'			=>['label'=>'屏蔽字符转换成格式化的HTML实体功能。', 			'value'=>1],
+					'disable_capital_P_dangit'	=>['label'=>'屏蔽WordPress大小写修正，自行决定如何书写。',	'value'=>1],
+				]],
+				'backend'	=>['title'=>'后台功能',	'fields'=>[
+					'disable_privacy'			=>['label'=>'移除为欧洲通用数据保护条例生成的页面。',	'value'=>1],
+					'disable_dashboard_primary'	=>['label'=>'移除仪表盘的「WordPress 活动及新闻」。'],
+					'disable_backend'			=>['before'=>'移除后台界面右上角：',	'sep'=>'&emsp;',	'type'=>'fields',	'fields'=>[
+						'disable_help_tabs'			=>['label'=>'帮助'],
+						'disable_screen_options'	=>['label'=>'选项',],
+					]]
+				]],
+				'page'		=>['title'=>'页面功能',	'fields'=>[
+					'disable_head_links'	=>['label'=>'移除页面头部版本号和服务发现标签代码。'],
+					'disable_admin_bar'		=>['label'=>'移除工具栏和后台个人资料中工具栏相关选项。']
+				]],
+				'embed'		=>['title'=>'嵌入功能',	'fields'=>[
+					'disable_autoembed'	=>['label'=>'禁用Auto Embeds功能，加快页面解析速度。'],
+					'disable_embed'		=>['label'=>'屏蔽嵌入其他WordPress文章的Embed功能。'],
+				]],
+				'gutenberg'	=>['title'=>'古腾堡编辑器',	'fields'=>[
+					'disable_block_editor'			=>['label'=>'屏蔽Gutenberg编辑器，换回经典编辑器。'],
+					'disable_widgets_block_editor'	=>['label'=>'屏蔽小工具区块编辑器模式，切换回经典模式。']
+				]],
 			]],
-			'convert'	=>['title'=>'转换功能',	'fields'=>[
-				'disable_emoji'				=>['label'=>'屏蔽Emoji转换成图片功能，直接使用Emoji。',		'value'=>1],
-				'disable_texturize'			=>['label'=>'屏蔽字符转换成格式化的HTML实体功能。', 			'value'=>1],
-				'disable_capital_P_dangit'	=>['label'=>'屏蔽WordPress大小写修正，自行决定如何书写。',	'value'=>1],
-			]],
-			'backend'	=>['title'=>'后台功能',	'fields'=>[
-				'disable_privacy'			=>['label'=>'移除为欧洲通用数据保护条例生成的页面。',	'value'=>1],
-				'disable_dashboard_primary'	=>['label'=>'移除仪表盘的「WordPress 活动及新闻」。'],
-				'disable_backend'			=>['before'=>'移除后台界面右上角：',	'sep'=>'&emsp;',	'type'=>'fields',	'fields'=>[
-					'disable_help_tabs'			=>['label'=>'帮助'],
-					'disable_screen_options'	=>['label'=>'选项',],
-				]]
-			]],
-			'page'		=>['title'=>'页面功能',	'fields'=>[
-				'disable_head_links'	=>['label'=>'移除页面头部版本号和服务发现标签代码。'],
-				'disable_admin_bar'		=>['label'=>'移除工具栏和后台个人资料中工具栏相关选项。']
-			]],
-			'embed'		=>['title'=>'嵌入功能',	'fields'=>[
-				'disable_autoembed'	=>['label'=>'禁用Auto Embeds功能，加快页面解析速度。'],
-				'disable_embed'		=>['label'=>'屏蔽嵌入其他WordPress文章的Embed功能。'],
-			]],
-			'gutenberg'	=>['title'=>'古腾堡编辑器',	'fields'=>[
-				'disable_block_editor'			=>['label'=>'屏蔽Gutenberg编辑器，换回经典编辑器。'],
-				'disable_widgets_block_editor'	=>['label'=>'屏蔽小工具区块编辑器模式，切换回经典模式。']
-			]],
-		]]];
+			'enhance'	=> ['title'=>'增强优化',	'fields'=>[
+				'static_cdn'			=> ['title'=>'前端公共库', 	'options'=>wpjam_fill(self::get_items('static_cdn'), fn($v)=> parse_url($v, PHP_URL_HOST))],
+				'gravatar'				=> ['title'=>'Gravatar加速', 'type'=>'fieldset', 'fields'=>[
+					'gravatar'=>['after'=>'加速服务', 'options'=>wpjam_options(self::get_items('gravatar'), ['type'=>'select'])+['custom'=>[
+						'title'		=> '自定义',	
+						'fields'	=> ['gravatar_custom'=>['placeholder'=>'请输入 Gravatar 加速服务地址']]
+					]]]
+				]],
+				'google_fonts'			=> ['title'=>'Google字体加速', 'type'=>'fieldset', 'fields'=>[
+					'google_fonts'=>['type'=>'select', 'after'=>'加速服务', 'options'=>wpjam_options(self::get_items('google_font'), ['type'=>'select'])+['custom'=>[
+						'title'		=> '自定义',
+						'fields'	=> self::google_font()
+					]]]
+				]],
+				'x-frame-options'		=>['title'=>'Frame嵌入',		'options'=>[''=>'所有网页', 'SAMEORIGIN'=>'只允许同域名网页', 'DENY'=>'不允许任何网页']],
+				'no_category_base'		=>['title'=>'分类链接简化',	'fields'=>[
+					'no_category_base'=>['label'=>'去掉分类目录链接中的 category。', 'fields'=>['no_category_base_for'=>$for_field]
+				]]],
+				'timestamp_file_name'	=>['title'=>'图片时间戳',		'label'=>'给上传的图片加上时间戳，防止大量的SQL查询。'],
+				'optimized_by_wpjam'	=>['title'=>'WPJAM Basic',	'label'=>'在网站底部显示：Optimized by WPJAM Basic。']
+			]]
+		];
+	}
+
+	public static function static_cdn($src=null){
+		$hosts	= self::get_items('static_cdn');
+		$host	= self::get_setting('static_cdn');
+		$host	= $host && in_array($host, $hosts) ? $host : $hosts[0];
+
+		return isset($src) ? ($src && !str_starts_with($src, $host) ? str_replace(array_diff($hosts, [$host]), $host, $src) : $src) : $host;
+	}
+
+	public static function google_font($html=null){
+		$map	= [
+			'googleapis_fonts'			=> '//fonts.googleapis.com',
+			'googleapis_ajax'			=> '//ajax.googleapis.com',
+			'googleusercontent_themes'	=> '//themes.googleusercontent.com',
+			'gstatic_fonts'				=> '//fonts.gstatic.com'
+		];
+
+		if(isset($html)){
+			if($name = self::get_setting('google_fonts')){
+				return str_replace(array_values($map), ($name == 'custom'
+					? wpjam_map($map, fn($v, $k)=> str_replace(['http://','https://'], '//', self::get_setting($k) ?: $v))
+					: self::get_item($name.'[replace]', 'google_font')
+				), $html);
+			}
+
+			return $html;
+		}
+
+		return wpjam_map($map, fn($v)=> ['placeholder'=>'请输入'.str_replace('//', '', $v).'加速服务地址']);
+	}
+
+	public static function avatar_data($id_or_email, $args){
+		if(is_numeric($id_or_email)){
+			$user_id	= $id_or_email;
+		}elseif(is_string($id_or_email)){
+			$email		= $id_or_email;
+		}elseif(is_object($id_or_email)){
+			if(isset($id_or_email->comment_ID)){
+				$comment	= get_comment($id_or_email);
+				$user_id	= $comment->user_id;
+				$email		= $comment->comment_author_email;
+				$avatarurl	= get_comment_meta($comment->comment_ID, 'avatarurl', true);
+			}elseif($id_or_email instanceof WP_User){
+				$user_id	= $id_or_email->ID;
+			}elseif($id_or_email instanceof WP_Post){
+				$user_id	= $id_or_email->post_author;
+			}
+		}
+
+		$user_id	??= 0;
+		$email		??= '';
+		$avatarurl	= !empty($avatarurl) ? $avatarurl : ($user_id ? get_user_meta($user_id, 'avatarurl', true) : '');
+
+		if($avatarurl){
+			return ['found_avatar'=>true, 'url'=>wpjam_get_thumbnail($avatarurl, $args)];
+		}
+
+		$name	= self::get_setting('gravatar');
+		$value	= $name == 'custom' ? self::get_setting('gravatar_custom') : ($name ? self::get_item($name.'[url]', 'gravatar') : '');
+
+		$value && add_filter('get_avatar_url', fn($url)=> str_replace(array_map(fn($v)=>$v.'gravatar.com/avatar/', ['https://secure.', 'http://0.', 'http://1.', 'http://2.']), $value, $url));
+
+		return ['user_id'=>$user_id, 'email'=>$email];
 	}
 
 	public static function disabled($feature, ...$args){
@@ -56,7 +150,30 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 	}
 
 	public static function add_hooks(){
-		add_action('wp_loaded',	fn()=> ob_start(fn($html)=> apply_filters('wpjam_html', $html)));
+		add_action('wp_loaded',	fn()=> ob_start(fn($html)=> apply_filters('wpjam_html', static::google_font($html))));
+
+		self::add_items([
+			'https://cdnjs.cloudflare.com/ajax/libs',
+			'https://s4.zstatic.net/ajax/libs',
+			'https://cdnjs.snrat.com/ajax/libs',
+			'https://lib.baomitu.com',
+			'https://cdnjs.loli.net/ajax/libs',
+			'https://use.sevencdn.com/ajax/libs',
+		], 'static_cdn');
+
+		self::add_items([
+			'geekzu'	=> ['title'=>'极客族',		'url'=>'https://sdn.geekzu.org/avatar/'],
+			'loli'		=> ['title'=>'loli',		'url'=>'https://gravatar.loli.net/avatar/'],
+			'sep_cc'	=> ['title'=>'sep.cc',		'url'=>'https://cdn.sep.cc/avatar/'],
+			'7ed'		=> ['title'=>'7ED',			'url'=>'https://use.sevencdn.com/avatar/'],
+			'cravatar'	=> ['title'=>'Cravatar',	'url'=>'https://cravatar.cn/avatar/'],
+		], 'gravatar');
+
+		self::add_items([
+			'geekzu'	=> ['title'=>'极客族',	'replace'=>['//fonts.geekzu.org', '//gapis.geekzu.org/ajax', '//gapis.geekzu.org/g-themes', '//gapis.geekzu.org/g-fonts']],
+			'loli'		=> ['title'=> 'loli',	'replace'=>['//fonts.loli.net', '//ajax.loli.net', '//themes.loli.net', '//gstatic.loli.net']],
+			'ustc'		=> ['title'=>'中科大',	'replace'=>['//fonts.lug.ustc.edu.cn', '//ajax.lug.ustc.edu.cn', '//google-themes.lug.ustc.edu.cn', '//fonts-gstatic.lug.ustc.edu.cn']]
+		], 'google_font');
 
 		// 屏蔽站点 Feed
 		if(self::disabled('feed')){
@@ -192,6 +309,27 @@ class WPJAM_Basic extends WPJAM_Option_Model{
 			wpjam_hook('option_wp_page_for_privacy_policy', 0);
 		}
 
+		wpjam_hooks('style_loader_src, script_loader_src', [static::class, 'static_cdn']);
+
+		wpjam_hook('pre_get_avatar_data', '+', [self::class, 'avatar_data'], 10, 2);
+
+		if($options = self::get_setting('x-frame-options')){
+			wpjam_hook('send_headers', fn()=> header('X-Frame-Options: '.$options));
+		}
+
+		// 防止重名造成大量的 SQL
+		if($ts_name = self::get_setting('timestamp_file_name')){
+			wpjam_hooks('wp_handle_sideload_prefilter, wp_handle_upload_prefilter', '+', fn($file)=> empty($file['md5_filename']) ? ['name'=> time().'-'.$file['name']] : []);
+		}
+
+		if(self::get_setting('no_category_base') && ($no_base = self::get_setting('no_category_base_for', 'category'))){
+			wpjam_hook('register_taxonomy_args', '+', fn($name)=> $name == $no_base ? ['permastruct'=>'%'.$name.'%'] : [], 8, 2);
+
+			if($no_base == 'category' && try_prefix($_SERVER['REQUEST_URI'], '-', '/category/')){
+				wpjam_hook('template_redirect', fn()=> wp_redirect(site_url($_SERVER['REQUEST_URI']), 301));
+			}
+		}
+
 		if(is_admin()){
 			if(self::disabled('auto_update')){
 				wpjam_hooks('-', 'admin_init', ['_maybe_update_core', '_maybe_update_plugins', '_maybe_update_themes']);
@@ -257,4 +395,20 @@ function wpjam_basic_delete_setting($name){
 
 function wpjam_add_basic_sub_page($sub_slug, $args=[]){
 	wpjam_add_menu_page($sub_slug, ['parent'=>'wpjam-basic']+$args);
+}
+
+function wpjam_register_gravatar($name, $args){
+	return WPJAM_Basic::add_item($name, $args, 'gravatar');
+}
+
+function wpjam_register_google_font($name, $args){
+	return WPJAM_Basic::add_item($name, $args, 'google_font');
+}
+
+function wpjam_add_static_cdn($host){
+	return WPJAM_Basic::add_item(null, $host, 'static_cdn');
+}
+
+function wpjam_get_static_cdn(){
+	return WPJAM_Basic::static_cdn();
 }

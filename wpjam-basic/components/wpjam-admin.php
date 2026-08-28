@@ -1,4 +1,10 @@
 <?php
+/*
+Name: Admin
+Description: 后台
+Version: 2.0
+Admin: true
+*/
 class WPJAM_Basic_Admin{
 	public static function on_admin_init(){
 		foreach([
@@ -37,20 +43,18 @@ class WPJAM_Basic_Admin{
 	}
 
 	public static function dashicons_page(){
-		$file	= fopen(ABSPATH.'/'.WPINC.'/css/dashicons.css','r') or die("Unable to open file!");
-		$html	= wpjam_tag();
+		$file	= fopen(ABSPATH.'/'.WPINC.'/css/dashicons.css','r');
+		$html	= [];
 
-		while(!feof($file)) {
+		while(!feof($file)){
 			$line	= fgets($file);
-
-			if($line && preg_match_all('/.dashicons-(.*?):before/i', $line, $matches) && $matches[1][0] != 'before'){
-				wpjam_tag('span', ['dashicons-before', 'dashicons-'.$matches[1][0]])->after('<br />'.$matches[1][0])->wrap('p', ['data-dashicon'=>'dashicons-'.$matches[1][0]])->insert_after($html);
-			}
+			$icon	= $line && preg_match_all('/.dashicons-(.*?):before/i', $line, $matches) ? $matches[1][0] : '';
+			$html[]	= $icon && $icon != 'before' ? wpjam_tag('span', ['dashicons-before', 'dashicons-'.$icon])->after('<br />'.$icon)->wrap('p', ['data-dashicon'=>'dashicons-'.$icon]) : '';
 		}
 
 		fclose($file);
 
-		echo '<div class="wpjam-icons">'.$html.'</div>'.'<div class="clear"></div>';
+		echo '<div class="wpjam-icons">'.implode($html).'</div>'.'<div class="clear"></div>';
 		?>
 		<style type="text/css">
 		div.wpjam-icons{max-width: 800px; display: flex; flex-wrap: wrap;}
@@ -152,48 +156,29 @@ class WPJAM_Basic_Admin{
 				'a.jam-post span{display: table-cell; height: 40px; vertical-align: middle;}'
 			]);
 		}elseif($base = array_find(['plugins', 'themes', 'update-core'], fn($base)=> str_starts_with($screen->base, $base))){
-			wpjam_script("
-			$('tr.plugin-update-tr').each(function(){
-				let detail_link	= $(this).find('a.open-plugin-details-modal');
-				let detail_href	= detail_link.attr('href');
+			foreach(['plugin', 'theme'] as $type){
+				wpjam_updater($type, 'blog.wpjam.com', self::api_url($type));
 
-				if(detail_href.indexOf('https://blog.wpjam.com/') === 0 || detail_href.indexOf('https://97866.com/') === 0){
-					detail_href		= detail_href.substring(0,  detail_href.indexOf('?TB_iframe'));
+				// wpjam_print_r(get_site_transient('update_'.$type.'s'));
+				// delete_site_transient('update_'.$type.'s');
+			}
 
-					detail_link.attr('href', detail_href).removeClass('thickbox open-plugin-details-modal').attr('target','_blank');
-				}
-			});
-			");
+			add_filter('pre_set_site_transient_update_plugins', function($updates){
+				$file	= 'wpjam-basic/wpjam-basic.php';
 
-			if($base != 'themes'){
-				wpjam_updater('plugin', 'blog.wpjam.com', self::api_url('plugin'));
+				if($key = array_find(['response', 'no_update'], fn($k)=> isset($updates->$k[$file]))){
+					$plugin	= get_plugin_data(WP_PLUGIN_DIR.'/'.$file);
+					$update	= apply_filters('update_plugins_blog.wpjam.com', false, $plugin, $file, []);
 
-				add_filter('pre_set_site_transient_update_plugins', function($updates){
-					if(isset($updates->no_update) || isset($updates->response)){
-						$file	= 'wpjam-basic/wpjam-basic.php';
-						$update	= wpjam('updater', 'plugin', self::api_url('plugin'), $file);
+					if($update && is_array($update) && version_compare($update['new_version'], $plugin['Version'], '>')){
+						$updates->response[$file]	= (object)(array_merge((array)$updates->$key[$file], $update));
 
-						if($update && is_array($update)){
-							$plugin	= get_plugin_data(WP_PLUGIN_DIR.'/'.$file);
-							$key 	= version_compare($update['new_version'], $plugin['Version'], '>') ? 'response' : 'no_update';
-
-							$updates->$key[$file]	= (object)(isset($updates->$key[$file]) ? array_merge((array)$updates->$key[$file], $update) : $update);
-						}
+						unset($updates->no_update[$file]);
 					}
+				}
 
-					return $updates;
-				});
-
-				// delete_site_transient('update_plugins');
-				// wpjam_print_r(get_site_transient('update_plugins'));
-			}
-
-			if($base != 'plugins'){
-				wpjam_updater('theme', 'blog.wpjam.com', self::api_url('theme'));
-
-				// delete_site_transient('update_themes');
-				// wpjam_print_r(get_site_transient('update_themes'));
-			}
+				return $updates;
+			});
 		}
 	}
 }

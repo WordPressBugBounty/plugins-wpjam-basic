@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/Hpu1vz7zPUKEeHTF3wqyWw
 Description: 对网站的前后台和登录界面的样式进行个性化设置。
 Version: 2.0
 */
-class WPJAM_Custom extends WPJAM_Option_Model{
+class WPJAM_Custom{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_sections(){
 		return [
 			'custom'	=> ['title'=>'前台定制',	'fields'=>[

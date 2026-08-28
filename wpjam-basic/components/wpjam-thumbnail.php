@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/93TRBqSdiTzissW-c0bLRQ
 Description: 缩略图设置可以无需预定义就可以进行动态裁图，并且还支持文章和分类缩略图
 Version: 2.0
 */
-class WPJAM_Thumbnail extends WPJAM_Option_Model{
+class WPJAM_Thumbnail{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_fields(){
 		$tax_options	= wpjam_reduce(get_object_taxonomies('post', 'objects'), fn($c, $v, $k)=> $v->show_ui && $v->public ? wpjam_set($c, $k, wpjam_get_taxonomy_setting($k, 'title')) : $c, []);
 

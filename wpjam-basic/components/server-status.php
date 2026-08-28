@@ -4,11 +4,8 @@ Name: 系统信息
 URI: https://mp.weixin.qq.com/s/kqlag2-RWn_n481R0QCJHw
 Description: 系统信息让你在后台一个页面就能够快速实时查看当前的系统状态。
 Version: 2.0
+Admin: true
 */
-if(!is_admin()){
-	return;
-}
-
 class WPJAM_Server_Status{
 	public static function callback(...$args){
 		$id		= $args[1]['id'];

@@ -171,13 +171,13 @@ function wpjam_register_cron($hook, $args=[]){
 		return wpjam_register_job($hook, $args);
 	}
 
-	$cb	= ($args['callback'] ?? '') ?: wpjam('cron', $hook, new WPJAM_Cron($args+['hook'=>$hook]));
+	$cb	= ($args['callback'] ?? '') ?: wpjam_register('WPJAM_Cron', $hook, $args+['hook'=>$hook]);
 
 	add_action($hook, $cb);
 
 	wpjam_is_scheduled_event($hook) || wpjam_schedule_event($hook, $args);
 
-	return is_object($cb) ? $cb : null;
+	return $cb;
 }
 
 function wpjam_register_job($job, $args=[]){
@@ -193,7 +193,7 @@ function wpjam_register_job($job, $args=[]){
 }
 
 function wpjam_get_cron($hook){
-	return wpjam('cron', $hook);
+	return wpjam_get_registered('WPJAM_Cron', $hook);
 }
 
 function wpjam_schedule_event($hook, $data){

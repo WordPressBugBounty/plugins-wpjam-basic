@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/SbuvSL01hT3Jxp9doWZ8zg
 Description: SMTP 发信可以让你使用第三方邮箱的 SMTP 服务来发送邮件。
 Version: 2.0
 */
-class WPJAM_SMTP extends WPJAM_Option_Model{
+class WPJAM_SMTP{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_fields(){
 		return [
 			'smtp_setting'		=> ['title'=>'SMTP 设置',	'type'=>'fieldset',	'fields'=>[

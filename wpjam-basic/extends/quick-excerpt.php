@@ -4,11 +4,8 @@ Name: 摘要快速编辑
 URI: https://mp.weixin.qq.com/s/0W73N71wNJv10kMEjbQMGw
 Description: 后台文章列表的快速编辑支持编辑摘要。
 Version: 1.0
+Admin: true
 */
-if(!is_admin()){
-	return;
-}
-
 wpjam_add_admin_load([
 	'base'		=> 'edit', 
 	'callback'	=> function($screen){

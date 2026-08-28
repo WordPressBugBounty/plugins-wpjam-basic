@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/gY0AG1vnR285bmOfKO8SCw
 Description: 文章数量扩展可以设置不同页面不同的文章列表数量和文章类型，也可开启不同的分类不同文章数量。
 Version: 2.0
 */
-class WPJAM_Posts_Per_Page extends WPJAM_Option_Model{
+class WPJAM_Posts_Per_Page{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function sanitize_callback($value){
 		wpjam_map(wpjam_pull($value, ['posts_per_page', 'posts_per_rss']), fn($v, $k)=> $v ? update_option($k, $v) : null);
 

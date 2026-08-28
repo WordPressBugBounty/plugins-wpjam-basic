@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/XS3xk-wODdjX3ZKndzzfEg
 Description: 文章设置把文章编辑的一些常用操作，提到文章列表页面，方便设置和操作
 Version: 2.0
 */
-class WPJAM_Basic_Posts extends WPJAM_Option_Model{
+class WPJAM_Basic_Posts{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_fields(){
 		return [
 			'excerpt'	=> ['title'=>'文章摘要',	'sep'=>'&emsp;',	'fields'=>['excerpt_optimization'	=> ['before'=>'未设时：', 'options'=>[
@@ -101,7 +105,7 @@ class WPJAM_Basic_Posts extends WPJAM_Option_Model{
 			return $replace ? WPJAM_Post::update($id, ['post_content'=>str_replace($urls, $replace, $content)]) : ($bulk ? true : wp_die('文章中无外部图片'));
 		}
 
-		return $bulk ? true : wp_die('error', '文章中无图片');
+		return $bulk ? true : wp_die('文章中无图片');
 	}
 
 	public static function load($screen){

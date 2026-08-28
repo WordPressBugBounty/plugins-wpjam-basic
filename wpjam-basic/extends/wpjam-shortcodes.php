@@ -63,26 +63,10 @@ class WPJAM_Shortcode{
 		];
 	}
 
-	public static function filter_video_override($override, $attr, $content){
-		$src	= $attr['src'] ?? $content;
-		$src	= $src ? wpjam_find(wpjam('video_parser[]'), fn($v)=> $v, fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : '') : '';
-
-		if($src){
-			$attr	= shortcode_atts(['width'=>0, 'height'=>0], $attr);
-			$attr	= ($attr['width'] || $attr['height']) ? image_hwstring($attr['width'], $attr['height']).' style="aspect-ratio:4/3;"' : 'style="width:100%; aspect-ratio:4/3;"';
-
-			return '<iframe class="wpjam_video" '.$attr.' src="'.$src.'" scrolling="no" border="0" frameborder="no" framespacing="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>';
-		}
-
-		return $override;
-	}
-
 	public static function add_hooks(){
-		add_filter('wp_video_shortcode_override', [self::class, 'filter_video_override'], 10, 3);
-
 		array_map(fn($tag)=> add_shortcode($tag, [self::class, 'callback']), ['hide', 'email', 'list', 'table', 'code', 'youku', 'qqv', 'bilibili', 'tudou', 'sohutv']);
 
-		array_map(fn($args)=> wpjam('video_parser[]', $args), [[
+		array_map('wpjam_add_video_parser', [[
 			'//www.bilibili.com/video/(BV[a-zA-Z0-9]+)',
 			fn($m)=> 'https://player.bilibili.com/player.html?bvid='.esc_attr($m[1])
 		], [
@@ -102,6 +86,25 @@ class WPJAM_Shortcode{
 			fn($m)=> 'https://www.youtube.com/embed/'.esc_attr($m[1])
 		]]);
 	}
+}
+
+function wpjam_add_video_parser($args){
+	static $object;
+	$object ??= wpjam_hook('wp_video_shortcode_override', 'bind', function($override, $attr, $content){
+		$src	= $attr['src'] ?? $content;
+		$src	= $src ? wpjam_find($this->parsers ?: [], fn($v)=> $v, fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : '') : '';
+
+		if($src){
+			$attr	= shortcode_atts(['width'=>0, 'height'=>0], $attr);
+			$attr	= ($attr['width'] || $attr['height']) ? image_hwstring($attr['width'], $attr['height']).' style="aspect-ratio:4/3;"' : 'style="width:100%; aspect-ratio:4/3;"';
+
+			return '<iframe class="wpjam_video" '.$attr.' src="'.$src.'" scrolling="no" border="0" frameborder="no" framespacing="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>';
+		}
+
+		return $override;
+	}, 10, 3);
+
+	$object->update_arg('parsers[]', $args);
 }
 
 wpjam_add_menu_page('wpjam-shortcodes', [

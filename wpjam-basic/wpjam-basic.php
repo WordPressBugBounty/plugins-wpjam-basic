@@ -3,9 +3,9 @@
 Plugin Name: WPJAM BASIC
 Plugin URI: https://blog.wpjam.com/project/wpjam-basic/
 Description: WPJAM 常用的函数和接口，屏蔽所有 WordPress 不常用的功能。
-Version: 7.0.3
+Version: 7.0.4
 Requires at least: 6.8
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 7.4
 Author: Denis
 Author URI: http://blog.wpjam.com/

@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/vgNtvc1RcWyVCmnQdxAV0A
 Description: 自动根据文章内容里的子标题提取出文章目录，并显示在内容前。
 Version: 3.0
 */
-class WPJAM_Toc extends WPJAM_Option_Model{
+class WPJAM_Toc{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_fields(){
 		return [
 			'individual'=> ['title'=>'单独设置',	'type'=>'checkbox',	'value'=>1,	'label'=>'文章列表和编辑页面可以单独设置是否显示文章目录以及显示到第几级。'],
@@ -16,10 +20,10 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 		]);
 	}
 
-	public static function wrap($toc=null){
-		$toc ??= is_singular() ? (string)wpjam_var('toc') : '';
+	public static function output($wrap=true){
+		$toc = is_singular() ? (string)self::get_arg('toc') : '';
 
-		return $toc ? '<details id="toc" open>'."\n".'<summary>文章目录</summary>'."\n".$toc.'</details>'."\n" : '';
+		return $toc && $wrap ? '<details id="toc" open>'."\n".'<summary>文章目录</summary>'."\n".$toc.'</details>'."\n" : $toc;
 	}
 
 	public static function filter_content($content){
@@ -75,25 +79,24 @@ class WPJAM_Toc extends WPJAM_Option_Model{
 			}
 
 			if($stack){
-				$content	= $output.($index ? str_repeat("</section>\n", count($stack)-1) : '');
-				$toc		= self::wrap(wpjam_var('toc', "<".$tag.">\n".$toc.str_repeat("</li>\n</".$tag.">\n", count($stack))));
-			}
+				$content	= implode([
+					!$index && self::get_setting('position', 'content') == 'content' ? '[toc]' : '',
+					$output,
+					$index ? str_repeat("</section>\n", count($stack)-1) : ''
+				]);
 
-			if($index){
-				return str_replace('[toc]', $toc, $content);
-			}elseif(self::get_setting('position', 'content') == 'content'){
-				return $toc.$content;
+				self::update_arg('toc', "<".$tag.">\n".$toc.str_repeat("</li>\n</".$tag.">\n", count($stack)));
 			}
 		}
 
-		return $content;
+		return str_replace('[toc]', self::output(), $content);
 	}
 
 	public static function add_hooks(){
 		wpjam_register_widget('wpjam-toc', 'WPJAM - 文章目录', [
 			'classname'	=> 'widget_toc',
 			'fields'	=> ['title'	=> ['type'=>'text', 'before'=>'列表标题：', 'class'=>'medium-text']],
-			'widget'	=> fn()=> is_singular() ? (string)wpjam_var('toc') : ''
+			'widget'	=> fn()=> self::output(false)
 		]);
 
 		wpjam_once('maybe', 'the_content', fn($content)=> !doing_filter('get_the_excerpt') && wpjam_is('single', get_the_ID()) ? self::filter_content($content) : null, 11);
@@ -125,5 +128,5 @@ wpjam_register_option('wpjam-toc', [
 ]);
 
 function wpjam_get_toc(){
-	return WPJAM_Toc::wrap();
+	return WPJAM_Toc::output();
 }

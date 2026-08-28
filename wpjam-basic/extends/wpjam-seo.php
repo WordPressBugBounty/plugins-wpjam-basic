@@ -5,7 +5,11 @@ URI: https://mp.weixin.qq.com/s/LzGWzKCEl5SdJCQdBvFipg
 Description: 简单 SEO 扩展实现最简单快捷的方式设置 WordPress 站点的 SEO。
 Version: 2.0
 */
-class WPJAM_SEO extends WPJAM_Option_Model{
+class WPJAM_SEO{
+	public static function __callStatic($method, $args){
+		return wpjam_call_option(static::class, $method, ...$args);
+	}
+
 	public static function get_fields(){
 		if(file_exists(ABSPATH.'robots.txt')){
 			$robots_field	= ['type'=>'view',	'value'=>'博客的根目录下已经有 robots.txt 文件。<br />请直接编辑或者删除之后在后台自定义。'];
