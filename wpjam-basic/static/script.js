@@ -1007,13 +1007,16 @@ jQuery(function($){
 	$.fn.wpjam_modal.events		= [{name: 'click',	selector: '.show-modal, .is-dismissible .notice-dismiss'}];
 
 	$.fn.wpjam_chart = function(){
-		let {type, options}	= this.data('chart');
+		let chart	= this.data('chart');
+		let {type, options}	= _.isObject(chart) ? chart : {};
 
-		type == 'Donut' && this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
+		if(type && !_.isEmpty(options)){
+			type == 'Donut' && this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
 
-		['Line', 'Bar', 'Donut'].includes(type) && Morris[type]({...options, element: this.prop('id')});
+			['Line', 'Bar', 'Donut'].includes(type) && Morris[type]({...options, element: this.prop('id')});
 
-		this.removeAttr('data-chart');
+			this.removeAttr('data-chart');
+		}
 	}
 
 	$.fn.wpjam_chart.selector	= '[data-chart]';

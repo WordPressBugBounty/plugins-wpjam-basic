@@ -598,6 +598,10 @@ class WPJAM_Data_Type extends WPJAM_Args{
 	}
 
 	public static function get_instance($name, $args=[]){
+		if(!$name){
+			return;
+		}
+
 		$model	= '';
 
 		if($name == 'model'){

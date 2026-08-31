@@ -27,17 +27,16 @@ class WPJAM_Core extends WPJAM_Register{
 			return $type;
 		}
 
-		if($key != 'name' && property_exists('WP_'.$type, $key)){
-			if($object = wpjam_call('get_'.$type.($type == 'post_type' ? '_object' : ''), $this->name)){
-				return $args ? ($object->$key = $args[0]) : $object->$key;
-			}
+		if($key != 'name'
+			&& property_exists('WP_'.$type, $key)
+			&& ($object = wpjam_call('get_'.$type.($type == 'post_type' ? '_object' : ''), $this->name))
+		){
+			return $args ? ($object->$key = $args[0]) : $object->$key;
 		}
 	}
 
 	public function permastruct(){
-		$value	= trim($this->get_arg('permastruct') ?: '', '/');
-
-		if(!$value){
+		if(!($value = trim($this->get_arg('permastruct') ?: '', '/'))){
 			return;
 		}
 
@@ -94,7 +93,7 @@ class WPJAM_Core extends WPJAM_Register{
 			$r	= $h ? [$n, $n.'s', ucfirst($n).'s', ucfirst($n)] : [$n, ucfirst($n), $n];
 		}
 
-		return array_merge(wpjam_map($l, fn($v, $k)=> $m[$k] ?? (($v && $v != $n) ? str_replace($s, $r, $v) : $v)), (array)($this->labels ?? []));
+		return array_merge(wpjam_map($l, fn($v, $k)=> $m[$k] ?? (($v && $v != $n) ? str_replace($s, $r, $v) : $v)), (array)$this->labels);
 	}
 
 	public function to_array(){
@@ -134,7 +133,7 @@ class WPJAM_Core extends WPJAM_Register{
 	}
 
 	public static function filter_builtin_args($args, $name, $object_type=null){
-		if(!static::get($name) && $args['public'] && (did_action('init') || empty($args['_builtin']))){
+		if(!static::get($name) && !empty($args['public']) && (did_action('init') || empty($args['_builtin']))){
 			return (static::register($name, ['_jam'=>false]+array_filter(compact('object_type'))+$args))->to_array();
 		}
 
@@ -215,40 +214,29 @@ class WPJAM_Post_Type extends WPJAM_Core{
 	}
 
 	public function parse_images($images, $args=[]){
+		$ss		= $this->images_sizes;
+		$sizes	= [];
+
 		foreach(['large', 'thumbnail'] as $k){
-			$v	= $args[$k.'_size'] ?? '';
-
-			if($v === false){
-				continue;
-			}
-
-			if(!$v){
-				if($setting	= $this->images_sizes){
-					$v	= $setting[$k == 'large' ? 0 : 1];
+			if(($v = $args[$k.'_size'] ?? '') !== false){
+				if(!$v && $ss){
+					$v	= $ss[$k == 'large' ? 0 : 1];
 
 					if($k == 'thumbnail' && count($images) == 1){
-						$image	= array_first($images);
-						$query	= wpjam_image($image, 'query');
+						$i	= array_first($images);
+						$q	= wpjam_image($i, 'query') ?: wpjam_tap(wpjam_image($i, 'size') ?: ['width'=>0, 'height'=>0], fn($q)=> update_post_meta($args['post_id'], 'images', [add_query_arg($q, $i)]));
 
-						if(!$query){
-							$query	= wpjam_image($image, 'size') ?: ['width'=>0, 'height'=>0];
-
-							update_post_meta($args['post_id'], 'images', [add_query_arg($query, $image)]);
-						}
-
-						$v	= empty($query['orientation']) ? $v : ($setting[$query['orientation'] == 'landscape' ? 2 : 3] ?? $v);
+						$v	= ($o = $q['orientation'] ?? '') ? ($ss[$o == 'landscape' ? 2 : 3] ?? $v) : $v;
 					}
 				}else{
-					$v	= $this->{$k.'_size'};
+					$v	= $v ?: $this->{$k.'_size'};
 				}
+			
+				$sizes[$k]	= $v ?: $k;
 			}
-
-			$sizes[$k]	= $v ?: $k;
 		}
 
-		if(empty($sizes) || ($args['full_size'] ?? true)){
-			$sizes['full']	= 'full';
-		}
+		$sizes	+= (!$sizes || ($args['full_size'] ?? true)) ? ['full'=>'full'] : [];
 
 		foreach($images as $image){
 			$parsed	= array_map(fn($s)=> wpjam_get_thumbnail($image, $s), $sizes);
@@ -354,11 +342,7 @@ class WPJAM_Taxonomy extends WPJAM_Core{
 
 		parent::to_array();
 
-		if($this->_jam){
-			$this->args	+= ['show_in_nav_menus'=>false, 'show_in_rest'=>true, 'show_admin_column'=>true, 'hierarchical'=>true];
-		}
-
-		return $this->args += ['model'=>'WPJAM_Term', 'show_in_posts_rest'=>$this->show_in_rest];
+		return $this->args	+= ($this->_jam ? ['show_in_nav_menus'=>false, 'show_in_rest'=>true, 'show_admin_column'=>true, 'hierarchical'=>true] : [])+['model'=>'WPJAM_Term', 'show_in_posts_rest'=>$this->show_in_rest];
 	}
 
 	public function add_support($feature, $value=true){
@@ -620,8 +604,6 @@ class WPJAM_Post extends WPJAM_Instance{
 		return $this->post->$field ?? $this->meta_get($field);
 	}
 
-	// update/insert 方法同时支持 title 和 post_xxx 字段写入 post 中，meta 字段只支持 meta_input
-	// update_callback 方法只支持 post_xxx 字段写入 post 中，其他字段都写入 meta_input
 	public function update_callback($data, $defaults){
 		return wpjam_then(
 			$this->save(wpjam_pull($data, [...array_keys($this->data), 'tax_input'])),
@@ -698,8 +680,7 @@ class WPJAM_Post extends WPJAM_Instance{
 		$key	= 'post_content';
 		$data	+= wpjam_array(get_class_vars('WP_Post'), fn($k, $v)=> try_prefix($k, '-', 'post_') && isset($data[$k]) ? ['post_'.$k, $data[$k]] : null);
 
-		return (is_array($data[$key] ?? '') ? [$key=>serialize($data[$key])] : [])
-		+$data
+		return (is_array($data[$key] ?? '') ? [$key=>serialize($data[$key])] : [])+$data
 		+(!$post_id && method_exists(static::class, 'is_publishable') ? ['post_status'=>'draft'] : []);
 	}
 

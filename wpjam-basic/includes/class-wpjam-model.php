@@ -561,7 +561,7 @@ class WPJAM_DB extends WPJAM_Args{
 
 		$term	= $this->query_vars['search_term'];
 		$fields	= $this->query_vars['search_columns'] ?: $this->searchable_fields;
-		$fields	= is_array($fields) ? (wp_is_numeric_array($fields) ? $fields : array_keys($fields)) : wp_parse_list($fields);
+		$fields	= is_array($fields) ? (wp_is_numeric_array($fields) ? $fields : array_keys($fields)) : wp_parse_list($fields ?: '');
 
 		return $term && $fields ? $this->where_any(wpjam_array($fields, fn($i, $k)=> [$k.'__like', '%'.$term.'%'])) : $this;
 	}

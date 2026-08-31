@@ -211,7 +211,7 @@ class WPJAM_Field extends WPJAM_Attr{
 			$this->_fields	= WPJAM_Fields::create($this->fields, $this->_fields_args ?: [], $this);
 			$this->fields	= $this->_fields->fields;
 		}else{
-			$this->attr(wpjam_pattern($this) ?: []);
+			$this->attr(wpjam_pattern($this->pattern) ?: []);
 		}
 	}
 

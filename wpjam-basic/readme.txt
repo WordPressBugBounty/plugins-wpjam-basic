@@ -53,7 +53,7 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 7.0.5 =
+= 7.0.6 =
 * 新增函数 wpjam_once 实现一次 Hook
 * 新增函数 wpjam_visitor 获取当前访客的唯一标识
 * 新增函数 wpjam_remainin 访客频率限制，返回当前访客在剩余次数，0 表示超限
