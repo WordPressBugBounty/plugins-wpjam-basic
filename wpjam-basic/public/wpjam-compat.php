@@ -201,6 +201,10 @@ function wpjam_timer_hook($value){
 	return $value;
 }
 
+function wpjam_get_filter_name($name, $type){
+	return wpjam_hook('parse', $name, $type);
+}
+
 function wpjam_parse_query($query, $args=[], $parse=true){
 	return wpjam_query($parse, $query, $args);
 }
@@ -428,6 +432,14 @@ function wpjam_add_instance($group, $id, $object){
 	return $object;
 }
 
+function wpjam_set_cookie($key, $value, ...$args){
+	return wpjam_cookie($key, $value, ...$args);
+}
+
+function wpjam_clear_cookie($key){
+	wpjam_cookie($key, null);
+}
+
 function wpjam_localize_script($handle, $name, $l10n ){
 	wp_localize_script($handle, $name, ['l10n_print_after' => $name.' = '.wpjam_json_encode($l10n)]);
 }
@@ -528,7 +540,7 @@ function wpjam_register_plugin_page_load(...$args){
 }
 
 function wpjam_page_action_compat($data){
-	$cb		= wpjam_get_filter_name($GLOBALS['plugin_page'], 'ajax_response');
+	$cb		= wpjam_hook('parse', $GLOBALS['plugin_page'], 'ajax_response');
 	$cb		= is_callable($cb) ? $cb : wp_die('invalid_callback');
 	$result	= wpjam_if_error($cb($data['page_action']), 'send');
 
@@ -620,7 +632,7 @@ function wpjam_render_list_table_column_items($id, $items, $args=[]){
 }
 
 function wpjam_register_list_table($name, $args=[]){
-	add_filter(wpjam_get_filter_name($name, 'list_table'), fn()=> $args);
+	add_filter(wpjam_hook('parse', $name, 'list_table'), fn()=> $args);
 }
 
 function wpjam_register_dashboard($name, $args){
@@ -1205,11 +1217,11 @@ add_filter('rewrite_rules_array', fn($rules)=> array_merge(apply_filters('wpjam_
 if(is_admin()){
 	add_action('wpjam_plugin_page', function($object, $type){
 		if($type == 'tab'){
-			if(has_filter($filter = wpjam_get_filter_name($object->menu_slug, 'tabs'))){
+			if(has_filter($filter = wpjam_hook('parse', $object->menu_slug, 'tabs'))){
 				$object->tabs	= apply_filters($filter, $object->get_arg('tabs', [], 'callback'));
 			}
 		}elseif(in_array($type, ['option', 'list_table']) && !$object->$type){
-			if(has_filter($filter = wpjam_get_filter_name($object->{$type.'_name'} ?: $object->menu_slug, $type == 'option' ? 'setting' : $type))){
+			if(has_filter($filter = wpjam_hook('parse', $object->{$type.'_name'} ?: $object->menu_slug, $type == 'option' ? 'setting' : $type))){
 				$object->$type	= apply_filters($filter, []);
 			}
 		}
@@ -1285,11 +1297,11 @@ class WPJAM_Crypt extends WPJAM_Args{
 	}
 
 	public static function pad($text, $type, ...$args){
-		return wpjam_pad($text, $type, ...$args);
+		return wpjam_pad($text, $type, ($type == 'pkcs7' ? ['block_size'=>$args[0]] : ['appid'=>$args[0]]), $args[1]);
 	}
 
 	public static function unpad($text, $type, ...$args){
-		return wpjam_pad($text, '-'.$type, ...$args);
+		return static::pad($text, $type, $args[0], true);
 	}
 
 	public static function generate_signature(...$args){

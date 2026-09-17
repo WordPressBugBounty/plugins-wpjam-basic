@@ -2,7 +2,7 @@
 Contributors: denishua
 Donate link: https://wpjam.com/
 Tags: WPJAM, Memcached, 性能优化
-Requires at least: 6.8
+Requires at least: 6.9
 Requires PHP: 7.4
 Tested up to: 7.1
 Stable tag: trunk
@@ -53,8 +53,13 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
-= 7.0.6 =
-* 新增函数 wpjam_once 实现一次 Hook
+= 7.1 =
+* 新增函数 wpjam_cookie 实现 Cookie 的获取和设置，并支持数组方式。
+* 新增函数 wpjam_columnar，将关联数组转换为列式存储格式（列名+索引数组），并支持字典压缩重复值。
+* 新增函数 wpjam_records，将列式存储格式（列名+索引数组）还原为关联数组，自动解码字典值。
+* 新增函数 wpjam_contains，在数组中搜索指定关键字，并支持指定搜索字段。
+* 新增函数 wpjam_invalid，wpjam_throw 的快捷方式，抛出 invalid_ 类型的异常
+* 新增函数 wpjam_once 实现一次的 Hook
 * 新增函数 wpjam_visitor 获取当前访客的唯一标识
 * 新增函数 wpjam_remainin 访客频率限制，返回当前访客在剩余次数，0 表示超限
 * 新增函数 wpjam_operate 基础运算执行器

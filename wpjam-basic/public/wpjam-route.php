@@ -4,11 +4,11 @@ function wpjam($field='', ...$args){
 }
 
 function wpjam_var($name, ...$args){
-	$names	= str_contains($name, ':') ? explode(':', $name, 2) : ['vars', $name];
+	$names	= array_pad(explode(':', $name, 2), -2, 'vars');
 	$value	= wpjam(...$names);
 
 	if($args && ($value === null || !is_closure($args[0]))){
-		$value	= maybe_closure($args[0], ...array_reverse($names));
+		$value	= maybe_closure($args[0], $names[1], $names[0]);
 
 		wpjam(...[...$names, wpjam_if_error($value, null)]);
 	}
@@ -27,9 +27,9 @@ function wpjam_default(...$args){
 function wpjam_config(...$args){
 	if($args && (count($args) > 1 || is_array($args[0]) || is_callable($args[0]))){
 		$group	= (count($args) >= 3 ? array_shift($args) : '') ?: 'default';
-		$args	= wpjam_filter($args, fn($v)=> isset($v));
+		$args	= array_pad(wpjam_filter($args, fn($v)=> isset($v)), -2, '');
 
-		return $args ? wpjam('config', $group.'['.(count($args) > 1 ? array_shift($args) : '').']', ...$args) : null;
+		return $args[1] ? wpjam('config', $group.'['.$args[0].']', $args[1]) : null;
 	}
 
 	return wpjam_reduce(wpjam('config', ($args[0] ?? '') ?: 'default') ?: [], function($c, $v, $k){
@@ -94,10 +94,10 @@ function wpjam_ajax($name, $args=[]){
 
 // User Agent
 function wpjam_ua($key='', ...$args){
-	$name	= 'user_agent';
-	$ua		= wpjam($name) ?: wpjam($name, wpjam_parse_user_agent());
+	static $ua;
+	$ua	??= wpjam_parse_user_agent();
 
-	return $key ? ($args ? wpjam($name, [$key=>$args[0]]+$ua) : $ua[$key]) : $ua;
+	return $key ? ($args ? ($ua = [$key=>$args[0]]+$ua) : $ua[$key]) : $ua;
 }
 
 function wpjam_get_device(){
@@ -189,7 +189,12 @@ function wpjam_hooks($name, ...$args){
 }
 
 function wpjam_hook($name, ...$args){
-	return is_array($name) ? new WPJAM_Hook($name) : ($name === '-' ? WPJAM_Hook::remove(...$args) : WPJAM_Hook::add($name, ...$args));
+	return is_array($name)
+	? new WPJAM_Hook($name)
+	: (($act = ['-'=>'remove', 'parse'=>'parse'][$name] ?? '')
+		? ['WPJAM_Hook', $act](...$args)
+		: WPJAM_Hook::add($name, ...$args)
+	);
 }
 
 function wpjam_once($name, ...$args){
@@ -208,11 +213,9 @@ function wpjam_echo($value, ...$args){
 
 function wpjam_load($hook, $cb, ...$args){
 	if($cb && is_callable($cb)){
-		if($hook = array_filter((array)$hook, fn($h)=> !did_action($h))){
-			add_action(array_shift($hook), $hook ? fn()=> wpjam_load($hook, $cb, ...$args) : $cb, ...$args);
-		}else{
-			$cb();
-		}
+		($hook = array_filter((array)$hook, fn($h)=> !did_action($h)))
+		? add_action(array_shift($hook), $hook ? fn()=> wpjam_load($hook, $cb, ...$args) : $cb, ...$args)
+		: $cb();
 	}
 }
 
@@ -450,6 +453,10 @@ function wpjam_var_dump($value){
 // Error
 function wpjam_throw($code, $msg='', $data=[]){
 	throw new WPJAM_Exception(is_wp_error($code) ? $code : new WP_Error($code, $msg, $data));
+}
+
+function wpjam_invalid($type, $msg=''){
+	wpjam_throw('invalid_'.$type, $msg);
 }
 
 function wpjam_error(...$args){
@@ -799,8 +806,8 @@ if(is_admin()){
 		return WPJAM_List_Table_View::register($name, $view);
 	}
 
-	function wpjam_dashboard($action, ...$args){
-		return wpjam_admin('dashboard', $action, ...$args);
+	function wpjam_dashboard(...$args){
+		return wpjam_admin('dashboard', ...$args);
 	}
 }
 

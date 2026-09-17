@@ -310,7 +310,7 @@ class WPJAM_DB extends WPJAM_Args{
 		]);
 
 		$this->init();
-		$this->process_arg('group_cache_key', fn($v)=> array_merge((array)$v, $ck ? [$ck] : []));
+		$this->group_cache_key	= array_merge((array)$this->group_cache_key, $ck ? [$ck] : []);
 	}
 
 	public function __call($method, $args){
@@ -561,7 +561,7 @@ class WPJAM_DB extends WPJAM_Args{
 
 		$term	= $this->query_vars['search_term'];
 		$fields	= $this->query_vars['search_columns'] ?: $this->searchable_fields;
-		$fields	= is_array($fields) ? (wp_is_numeric_array($fields) ? $fields : array_keys($fields)) : wp_parse_list($fields ?: '');
+		$fields	= wpjam_is_assoc_array($fields) ? array_keys($fields) : wp_parse_list($fields ?: '');
 
 		return $term && $fields ? $this->where_any(wpjam_array($fields, fn($i, $k)=> [$k.'__like', '%'.$term.'%'])) : $this;
 	}
@@ -791,7 +791,7 @@ class WPJAM_DB extends WPJAM_Args{
 				}
 			}elseif(in_array($op, ['LIKE', 'NOT LIKE'])){
 				$f	= '%s';
-				$v	= (str_starts_with($v, '%') ? '%' : '').$this->esc_like_by_db(trim($v, '%')).(str_ends_with($v, '%') ? '%' : '');
+				$v	= ($v[0] === '%' ? '%' : '').$this->esc_like_by_db(trim($v, '%')).($v[-1] === '%' ? '%' : '');
 			}elseif(in_array($op, ['REGEXP', 'NOT REGEXP', 'RLIKE'])){
 				$f	= '%s';
 			}elseif(in_array($op, ['EXISTS', 'NOT EXISTS'])){
@@ -1187,7 +1187,9 @@ class WPJAM_Items extends WPJAM_Args{
 		$number	= wpjam_pull($args, 'number') ?: 50;
 		$offset	= wpjam_pull($args, 'offset') ?: 0;
 		$items	= $this->parse_items();
-		$items	= array_values(($args || $s) ? array_filter($items, fn($item)=> (!$args || wpjam_matches($item, $args)) && (!$s || array_any($item, fn($v)=> str_contains($v, $s))) ) : $items);
+		$fields	= wpjam_pull($args, 'search_columns') ?: $this->searchable_fields;
+		$fields	= wpjam_is_assoc_array($fields) ? array_keys($fields) : wp_parse_list($fields ?: '');
+		$items	= array_values(($args || $s) ? array_filter($items, fn($item)=> (!$args || wpjam_matches($item, $args)) && (!$s || wpjam_contains($item, $s, $fields))) : $items);
 
 		return ['total'=>count($items), 'items'=>array_slice($items, $offset, $number)];
 	}
@@ -1495,7 +1497,7 @@ class WPJAM_Cache extends WPJAM_Args{
 			if(!$args[0] || (int)$args[0] !== (int)$cache->get($key.':code')){
 				$max && $cache->set($key.':failed_times', $times+1, $group['expire']*30);
 
-				wpjam_throw('invalid_code');
+				wpjam_throw('code');
 			}
 
 			return true;

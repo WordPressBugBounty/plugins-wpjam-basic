@@ -413,7 +413,7 @@ function wpjam_query($vars, ...$args){
 		$name	= wpjam_pull($args[0], 'data_type');
 		$args	= wp_parse_args(($args[0]['query_args'] ?? $args[0]) ?: [])+wpjam_pull($args[0], ['search']);
 
-		return ['items'=>[wpjam_get_data_type($name, $args) ?: wpjam_throw('invalid_data_type'), 'query_items']($args)];
+		return ['items'=>[wpjam_get_data_type($name, $args) ?: wpjam_invalid('data_type'), 'query_items']($args)];
 	}
 
 	$type	= is_string($vars) && !method_exists('WPJAM_Query', $vars) ? $vars : '';

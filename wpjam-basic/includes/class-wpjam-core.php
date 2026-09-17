@@ -118,7 +118,7 @@ class WPJAM_Core extends WPJAM_Register{
 	}
 
 	public function add_field($key, ...$args){
-		return $this->process_arg('_fields', fn($v)=> array_merge($v ?: [], is_callable($key) ? [$key] : (is_array($key) ? $key : [$key => $args[0]])));
+		return $this->update_arg('_fields', array_merge($this->_fields ?: [], is_callable($key) ? [$key] : (is_array($key) ? $key : [$key => $args[0]])));
 	}
 
 	public function remove_field($key){
@@ -126,7 +126,7 @@ class WPJAM_Core extends WPJAM_Register{
 	}
 
 	public function get_fields($id=0, $action_key=''){
-		return wpjam_reduce($this->get_arg('_fields[]'), fn($c, $v, $k)=> array_merge($c, is_callable($v)
+		return wpjam_reduce($this->_fields ?: [], fn($c, $v, $k)=> array_merge($c, is_callable($v)
 			? wpjam_pack(wpjam_try($v, $id, $action_key), is_numeric($k) ? null : $k)
 			: (wpjam_is_assoc_array($v) ? [$k => $v] : [])
 		), []);
@@ -663,7 +663,7 @@ class WPJAM_Post extends WPJAM_Instance{
 			$type	= array_unique(array_filter([$data['post_type'] ?? '', static::get_current_post_type()]));
 			$type	= count($type) <= 1 ? (array_first($type) ?: 'post') : '';
 
-			$data['post_type']		= $type && post_type_exists($type) ? $type : wpjam_throw('invalid_post_type');
+			$data['post_type']		= $type && post_type_exists($type) ? $type : wpjam_invalid('post_type');
 			$data['post_status']	??= current_user_can(get_post_type_object($type)->cap->publish_posts) ? 'publish' : 'draft';
 			$data['post_author']	??= get_current_user_id();
 			$data['post_date']		??= wpjam_date('Y-m-d H:i:s');

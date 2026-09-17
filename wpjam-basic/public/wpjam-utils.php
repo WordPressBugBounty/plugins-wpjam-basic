@@ -29,53 +29,44 @@ function wpjam_verify_jwt($token){
 	return hash_equals(wpjam_generate_signature('hmac-sha256', $header.'.'.$payload), $sign)
 	&& ($data = wpjam_json_decode(base64_urldecode($payload)))
 	&& !array_any(['iat'=>'>', 'nbf'=>'>', 'exp'=>'<'], fn($v, $k)=> isset($data[$k]) && wpjam_compare($data[$k], $v, time()))
-	? $data
-	: false;
+	? $data : false;
 }
 
 function wpjam_get_jwt($key='access_token', $required=false){
 	return ($header = $_SERVER['HTTP_AUTHORIZATION'] ?? '') && try_prefix($header, '-', 'Bearer')
-	? trim($header)
-	: wpjam_param($key, ['required'=>$required]);
+	? trim($header) : wpjam_param($key, ['required'=>$required]);
 }
 
 // Crypt
-function wpjam_encrypt($text, $args){
-	$de		= $args['de'] ?? false;
+function wpjam_crypt($text, $args, $de=false){
 	$params	= [$args['method'] ?? '', $args['key'] ?? '', $args['options'] ?? '', $args['iv'] ?? ''];
+	$types	= array_filter([$args['pad'] ?? '', ($args['options'] ?? '') == OPENSSL_ZERO_PADDING ? 'pkcs7' : '']);
 	$text	= $de ? openssl_decrypt($text, ...$params) : $text;
-
-	foreach($de ? ['pkcs7', 'weixin'] : ['weixin', 'pkcs7'] as $pad){
-		if($arg = $pad == 'pkcs7'
-			? (($args['options'] ?? '') == OPENSSL_ZERO_PADDING ? ($args['block_size'] ?? '') : '')
-			: (($args['pad'] ?? '') == 'weixin' ? trim($args['appid'] ?? '') : '')
-		){
-			$text	= wpjam_pad($text, ($de ? '-' : '').$pad, $arg);
-		}
-	}
+	$text	= array_reduce($de ? array_reverse($types) : $types, fn($c, $t)=> wpjam_pad($c, $t, $args, $de), $text);
 
 	return $de ? $text : openssl_encrypt($text, ...$params);
 }
 
-function wpjam_decrypt($text, $args){
-	return wpjam_encrypt($text, $args+['de'=>true]);
+function wpjam_encrypt($text, $args){
+	return wpjam_crypt($text, $args, false);
 }
 
-function wpjam_pad($text, $type, ...$args){
-	if($type == 'pkcs7'){
-		$pad	= $args[0] - (strlen($text) % $args[0]);
-		$text	.= str_repeat(chr($pad), $pad);
-	}elseif($type == '-pkcs7'){
-		$pad	= ord(substr($text, -1));
-		$text	= ($pad > 0 && $pad < $args[0]) ? substr($text, 0, -1 * $pad) : $text;
-	}elseif($type == 'weixin'){
-		$text	= wp_generate_password(16, false).pack("N", strlen($text)).$text.$args[0];
-	}elseif($type == '-weixin'){
-		$length	= (unpack("N", substr($text, 16, 4)))[1];
+function wpjam_decrypt($text, $args){
+	return wpjam_crypt($text, $args, true);
+}
 
-		return (($appid = substr($text, $length + 20)) != $args[0])
-		? new WP_Error('invalid_appid', 'Appid 校验「'.$appid.'」「'.$args[0].'」错误')
-		: substr($text, 20, $length);
+function wpjam_pad($text, $type, $args=[], $un=false){
+	if($type == 'pkcs7' && ($size = $args['block_size'] ?? '')){
+		$pad	= $un ? ord(substr($text, -1)) : ($size - (strlen($text) % $size));
+		$text	= $un ? ($pad && $pad < $size ? substr($text, 0, -1 * $pad) : $text) : $text.str_repeat(chr($pad), $pad);
+	}elseif($type == 'weixin' && ($appid = trim($args['appid'] ?? ''))){
+		if($un){
+			$pad	= unpack("N", substr($text, 16, 4))[1];
+			$id		= trim(substr($text, $pad + 20));
+			$text	= $id != $appid ? new WP_Error('invalid_appid', 'Appid 校验「'.$id.'」「'.$appid.'」错误') : substr($text, 20, $pad);
+		}else{
+			$text	= wp_generate_password(16, false).pack("N", strlen($text)).$text.$appid;
+		}
 	}
 
 	return $text;
@@ -99,9 +90,9 @@ function wpjam_json_decode($json, $assoc=true){
 	$result	??= str_contains($json, '\\') ? json_decode(stripslashes($json), $assoc) : $result;
 
 	if(is_null($result)){
-		trigger_error('json_decode_error['.json_last_error().']:'.($msg = json_last_error_msg())."\n".var_export($json, true));
+		trigger_error('json_decode_error['.json_last_error().']:'.json_last_error_msg()."\n".var_export($json, true));
 
-		return new WP_Error('json_decode_error', $msg);
+		return new WP_Error('json_decode_error', json_last_error_msg());
 	}
 
 	return $result;
@@ -120,42 +111,56 @@ function wpjam_send_json($data=[], $code=null){
 	$jsonp	= wp_is_jsonp_request();
 
 	if(!headers_sent()){
-		isset($code) && status_header($code);
+		if(isset($code)){
+			status_header($code);
+		}
 
-		wpjam_doing_debug() || @header('Content-Type: application/'.($jsonp ? 'javascript' : 'json').'; charset='.get_option('blog_charset'));
+		@header('Content-Type: application/'.($jsonp ? 'javascript' : 'json').'; charset='.get_option('blog_charset'));
 	}
 
 	echo $jsonp ? '/**/'.$_GET['_jsonp'].'('.$data.')' : $data; exit;
 }
 
-function wpjam_import($file, $columns=[]){
+function wpjam_encoding($text, $encodings=[]){
+	return array_find($encodings ?: ['GBK', 'BIG5'], fn($v)=> ($u = @iconv($v, 'UTF-8', $text)) !== false && @iconv('UTF-8', $v, $u) === $text);
+}
+
+function wpjam_import($file, $columns=[], $encodings=[]){
 	$dir	= wp_get_upload_dir()['basedir']; 
 	$file	= ($file && !str_starts_with($file, $dir) ? $dir : '').$file;
+	$ext	= wpjam_at($file, '.', -1);
 
 	if(!$file || !file_exists($file)){
 		return new WP_Error('file_not_exists', '文件不存在');
 	}
 
-	$ext	= wpjam_at($file, '.', -1);
-
 	if($ext == 'csv'){
-		$columns	= wpjam_reduce($columns, fn($c, $v, $k)=> $c+[trim($v)=>$k, $k=>$k], []);
-
 		if(($handle = fopen($file, 'r')) !== false){
 			while(($row = fgetcsv($handle)) !== false){
 				if(!array_filter($row)){
 					continue;
 				}
 
-				if(($encoding ??= mb_detect_encoding(implode('', $row), mb_list_encodings(), true)) != 'UTF-8'){
-					$row	= array_map(fn($v) => mb_convert_encoding($v, 'UTF-8', 'GBK'), $row);
+				$enc	??= wpjam_encoding(implode($row), $encodings);
+				$item	= [];
+
+				foreach($row as $i => &$v){
+					$v	= $enc ? iconv($enc, 'UTF-8//IGNORE', $v) : $v;
+
+					if(isset($map)){
+						if(isset($map[$i])){
+							$item[$map[$i]]	= preg_replace('/="([^"]*)"/', '$1', $v);
+						}
+					}else{
+						$v	= trim($i ? $v : ltrim($v, "\xEF\xBB\xBF"));
+						$v	= $columns ? array_find_key($columns, fn($c, $k)=> $k === $v || trim($c) === $v) : $v;
+					}
 				}
 
 				if(isset($map)){
-					$data[]	= array_map(fn($i)=> preg_replace('/="([^"]*)"/', '$1', $row[$i]), $map);
+					$data[]	= $item;
 				}else{
-					$row	= array_map(fn($v)=> trim(trim($v), "\xEF\xBB\xBF"), $row);
-					$map	= $columns ? wpjam_array($row, fn($i, $k)=> isset($columns[$k]) ? [$columns[$k], $i] : null) : array_flip($row);
+					$map	= array_filter($row, fn($v)=> isset($v));
 				}
 			}
 
@@ -195,59 +200,82 @@ function wpjam_export($file, $data, $columns=[]){
 	exit;
 }
 
-function wpjam_columnar($items, $columns=[], $dict=[]){
+function wpjam_columnar($items, $dict=[]){
 	if(!$items){
-		return [];
+		return $items;
 	}
 
-	$columns= $columns ?: array_keys(array_first($items));
-	$dict	= $dict ? wpjam_fill(array_intersect($dict, $columns), fn($k)=> array_values(array_unique(array_column($items, $k)))) : [];
-	$rows	= [];
+	$dict		= array_fill_keys($dict, []);
+	$columns	= [];
 
-	foreach($items as $id => $item){
-		if($dict){
-			foreach(array_intersect_key($item, $dict) as $k => $v){
-				$item[$k]	= array_search($v, $dict[$k]);
+	foreach($items as &$item){
+		foreach($dict as $k => &$v){
+			if(isset($item[$k])){
+				$item[$k]	= $v[$item[$k]]	??= count($v);
 			}
 		}
 
-		$rows[$id]	= array_map(fn($k)=> $item[$k] ?? null, $columns);
+		unset($v);
+
+		$temp	= [];
+
+		foreach($columns as $k){
+			$temp[]	= $item[$k] ?? null;
+
+			unset($item[$k]);
+	
+			if(!$item){
+				break;
+			}
+		}
+
+		foreach($item as $k => $v){
+			if(isset($v)){
+				$columns[]	= $k;
+				$temp[]		= $v;
+			}
+		}
+
+		while($temp && array_last($temp) === null){
+			array_pop($temp);
+		}
+
+		$item	= $temp;
 	}
 
-	return ['columns'=>$columns, 'rows'=>$rows]+($dict ? ['dict'=>$dict] : []);
+	return $columns ? ['columns'=>$columns, 'items'=>$items, 'dict'=>array_map('array_flip', $dict)] : [];
 }
 
 function wpjam_records($data){
-	if(!$data || empty($data['columns']) || empty($data['rows'])){
-		return [];
-	}
-
-	$dict	= $data['dict'] ?? [];
-	$items	= [];
-
-	foreach($data['rows'] as $id => $row){
-		$row	= array_combine($data['columns'], $row);
-
-		if($dict){
-			foreach(array_intersect_key($row, $dict) as $k => $v){
-				$row[$k]	= $dict[$k][$v];
-			}
+	if(!empty($data['items']) && !empty($data['columns'])){
+		foreach($data['items'] as &$item){
+			$item	= wpjam_record($item, $data['columns'], $data['dict'] ?? []);
 		}
 
-		$items[$id]	= $row;
+		return $data['items'];
+	}
+}
+
+function wpjam_record($item, $columns, $dict=[]){
+	$item	= array_combine(array_slice($columns, 0, count($item)), $item);
+
+	foreach($dict as $k => $v){
+		if(isset($item[$k])){
+			$item[$k]	= $v[$item[$k]] ?? $item[$k];
+		}
 	}
 
-	return $items;
+	return $item;
 }
 
 function wpjam_compress($data, $base64=true, $level=6){
-	$text	= gzcompress(wpjam_json_encode($data), $level);
+	$text	= $data ? gzcompress(wpjam_json_encode($data), $level) : '';
 
-	return $base64 ? base64_encode($text) : $text;
+	return $text && $base64 ? base64_encode($text) : $text;
 }
 
 function wpjam_uncompress($text, $base64=true){
-	return wpjam_json_decode(gzuncompress($base64 ? base64_decode($text) : $text));
+	return $text ? wpjam_json_decode(gzuncompress($base64 ? base64_decode($text) : $text)) : null;
 }
 
 // User agent
@@ -278,7 +306,7 @@ function wpjam_parse_user_agent($agent=null, $referer=null){
 
 	if($os == 'iOS'){
 		if(preg_match('/OS (.*?) like Mac OS X[\)]{1}/i', $agent, $m)){
-			$ua	= [(float)trim(str_replace('_', '.', $m[1])), $rule[0]];
+			$ua	= [(float)str_replace('_', '.', $m[1]), $rule[0]];
 		}
 	}elseif($os == 'Android'){
 		if(preg_match('/Android ([0-9\.]{1,}?); (.*?) Build\/(.*?)[\)\s;]{1}/i', $agent, $m) && !empty($m[1]) && !empty($m[2])){
@@ -302,7 +330,7 @@ function wpjam_parse_user_agent($agent=null, $referer=null){
 
 	return ['os'=>$os, 'os_version'=>$ua[0] ?? 0, 'device'=>$ua[1] ?? '']+array_combine(
 		['browser', 'browser_version'],
-		$rule ? [($rule[2] ?? '') ?: $rule[0], !empty($rule[1]) && preg_match($rule[1], $agent, $m) ? (float)(trim($m[1])) : 0] : ['', 0]
+		$rule ? [($rule[2] ?? '') ?: $rule[0], !empty($rule[1]) && preg_match($rule[1], $agent, $m) ? (float)$m[1] : 0] : ['', 0]
 	)+array_combine(
 		['app', 'app_version'],
 		preg_match('/MicroMessenger\/(.*?)\s/', $agent, $m) ? [str_contains($referer ?? ($_SERVER['HTTP_REFERER'] ?? ''), 'https://servicewechat.com') ? 'weapp' : 'weixin',  (float)$m[1]] : ['', 0]
@@ -334,30 +362,24 @@ function wpjam_parse_ip($ip=''){
 	if(!$cache){
 		$fp		= fopen(WP_CONTENT_DIR.'/uploads/17monipdb.dat', 'rb');
 		$offset	= unpack('Nlen', fread($fp, 4));
-		$index	= fread($fp, $offset['len'] - 4);
-		$cache	= ['fp'=>$fp, 'offset'=>$offset, 'index'=>$index];
+		$cache	= [$fp, $offset['len'], fread($fp, $offset['len'] - 4)];
 
 		register_shutdown_function(fn()=> fclose($fp));
 	}
 
-	$fp		= $cache['fp'];
-	$offset	= $cache['offset'];
-	$index	= $cache['index'];
+	[$fp, $len, $idx] = $cache;
+
 	$nip2	= pack('N', ip2long($nip));
-	$start	= (int)$ipdot[0]*4;
-	$start	= unpack('Vlen', $index[$start].$index[$start+1].$index[$start+2].$index[$start+3]);
+	$start	= unpack('Vlen', substr($idx, (int)$ipdot[0]*4, 4))['len']*8+1024;
 
-	for($start = $start['len']*8+1024; $start < $offset['len']-1024-4; $start+=8){
-		if($index[$start].$index[$start+1].$index[$start+2].$index[$start+3] >= $nip2){
-			$index_offset = unpack('Vlen', $index[$start+4].$index[$start+5].$index[$start+6]."\x0");
-			$index_length = unpack('Clen', $index[$start+7]);
+	for(; $start < $len-1024-4; $start+=8){
+		if(substr($idx, $start, 4) >= $nip2){
+			$offset = unpack('Vlen', substr($idx, $start+4, 3)."\x0")['len'];
+			$length = unpack('Clen', $idx[$start+7])['len'];
 
-			fseek($fp, $offset['len']+$index_offset['len']-1024);
+			fseek($fp, $len+$offset-1024);
 
-			$data	= explode("\t", fread($fp, $index_length['len']));
-			$data	= array_slice(array_pad($data, 3, ''), 0, 3);
-
-			return ['ip'=>$ip]+array_combine(['country', 'region', 'city'], $data);
+			return ['ip'=>$ip]+array_combine(['country', 'region', 'city'], array_slice(array_pad(explode("\t", fread($fp, $length)), 3, ''), 0, 3));
 		}
 	}
 
@@ -371,32 +393,44 @@ function wpjam_compare($a, $op, ...$args){
 	if(wpjam_is_assoc_array($op)){
 		return wpjam_is_assoc_array($a) && isset($op['key'])
 		? wpjam_match($a, $op)
-		: wpjam_compare($a, $op['compare'] ?? '', $op['value'] ?? null, (bool)($args['strict'] ?? false));
+		: wpjam_compare($a, $op['compare'] ?? '', $op['value'] ?? null, $op['strict'] ?? false);
 	}
 
-	$is		= is_array($op) || !$args;
-	$b		= $is ? $op : array_shift($args);
-	$op		= $is ? '' : $op;
-	$strict	= in_array($op, ['!==', '===']) ? true : (bool)array_shift($args);
-	$op		= $op ? strtoupper(['!=='=>'!=', '==='=>'=', '=='=>'='][$op] ?? $op) : (is_array($b) ? 'IN' : '=');
-	$inv	= ['!='=>'=', '<='=>'>', '>='=>'<', 'NOT IN'=>'IN', 'NOT BETWEEN'=>'BETWEEN', 'NOT LIKE'=>'LIKE', 'NOT REGEXP'=>'REGEXP'][$op] ?? '';
+	if(is_array($op) || !$args){
+		$b	= $op;
+		$op	= '';
+	}else{
+		$op	= strtoupper($op);
 
-	if($inv){
-		return !wpjam_compare($a, $inv, $b, $strict);
+		if(($iv = ['!='=>'=', '!=='=>'===', '<='=>'>', '>='=>'<'][$op] ?? '') || try_prefix($op, '-', 'NOT ')){
+			return !wpjam_compare($a, $iv ?: $op, ...$args);
+		}
+
+		$b	= array_shift($args);
 	}
 
+	$op	= $op ?: (is_array($b) ? 'IN' : '=');
 	$b	= in_array($op, ['IN', 'BETWEEN']) ? wp_parse_list($b) : (is_string($b) ? trim($b) : $b);
 
 	switch($op){
-		case '=':		return $strict ? $a === $b : $a == $b;
+		case '=':
+		case '==': 		return $a == $b;
+		case '===': 	return $a === $b;
 		case '>':		return $a > $b;
 		case '<':		return $a < $b;
 		case '<=>':		return $a <=> $b;
-		case 'IN':		return is_array($a) ? array_all($a , fn($v)=> in_array($v, $b, $strict)) : in_array($a, $b, $strict);
-		case 'LIKE':	return str_contains((string)$a, str_replace('%', '', (string)$b));
+		case 'IN':		return is_array($a) ? array_all($a , fn($v)=> in_array($v, $b, ...$args)) : in_array($a, $b, ...$args);
 		case 'BETWEEN':	return $a >= $b[0] && $a <= ($b[1] ?? $b[0]);
-		case 'REGEXP':	return (bool)preg_match('/'.str_replace('/', '\/', (string)$b).'/', (string)$a);
+		case 'LIKE':	return (bool)preg_match('#^'.str_replace(['%', '_'], ['.*', '.'], preg_quote((string)$b, '#')).'$#i', (string)$a);
+		case 'REGEXP':	return (bool)preg_match('#'.str_replace('#', '\#', (string)$b).'#', (string)$a);
 	}
+}
+
+function wpjam_contains($item, $term, $columns=[]){
+	return !$term || ($columns
+		? array_any($columns, fn($k)=> !empty($item[$k]) && stripos((string)$item[$k], $term) !== false)
+		: array_any($item, fn($v)=> is_array($v) ? wpjam_contains($v, $term) : stripos((string)$v, $term) !== false)
+	);
 }
 
 function wpjam_operate($a, $op, $b){
@@ -405,204 +439,163 @@ function wpjam_operate($a, $op, $b){
 			case '+': return array_merge($a, $b);
 			case '-': return wpjam_is_assoc_array($a) && wp_is_numeric_array($b) ? wpjam_except($a, $b) : array_diff($a, $b);
 		}
-	}else{
-		switch($op){
-			case '+':	return $a + $b;
-			case '-':	return $a - $b;
-			case '*':	return $a * $b;
-			case '/':	return $a / $b;
-			case '%':	return $a % $b;
-			case '**':	return $a ** $b;
-			case '.':	return $a.$b;
-			default:	return wpjam_compare($a, $op, $b);
-		}
+	}
+
+	if(in_array($op, ['/', '%']) && in_array((string)$b, ['0', '0.0', ''])){
+		throw new DivisionByZeroError('Division by zero');
+	}
+
+	switch($op){
+		case '+':	return $a + $b;
+		case '-':	return $a - $b;
+		case '*':	return $a * $b;
+		case '/':	return $a / $b;
+		case '%':	return $a % $b;
+		case '**':	return $a ** $b;
+		case '.':	return $a.$b;
+		default:	return wpjam_compare($a, $op, $b);
 	}
 }
 
-function wpjam_calc(...$args){
-	if(wpjam_is_assoc_array($args[0])){
-		$item		= $args[0];
-		$formulas	= $args[1];
-		$if_errors	= $args[2] ?? [];
-		$item		= array_diff_key($item, $formulas);
+function wpjam_calc($formula, $item=[], $errors=[]){
+	$funs	= wpjam_formula('functions');
+	$stack	= [];
 
-		foreach($formulas as $key => $formula){
-			foreach($formula as &$t){
-				if(str_starts_with($t, '$')){
-					$k	= substr($t, 1);
-					$v	= $item[$k] ?? null;
-					$t	= $v === null || $v === '' ? 0 : (is_numeric($v) ? $v : wpjam_format($v, '-,', false));
-					$t	= $t === false ? ($if_errors[$k] ?? false) : $t;
-
-					if($t === false){
-						$item[$key]	= $if_errors[$key] ?? '!无法计算';
-						goto calced;
-					}
-				}
-			}
-
-			try{
-				$item[$key]	= wpjam_calc($formula);
-			}catch(Throwable $e){
-				$item[$key]	= $if_errors[$key] ?? ($e instanceof DivisionByZeroError ? '!除零错误' : '!'.$e->getMessage());
-			}
-
-			calced:;
-
-			if(!$item[$key]){
-				unset($item[$key]);
-			}
-		}
-
-		return $item;
-	}
-
-	$exp	= $args[0];
-	$item	= $args[1] ?? [];
-	$calc	= [];
-
-	foreach(is_array($exp) ? $exp : wpjam_formula(...$args) as $t){
-		if(is_numeric($t) || $t === '|'){
-			$calc[]	= $t;
-		}elseif(try_prefix($t, '-', '$')){
-			$calc[]	= $item[$t] ?? 0;
-		}elseif(in_array($t, ['sin', 'cos', 'abs', 'max', 'min', 'sqrt', 'pow', 'round', 'floor', 'ceil', 'fmod'])){
-			$calc[]	= $t(...(array_slice(array_splice($calc, array_last(array_keys($calc, '|'))), 1) ?: wpjam_throw('invalid_calc', '函数「'.$t.'」无有效参数')));
-		}else{
-			$v	= array_pop($calc);
-
-			if(in_array($t, ['/', '%']) && in_array((string)$v, ['0', '0.0', ''])){
-				throw new DivisionByZeroError('Division by zero');
-			}
-			
-			$calc[]	= wpjam_operate(array_pop($calc), $t, $v);
-		}
-	}
-
-	return count($calc) === 1 ? $calc[0] : wpjam_throw('invalid_calc', '计算栈剩余元素数还有'.count($calc).'个');
-}
-
-function wpjam_formula(...$args){
-	if(is_array($args[0])){
-		$fields	= array_shift($args);
-
-		if($args){
-			$render	= fn($key)=> '字段'.($fields[$key]['title'] ?? '').'「'.$key.'」'.'公式「'.$fields[$key]['formula'].'」';
-			$key	= $args[0];
-			$parsed	= $args[1];
-			$path	= $args[2] ?? [];
-
-			if(isset($parsed[$key])){
-				return $parsed;
-			}
-
-			if(in_array($key, $path)){
-				wpjam_throw('invalid_formula', '公式嵌套：'.implode(' → ', wpjam_map(array_slice($path, array_search($key, $path)), fn($k)=> $render($k))));
-			}
-
-			$path[]		= $key;
-			$formula	= wpjam_formula($fields[$key]['formula'], $fields, $render($key).'错误');
-			$parsed 	= array_reduce($formula, fn($c, $t)=> try_prefix($t, '-', '$') && !empty($fields[$t]['formula']) ? wpjam_formula($fields, $t, $c, $path) : $c, $parsed);
-
-			return $parsed+[$key => $formula];
-		}
-
-		return wpjam_reduce($fields, fn($c, $v, $k)=> empty($v['formula']) ? $c : wpjam_formula($fields, $k, $c), []);
-	}
-
-	$formula	= trim(str_replace("\xc2\xa0", ' ', $args[0]));
-	$fields		= $args[1] ?? [];
-	$error		= $args[2] ?? '';
-	$throw		= fn($msg)=> wpjam_throw('invalid_formula', $error.'：'.$msg);
-	$functions	= ['sin', 'cos', 'abs', 'ceil', 'pow', 'sqrt', 'pi', 'max', 'min', 'fmod', 'round'];
-	$precedence	= ['+'=>1, '-'=>1, '**'=>2, '*'=>2, '/'=>2, '%'=>2, '>='=>3, '<='=>3, '!='=>3, '=='=>3, '>'=>3, '<'=>3,];
-	$signs		= implode('|', array_map(fn($v)=> preg_quote($v, '/'), [...array_keys($precedence), '(', ')', ',']));
-	$formula	= preg_split('/\s*('.$signs.')\s*/', $formula, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
-	$output		= $stack = [];
-	$pt			= null;
-
-	foreach($formula as $i => $t){
-		$nt	= $formula[$i+1] ?? null;
-
+	foreach(is_array($formula) ? $formula : wpjam_formula($formula) as $t){
 		if(is_numeric($t)){
-			$output[]	= str_ends_with($t, '.') ? $throw('无效的数字「'.$t.'」') : (float)$t;
-		}elseif($t[0] === '$'){
-			$output[]	= isset($fields[substr($t, 1)]) ? $t : $throw('「'.$t.'」未定义');
-		}elseif(in_array($t, $functions, true)){
+			$t	= $t+0;
+		}elseif(try_prefix($t, '-', '$')){
+			$v	= $item[$t] ?? 0;
+			$t	= is_numeric($v ?: 0) ? ($v ?: 0) : (wpjam_format($v, '-', $errors[$t] ?? null) ?? wpjam_invalid('calc', '无法计算'));
+		}else{
+			$c	= ($f = isset($funs[$t])) ? array_pop($stack) : 2;
+			$v	= $c ? array_splice($stack, 0-$c) : [];
+			$t	= $f ? $t(...array_map('wpjam_format', $v)) : wpjam_operate($v[0], $t, $v[1]);
+		}
+
+		$stack[]	= $t;
+	}
+
+	return count($stack) > 1 ? wpjam_invalid('calc', '计算错误') : wpjam_format($stack[0]);
+}
+
+function wpjam_formula($formula, $fields=null, $prefix=''){
+	if($formula === 'functions'){
+		return ['sin'=>1, 'cos'=>1, 'abs'=>1, 'ceil'=>1, 'pow'=>2, 'sqrt'=>1, 'pi'=>0, 'max'=>-2, 'min'=>-2, 'fmod'=>2, 'round'=>1, 'floor'=>1];
+	}
+
+	$functions	= wpjam_formula('functions');
+	$operators	= ['>='=>4, '<='=>4, '!='=>4, '=='=>4, '>'=>4, '<'=>4, '**'=>3, '*'=>2, '/'=>2, '%'=>2, '+'=>1, '-'=>1];
+
+	$signs	= implode('|', array_map(fn($v)=> preg_quote($v, '/'), [...array_keys($operators), '(', ')', ',']));
+	$tokens	= preg_split('/('.$signs.')/', str_replace(["\xc2\xa0", ' '], '', $formula), -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+	$output	= $stack = $counts = [];
+	$pt		= '';
+
+	foreach($tokens as $i => $t){
+		$nt	= $tokens[$i+1] ?? '';
+
+		if(is_numeric($t) || $t[0] === '$'){
+			if($pt === ')' || $nt === '('){
+				$error	= '语法错误'; break;
+			}
+
+			if($t[0] === '$' && isset($fields) && !isset($fields[substr($t, 1)])){
+				$error	= '「'.$t.'」未定义'; break;
+			}
+
+			$output[]	= $t;
+		}elseif(isset($functions[$t])){
+			if($pt === ')' || $nt !== '('){
+				$error	= '语法错误'; break;
+			}
+
 			$stack[]	= $t;
-			$output[]	= '|';
+			$counts[]	= 0;
 		}elseif($t === '('){
 			$stack[]	= $t;
 		}elseif($t === ')' || $t === ','){
-			if(!in_array('(', $stack, true) || ($t === ',' && ($pt === '(' || !$nt || $nt === ','))){
-				$throw(($t === ')' ? '未匹配' : '无效').'的「'.$t.'」');
+			while($stack && array_last($stack) !== '('){
+				$output[] = array_pop($stack);
 			}
 
-			while(array_last($stack) !== '('){
-				$output[] = array_pop($stack);
+			if(!$stack || ($t === ')' && $nt === '(') || ($t === ',' && ($pt === '(' || $nt === '' || $nt === ',' || $nt === ')'))){
+				$error	= $t === ')' ? ($stack ? '语法错误' : '()不匹配') : '无效的「,」'; break;
 			}
 
 			if($t === ')'){
 				array_pop($stack);
 
-				in_array(array_last($stack), $functions) && array_push($output, array_pop($stack));
-			}
-		}elseif(isset($precedence[$t])){
-			$r	= ((!$pt || in_array($pt, ['(', ','], true)) ? 1 : 0)+((!$nt || in_array($nt, [')', ','], true) || isset($precedence[$nt])) ? 2 : 0);
+				if(isset($functions[array_last($stack)])){
+					$output[]	= $count = array_pop($counts)+($pt === '(' ? 0 : 1);
+					$output[]	= $func = array_pop($stack);
 
-			if(in_array($t, ['+', '-'], true) && $r == 1){
+					if($count < abs($functions[$func])){
+						$error	= '函数「'.$func.'」参数不足'; break;
+					}
+				}elseif($pt === '('){
+					$error	= '空()'; break;
+				}
+			}else{
+				$counts[count($counts)-1]++;
+			}
+		}elseif(isset($operators[$t])){
+			$r	= (($pt === '' || $pt === '(' || $pt === ',' || isset($operators[$pt])) ? 1 : 0)
+				+ (($nt === '' || $nt === ')' || $nt === ',') ? 2 : 0);
+			
+			if(($t === '+' || $t === '-') && $pt !== $t && $r === 1){
 				$output[]	= 0;
-			}elseif($r){
-				$throw('操作符「'.$t.'」缺少操作数');
-			}
+			}else{
+				if($r){
+					$error	= '语法错误'; break;
+				}
 
-			while($stack && ($v = array_last($stack)) !== '('){
-				if(in_array($v, $functions) || $precedence[$t] <= $precedence[$v]){
-					$output[]	= array_pop($stack);
-				}else{
-					break;
+				while($stack && ($v = array_last($stack)) !== '('){
+					if(isset($functions[$v]) || $operators[$t] <= $operators[$v]){
+						$output[]	= array_pop($stack);
+					}else{
+						break;
+					}
 				}
 			}
 
 			$stack[] = $t;
 		}else{
-			$throw('无效的符号「'.$t.'」');
+			$error	= '无效的「'.$t.'」'; break;
 		}
 
 		$pt	= $t;
 	}
-	
-	return array_merge($output, array_reverse(in_array('(', $stack, true) ? $throw('未匹配的「(」') : $stack));
+
+	$error ??= in_array('(', $stack, true) ? '()不匹配' : '';
+
+	return $error ? wpjam_invalid('formula', ($prefix ?: $formula.'：').$error) : array_merge($output, array_reverse($stack));
 }
 
-function wpjam_format($value, $format, ...$args){
-	if(is_array($value) && is_array($format)){
-		return wpjam_reduce($format ?: [], fn($c, $v, $k)=> isset($c[$k]) ? wpjam_set($c, $k, wpjam_format($c[$k], ...$v)) : $c, $value);
-	}
-
+function wpjam_format($value, $format='', ...$args){
 	if(is_numeric($value)){
 		if($format == ','){
-			return number_format(trim($value), (int)($args[0] ?? 2));
+			return number_format($value, (int)($args[0] ?? 2));
 		}elseif($format == '%'){
-			return round($value * 100, ($args[0] ?? 2) ?: 2).'%';
-		}elseif(!$format && $args && is_numeric($args[0])){
-			return round($value, $args[0]);
+			return round($value*100, ($args[0] ?? 2) ?: 2).'%';
+		}else{
+			return !$format && $args && is_numeric($args[0]) ? round($value, $args[0]) : $value+0;
 		}
-
-		return $value / 1;
-	}elseif(in_array($format, ['-,', '-%'])){
-		if(is_string($value)){
-			$value	= str_replace(',', '', trim($value));
-
-			if($format == '-%' && try_suffix($value, '-', '%')){
-				$value	= is_numeric($value) ? $value / 100 : $value;
-			}
-		}
-
-		return is_numeric($value) ? $value / 1 : ($args ? $args[0] : $value);
 	}
 
-	return $value;
+	$un	= $format == '-';
+
+	if($un && is_string($value)){
+		$v	= trim($value);
+		$v	= ($p = $v[-1] === '%') ? substr($v, 0, -1) : $v;
+		$v	= str_replace(',', '', $v);
+
+		if(is_numeric($v)){
+			return $p ? $v/100 : $v+0;
+		}
+	}
+
+	return $un && $args ? $args[0] : $value;
 }
 
 function wpjam_match($item, ...$args){
@@ -611,12 +604,11 @@ function wpjam_match($item, ...$args){
 	}
 
 	$args	= wpjam_parse_show_if(is_string($args[0]) ? $args : $args[0]);
-	$value	= wpjam_get($item, $args['key']);
-	$value2	= $args['value'] ?? null;
+	$value	= wpjam_get($item, wpjam_pull($args, 'key'));
 
 	if(!isset($args['compare'])){
 		if(!empty($args['callable']) && (is_closure($value) || (is_callable($value) && is_array($value)))){
-			return $value($value2, $item);
+			return $value($args['value'] ?? null, $item);
 		}
 
 		if(isset($args['if_null']) && is_null($value)){
@@ -625,30 +617,21 @@ function wpjam_match($item, ...$args){
 	}
 
 	if(is_array($value) || !empty($args['swap'])){
-		[$value, $value2]	= [$value2, $value];
+		[$value, $args['value']]	= [$args['value'] ?? null, $value];
 	}
 
-	return wpjam_compare($value, $args['compare'] ?? null, $value2, (bool)($args['strict'] ?? false));
+	return wpjam_compare($value, $args);
 }
 
 function wpjam_matches($arr, $args, $op='AND'){
 	$op	= strtoupper($op);
 
-	if(!in_array($op, ['AND', 'ALL', 'OR', 'ANY', 'NOT'])){
-		return false;
-	}
-
-	if(!is_callable($args)){
-		return wpjam_matches($args, fn($v, $k)=> wpjam_match($arr, ...(wpjam_is_assoc_array($v) ? [$v+['key'=>$k]] : [$k, $v])), $op);
-	}
-
-	if(in_array($op, ['AND', 'ALL'], true)){
-		return array_all($arr, $args);
-	}elseif(in_array($op, ['OR', 'ANY'], true)){
-		return array_any($arr, $args);
-	}else{
-		return !array_all($arr, $args);
-	}
+	return in_array($op, ['AND', 'ALL', 'OR', 'ANY', 'NOT'])
+	? (is_callable($args)
+		? (in_array($op, ['OR', 'ANY'], true) ? array_any($arr, $args) : (in_array($op, ['AND', 'ALL'], true) === array_all($arr, $args)))
+		: wpjam_matches($args, fn($v, $k)=> wpjam_match($arr, ...(wpjam_is_assoc_array($v) ? [$v+['key'=>$k]] : [$k, $v])), $op)
+	)
+	: false;
 }
 
 // Array
@@ -781,44 +764,30 @@ function wpjam_nest($items, $options=[], $parent=null, $depth=0){
 	return $parsed;
 }
 
-function wpjam_at($arr, $index, ...$args){
-	if(is_string($arr)){
-		[$sep, $index]	= is_int($index) ? [$args[0] ?? '', $index] : [$index, $args[0] ?? 0];
+function wpjam_at($arr, ...$args){
+	$arr	= is_string($arr) && $args ? explode(array_shift($args), $arr) : $arr;
 
-		$sep && ($arr = explode($sep, $arr));
-	}
-
-	if(is_array($arr) || is_string($arr)){
-		$count	= is_array($arr) ? count($arr) : strlen($arr);
-		$index	= $index >= 0 ? $index : $count + $index;
-
-		if($index >= 0 && $index < $count){
-			return is_string($arr) ? $arr[$index] : $arr[array_keys($arr)[$index]];
-		}
-	}
+	return is_array($arr) ? array_first(array_slice($arr, $args[0] ?? 0, 1)) : null;
 }
 
-function wpjam_add_at($arr, $index, $key, ...$args){
-	if(!$args && !is_array($key)){
-		$args	= [$key];
-		$key	= null;
+function wpjam_add_at($arr, $at, $data, ...$args){
+	if($args && !is_array($data)){
+		$data = is_null($data) ? $args : [$data=>$args[0]];
 	}
 
-	if(is_null($key)){
-		array_splice($arr, $index, 0, $args);
-
-		return $arr;
+	if(wpjam_is_assoc_array($data)){
+		return array_replace(array_slice($arr, 0, $at, true), $data)+array_slice($arr, $at, null, true);
 	}
 
-	return array_replace(array_slice($arr, 0, $index, true), (is_array($key) ? $key : [$key=>$args[0] ?? '']))+array_slice($arr, $index, null, true);
+	array_splice($arr, $at, 0, $data);
+
+	return $arr;
 }
 
 function wpjam_rotate($arr, $step=1){
 	if(($count = count($arr)) <= 1 || ($step %= $count) === 0){
 		return $arr;
 	}
-
-	$step	= $step < 0 ? $count + $step : $step;
 
 	return [...array_slice($arr, $step), ...array_slice($arr, 0, $step)];
 }
@@ -879,11 +848,9 @@ function wpjam_pull(&$arr, $key, ...$args){
 }
 
 function wpjam_assoc($arr){
-	if(!wp_is_numeric_array($arr) && (!($sub = wpjam_filter($arr, fn($v, $k) => is_int($k))) || !array_is_list($sub))){
-		return $arr;
-	}
-
-	return wpjam_array($arr, fn($k, $v)=> is_int($k) ? $v : $k);
+	return (!wp_is_numeric_array($arr) && (!($sub = wpjam_filter($arr, fn($v, $k) => is_int($k))) || !array_is_list($sub)))
+	? $arr
+	: wpjam_array($arr, fn($k, $v)=> is_int($k) ? $v : $k);
 }
 
 function wpjam_except($arr, $key, ...$args){
@@ -900,8 +867,13 @@ function wpjam_except($arr, $key, ...$args){
 		return $arr;
 	}
 
-	if(is_array($key) || wpjam_exists($arr, $key)){
-		return array_diff_key($arr, is_array($key) ? array_flip($key) : [$key=>'']);
+	if(is_array($key)){
+		return array_reduce($key, fn($c, $k)=> wpjam_except($c, $k), $arr);
+	}
+
+	if(array_key_exists($key, $arr)){
+		unset($arr[$key]);
+		return $arr;
 	}
 
 	if(str_ends_with($key, '[]') && $args){
@@ -914,12 +886,14 @@ function wpjam_except($arr, $key, ...$args){
 	while($key){
 		$k	= array_shift($key);
 
-		if(empty($key)){
-			unset($sub[$k]);
-		}elseif(wpjam_exists($sub, $k)){
+		if(!wpjam_exists($sub, $k)){
+			break;
+		}
+
+		if($key){
 			$sub = &$sub[$k];
 		}else{
-			break;
+			unset($sub[$k]);
 		}
 	}
 
@@ -940,18 +914,11 @@ function wpjam_diff($arr, $data, $compare='value'){
 	}
 
 	foreach($data as $k => $v){
-		if(isset($arr[$k])){
-			if(wpjam_is_assoc_array($v) && wpjam_is_assoc_array($arr[$k])){
-				$arr[$k]	= wpjam_diff($arr[$k], $v, $compare);
-
-				if(!$arr[$k]){
-					unset($arr[$k]);
-				}
-			}else{
-				if($compare == 'key' || $arr[$k] == $v){
-					unset($arr[$k]);
-				}
-			}
+		if(isset($arr[$k]) && (array_all([$v, $arr[$k]], 'wpjam_is_assoc_array')
+			? !($arr[$k] = wpjam_diff($arr[$k], $v, $compare))
+			: ($compare == 'key' || $arr[$k] == $v)
+		)){
+			unset($arr[$k]);
 		}
 	}
 
@@ -968,9 +935,9 @@ function wpjam_filter($arr, $cb=null, ...$args){
 	if($cb === 'unique'){
 		$arr	= array_unique($arr);
 	}elseif($cb && is_array($cb) && !is_callable($cb)){
-		$arr	= wpjam_is_assoc_array($cb) ? array_filter($arr, fn($v)=> wpjam_matches($v, $cb, ...$args)) : array_intersect_key($arr, array_flip($cb));
+		$arr	= wp_is_numeric_array($cb) ? array_intersect_key($arr, array_flip($cb)) : array_filter($arr, fn($v)=> wpjam_matches($v, $cb, ...$args));
 	}elseif($cb){
-		$arr	= ($args[0] ?? ($cb == 'isset')) ? array_map(fn($v)=> is_array($v) ? wpjam_filter($v, $cb, true) : $v, $arr) : $arr;
+		$arr	= ($args[0] ?? ($cb === 'isset')) ? array_map(fn($v)=> is_array($v) ? wpjam_filter($v, $cb, true) : $v, $arr) : $arr;
 		$arr	= array_filter($arr, $cb === 'isset' ? fn($v)=> !is_null($v) : $cb, ARRAY_FILTER_USE_BOTH);
 	}else{
 		$arr	= array_filter($arr);
@@ -984,44 +951,33 @@ function wpjam_sort($arr, ...$args){
 		return $arr;
 	}
 
-	if(!$args || is_int($args[0])){
-		sort($arr, ...$args);
+	$t	= $args[0] ?? null;
+
+	if($cb = (!$args || is_int($t)) ? 'sort' : (in_array($t, ['', 'k', 'a', 'kr', 'ar', 'r'], true) ? array_shift($args).'sort' : '')){
+		$cb($arr, ...$args);
 
 		return $arr;
 	}
 
-	if(in_array($args[0], ['', 'k', 'a', 'kr', 'ar', 'r'], true)){
-		(array_shift($args).'sort')($arr, ...$args);
-
-		return $arr;
-	}
-
-	$is_asc	= fn($v)=> is_int($v) ? $v === SORT_ASC : strtolower($v) === 'asc';
-
-	if(wpjam_is_assoc_array($args[0])){
-		$args	= wpjam_reduce($args[0], fn($carry, $order, $field)=>[
-			...$carry,
-			($column = array_column($arr, $field)),
-			$is_asc($order) ? SORT_ASC : SORT_DESC,
-			is_numeric(array_first($column)) ? SORT_NUMERIC : SORT_REGULAR
-		], []);
-	}elseif(is_callable($args[0]) || is_string($args[0])){
-		$field	= $args[0];
+	if(wpjam_is_assoc_array($t)){
+		$args	= wpjam_reduce($t, fn($c, $v, $k)=>[...$c, array_column($arr, $k), $v, null], []);
+	}elseif(is_callable($t)){
 		$order	= $args[1] ?? '';
-
-		if(is_callable($field)){
-			$column	= array_map($field, ($order === 'key' ? array_keys($arr) : $arr));
-			$flag	= $args[2] ?? SORT_NUMERIC;
-		}else{
-			$default= $args[2] ?? 0;
-			$column	= array_map(fn($item)=> wpjam_get($item, $field, $default), $arr);
-			$flag	= is_numeric($default) ? SORT_NUMERIC : SORT_REGULAR;
-		}
-
-		$args	= [$column, ($is_asc($order) ? SORT_ASC : SORT_DESC), $flag];
+		$args	= [array_map($t, ($order === 'key' ? array_keys($arr) : $arr)), $order, $args[2] ?? null];
+	}elseif(is_string($t)){
+		$flag	= is_numeric($args[2] ?? '') ? SORT_NUMERIC : null;
+		$args	= [array_map(fn($v)=> wpjam_get($v, $t, $args[2] ??= 0), $arr), $args[1] ?? '', $flag];
 	}
 
-	array_push($args, range(1, count($arr)), SORT_ASC, SORT_NUMERIC);
+	array_push($args, range(count($arr), 1), '', null);
+
+	foreach($args as $i => $v){
+		if($i % 3 === 1){
+			$args[$i]	= (is_int($v) ? $v === SORT_ASC : strtolower($v) === 'asc') ? SORT_ASC : SORT_DESC;
+		}elseif($i % 3 === 2){
+			$args[$i]	??= is_numeric(array_first($args[$i-2])) ? SORT_NUMERIC : SORT_REGULAR;
+		}
+	}
 
 	if(wp_is_numeric_array($arr)){
 		$keys	= array_keys($arr);
@@ -1039,36 +995,20 @@ function wpjam_exists($arr, $key){
 	return is_array($arr) ? array_key_exists($key, $arr) : (is_object($arr) ? isset($arr->$key) : false);
 }
 
-function wpjam_keys($key, ...$args){
-	if(!$args){
-		return wpjam_keys($key, '[]') ?: (wpjam_keys($key, '.') ?: []);
+function wpjam_keys($key, $type=null){
+	if(!$type){
+		return wpjam_keys($key, '[]') ?: wpjam_keys($key, '.');
 	}
 
-	$keys	= [];
-
-	if($args[0] == '.'){
-		if(str_contains($key, '.')){
-			return explode('.', $key);
-		}
-	}elseif($args[0] == '[]'){
-		$total	= strlen($key);
-		$cursor	= 0;
-
-		while($cursor < $total){
-			$offset	= $keys ? 1 : 0;
-			$len	= $offset && $key[$cursor] !== '[' ? 0 : strcspn($key, $offset ? ']' : '[', $cursor);
-			$sub	= ($len > $offset && $len < $total-$cursor) ? substr($key, $cursor+$offset, $len-$offset) : '';
-
-			if($sub === '' || str_contains($sub, $offset ? '[' : ']')){
-				return [];
-			}
-
-			$keys[]	= $sub;
-			$cursor	+= $len + $offset;
-		}
+	if($type == '.'){
+		return str_contains($key, '.') ? explode('.', $key) : [];
 	}
 
-	return $keys;
+	if($type == '[]'){
+		$keys	= ($p = strpos($key, '[')) && $key[-1] == ']' ? explode('][', substr($key, 0, $p).']'.substr($key, $p, -1)) : [];
+
+		return array_any($keys, fn($k)=> !$k || str_contains($k, '[') || str_contains($k, ']')) ? [] : $keys;
+	}
 }
 
 function wpjam_names($name){
@@ -1087,28 +1027,24 @@ function wpjam_get($arr, $key, $default=null, ...$args){
 		return $default;
 	}
 
+	$type	= $args[0] ?? '';
+
+	if(is_null($key) || ($type !== '.' && $key === '[]')){
+		return $arr;
+	}
+
 	if(!is_array($key)){
-		if(isset($key) && wpjam_exists($arr, $key)){
+		if($type !== '.' && str_ends_with($key, '[]')){
+			$value	= wpjam_get($arr, substr($key, 0, -2), $default, '[]');
+
+			return is_object($value) ? [$value] : (array)$value;
+		}
+
+		if(wpjam_exists($arr, $key)){
 			return $arr[$key];
 		}
 
-		if(is_null($key)){
-			return $arr;
-		}
-
-		if(!$args || $args[0] === '[]'){
-			if($key === '[]'){
-				return $arr;
-			}
-
-			if(str_ends_with($key, '[]')){
-				$value	= wpjam_get($arr, substr($key, 0, -2), $default, '[]');
-
-				return is_object($value) ? [$value] : (array)$value;
-			}
-		}
-
-		$key	= wpjam_keys($key, ...$args);
+		$key	= wpjam_keys($key, $type);
 	}
 
 	return _wp_array_get($arr, $key, $default);
@@ -1136,32 +1072,26 @@ function wpjam_set($arr, $key, ...$args){
 		return $arr;
 	}
 
+	$type	= $args[0] ?? '';
+
+	if(is_null($key) || ($type !== '.' && $key === '[]')){
+		$arr[] = $value;
+
+		return $arr;
+	}
+
 	if(!is_array($key)){
-		if(isset($key) && wpjam_exists($arr, $key)){
+		if($type !== '.' && str_ends_with($key, '[]')){
+			$items		= wpjam_get($arr, $key, [], '[]');
+			$items[]	= $value;
+
+			return wpjam_set($arr, substr($key, 0, -2), $items, '[]');
+		}
+
+		if(wpjam_exists($arr, $key)){
 			$arr[$key] = $value;
 
 			return $arr;
-		}
-
-		if(is_null($key)){
-			$arr[] = $value;
-
-			return $arr;
-		}
-
-		if(!$args || $args[0] === '[]'){
-			if($key === '[]'){
-				$arr[] = $value;
-
-				return $arr;
-			}
-
-			if(str_ends_with($key, '[]')){
-				$items		= wpjam_get($arr, $key, [], '[]');
-				$items[]	= $value;
-
-				return wpjam_set($arr, substr($key, 0, -2), $items, '[]');
-			}
 		}
 
 		$key	= wpjam_keys($key, ...$args) ?: [$key];
@@ -1225,45 +1155,25 @@ if(!function_exists('array_except')){
 	}
 }
 
-if(!function_exists('array_first')){
-	function array_first($array){
-		return $array === [] ? null : $array[array_key_first($array)];  
-	}
-}
-
-if(!function_exists('array_last')){
-	function array_last($array){
-		return $array === [] ? null : $array[array_key_last($array)];  
-	}
-}
-
 function wpjam_move($arr, $id, $data){
 	$arr	= array_values($arr);
 	$index	= array_search($id, $arr);
 	$arr	= wpjam_diff($arr, [$id]);
 
-	$index === false && wpjam_throw('invalid_id', '无效的 ID');
+	$index === false && wpjam_invalid('id', '无效的 ID');
 
 	if(isset($data['pos'])){
 		$index	= $data['pos'];
 	}elseif(!empty($data['up'])){
-		$index == 0 && wpjam_throw('invalid_position', '已经是第一个了，不可上移了！');
-
-		$index--;
+		$index	-= $index == 0 ? wpjam_invalid('position', '已经是第一个了，不可上移了！') : 1;
 	}elseif(!empty($data['down'])){
-		$index == count($arr) && wpjam_throw('invalid_position', '已经最后一个了，不可下移了！');
-
-		$index++;
+		$index	+= $index == count($arr) ? wpjam_invalid('position', '已经最后一个了，不可下移了！') : 1;
 	}else{
-		$k		= array_find(['next', 'prev'], fn($k)=> isset($data[$k]));
-		$index	= ($k && isset($data[$k])) ? array_search($data[$k], $arr) : false;
-
-		$index === false && wpjam_throw('invalid_position', '无效的移动位置');
-
-		$index	+= $k == 'prev' ? 1 : 0;
+		$index	= ($k = array_find(['next', 'prev'], fn($k)=> isset($data[$k]))) ? array_search($data[$k], $arr) : false;
+		$index	+= $index === false ? wpjam_invalid('position', '无效的移动位置') : ($k == 'prev' ? 1 : 0);
 	}
 
-	return wpjam_add_at($arr, $index, null, $id);
+	return wpjam_add_at($arr, $index, $id);
 }
 
 // Bit
@@ -1346,7 +1256,9 @@ function wpjam_remove_pre_tab($str, $times=1){
 }
 
 function wpjam_preg_replace($pattern, $replace, $subject, $limit=-1, &$count=null, $flags=0){
-	$result	= is_closure($replace) ? preg_replace_callback($pattern, $replace, $subject, $limit, $count, $flags) : preg_replace($pattern, $replace, $subject, $limit, $count);
+	$result	= is_closure($replace)
+	? preg_replace_callback($pattern, $replace, $subject, $limit, $count, $flags)
+	: preg_replace($pattern, $replace, $subject, $limit, $count);
 
 	if(is_null($result)){
 		trigger_error(preg_last_error_msg());
@@ -1362,11 +1274,12 @@ function wpjam_serialize($data){
 
 function wpjam_unserialize($serialized, $cb=null){
 	if($serialized){
-		$result	= @unserialize($serialized, ['allowed_classes'=>false]);
+		$args	= ['allowed_classes'=>false];
+		$result	= @unserialize($serialized, $args);
 
 		if(!$result){
 			$fixed	= preg_replace_callback('!s:(\d+):"(.*?)";!', fn($m)=> 's:'.strlen($m[2]).':"'.$m[2].'";', $serialized);
-			$result	= @unserialize($fixed, ['allowed_classes'=>false]);
+			$result	= @unserialize($fixed, $args);
 
 			$result && $cb && $cb($fixed);
 		}
@@ -1453,6 +1366,26 @@ function wpjam_get_current_page_url(){
 	return set_url_scheme('http://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI']);
 }
 
+// Cookie
+function wpjam_cookie($key, ...$args){
+	if(!$args){
+		$value	= $_COOKIE[$key] ?? null;
+
+		if($value && is_string($value) && (($value[0] == '{' && $value[-1] == '}') || ($value[0] == '[' && $value[-1] == ']'))){
+			$value	= wpjam_json_decode($value) ?: $value;
+		}
+
+		return $value;
+	}
+
+	$_COOKIE[$key]	= $args[0];
+
+	$value	= is_array($args[0]) ? wpjam_json_encode($args[0]) : $args[0];
+	$ttl	= is_null($args[0]) ? (time()-3600) : ($ttl = $args[1] ?? 86400)+($ttl && $ttl < time() ? time() : 0);
+
+	wpjam_map(array_unique([COOKIEPATH, SITECOOKIEPATH]), fn($path)=> setcookie($key, $value, $ttl, $path, COOKIE_DOMAIN, is_ssl(), true));
+}
+
 // Date
 function wpjam_date($format, $ts=null){
 	$ts	??= time();
@@ -1503,7 +1436,7 @@ function wpjam_get_qqv_mp4($vid, $cache=true){
 	strlen($vid) > 20 && wpjam_throw('error', '无效的腾讯视频');
 
 	if($cache){
-		return wpjam_transient('qqv_mp4:'.$vid, fn()=> wpjam_get_qqv_mp4($vid, false), HOUR_IN_SECONDS*6);
+		return wpjam_transient('qqv_mp4:'.$vid, fn()=> wpjam_get_qqv_mp4($vid, false), 3600*6);
 	}
 
 	$resp	= wpjam_remote_request('http://vv.video.qq.com/getinfo?otype=json&platform=11001&vid='.$vid, ['timeout'=>4, 'throw'=>true]);
@@ -1527,28 +1460,4 @@ function wpjam_get_qqv_id($id_or_url){
 
 function wpjam_is_mobile_number($number){
 	return preg_match('/^0{0,1}(1[3,5,8][0-9]|14[5,7]|166|17[0,1,3,6,7,8]|19[8,9])[0-9]{8}$/', $number);
-}
-
-function wpjam_set_cookie($key, $value, $expire=DAY_IN_SECONDS){
-	if(is_null($value)){
-		unset($_COOKIE[$key]);
-
-		$expire	= time()-YEAR_IN_SECONDS;
-	}else{
-		$_COOKIE[$key]	= $value;
-
-		$expire	+= $expire < time() ? time() : 0;
-	}
-
-	setcookie($key, $value ?? '', $expire, COOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
-
-	COOKIEPATH != SITECOOKIEPATH && setcookie($key, $value ?? '', $expire, SITECOOKIEPATH, COOKIE_DOMAIN, is_ssl(), true);
-}
-
-function wpjam_clear_cookie($key){
-	wpjam_set_cookie($key, null);
-}
-
-function wpjam_get_filter_name($name, $type){
-	return (str_starts_with($name, 'wpjam') ? '' : 'wpjam_').str_replace('-', '_', $name).'_'.$type;
 }

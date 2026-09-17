@@ -6,16 +6,14 @@ Description: Rewrites 扩展让可以优化现有 Rewrites 规则和添加额外
 Version: 2.0
 */
 class WPJAM_Rewrite{
-	public static function __callStatic($method, $args){
-		if(str_ends_with($method, '_setting')){
-			if($method == 'update_setting'){
-				flush_rewrite_rules();
+	public static function get_setting($key){
+		return WPJAM_Basic::get_setting($key);
+	}
 
-				$args	= array_slice($args, 0, 2);
-			}
+	public static function update_setting(...$args){
+		flush_rewrite_rules();
 
-			return WPJAM_Basic::$method(...$args);
-		}
+		return WPJAM_Basic::update_setting(...array_slice($args, 0, 2));
 	}
 
 	public static function query_items($args){

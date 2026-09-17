@@ -28,9 +28,9 @@ trait WPJAM_Call_Trait{
 	}
 
 	public static function mod(&$method, $mod){
-		if(str_ends_with($mod, '_')){
+		if($mod[-1] === '_'){
 			return try_prefix($method, '-', $mod);
-		}elseif(str_starts_with($mod, '_')){
+		}elseif($mod[0] === '_'){
 			return try_suffix($method, '-', $mod);
 		}
 
@@ -78,7 +78,7 @@ trait WPJAM_Items_Trait{
 				$add	= $action === 'add';
 
 				if(isset($key) ? wpjam_exists($items, $key) === $add : !$add){
-					wpjam_throw('invalid_item_key', isset($key) ? '「'.$key.'」'.($add ? '已' : '不').'存在，无法'.(['add'=>'添加', 'update'=>'编辑', 'delete'=>'删除'][$action] ?? '操作') : 'key不能为空');
+					wpjam_invalid('item_key', isset($key) ? '「'.$key.'」'.($add ? '已' : '不').'存在，无法'.(['add'=>'添加', 'update'=>'编辑', 'delete'=>'删除'][$action] ?? '操作') : 'key不能为空');
 				}
 
 				if(isset($item)){
@@ -113,7 +113,7 @@ trait WPJAM_Items_Trait{
 	public function add_item($key, ...$args){
 		[$key, $item]	= ($args && !is_bool($key) && (is_scalar($key) || is_null($key))) ? [$key, array_shift($args)] : [null, $key];
 
-		return $this->process_items(fn($items, $item)=> wpjam_add_at($items, count($items), $key, $item), $args[0] ?? '', $item, $key, 'add');
+		return $this->process_items(fn($items, $item)=> wpjam_set($items, $key, $item), $args[0] ?? '', $item, $key, 'add');
 	}
 
 	public function add_items($items, $field=''){
@@ -243,8 +243,8 @@ class WPJAM_Args implements ArrayAccess, IteratorAggregate, JsonSerializable{
 		return $this;
 	}
 
-	public function process_arg($key, $cb){
-		$value	= wpjam_call($cb, $this->get_arg($key));
+	public function process_arg($key, $value){
+		$value	= is_closure($value) ? wpjam_call($value, $this->get_arg($key), $key) : $value;
 
 		return is_null($value) ? $this->delete_arg($key) : $this->update_arg($key, $value);
 	}
@@ -556,7 +556,7 @@ class WPJAM_Data_Type extends WPJAM_Args{
 	public function with_field($action, $value, $field){
 		$res	= ($cb = $this->model.'::with_field') && wpjam_callback($cb) ? wpjam_try($cb, $action, $field, $value) : ($this->{$action.'_value'} ? $this->call($action.'_value', $value, $field) : $value);
 
-		return $action == 'validate' && is_null($res) ? wpjam_throw('invalid_field_value', $field->_title.'「'.$value.'」的值无效') : $res;
+		return $action == 'validate' && is_null($res) ? wpjam_invalid('field_value', $field->_title.'「'.$value.'」的值无效') : $res;
 	}
 
 	public function query_label($value){
@@ -590,7 +590,7 @@ class WPJAM_Data_Type extends WPJAM_Args{
 	}
 
 	public function nonce_action($args){
-		return $this->name.':'.wpjam_json_encode(wpjam_sort(wpjam_except($args, ['search', 'exclude', 'parent']), 'k'));
+		return $this->name.':'.wpjam_json_encode(wpjam_pick($args, ['label_field', 'id_field']));
 	}
 
 	public static function register($name, $args=[]){
@@ -691,7 +691,7 @@ class WPJAM_JSON extends WPJAM_Register{
 
 		do_action('wpjam_api', wpjam_var('json', $name));
 
-		wpjam_send_json(wpjam_catch(self::get($name) ?: wp_die('接口未定义', 'invalid_api')));
+		wpjam_send_json(wpjam_catch(self::get($name) ?: wpjam_invalid('api', '接口未定义')));
 	}
 
 	public static function get_defaults(){
@@ -798,7 +798,7 @@ class WPJAM_JSON extends WPJAM_Register{
 			$vars	= ['cache_results'=>true]+($status ? ['status'=>$status] : [])+$vars;
 
 			if($type){
-				!post_type_exists($type) && wp_die('invalid_post_type');
+				!post_type_exists($type) && wpjam_invalid('post_type');
 
 				$name	= $vars[(is_post_type_hierarchical($type) ? 'pagename' : 'name')] ?? '';
 			}else{
@@ -811,7 +811,7 @@ class WPJAM_JSON extends WPJAM_Register{
 			if(!$name){
 				$id		= ($args['id'] ?? 0) ?: (int)wpjam_param('id', ['required'=>true]);
 				$type	??= get_post_type($id);
-				$vars	= ['p'=>($type && (get_post_type($id) == $type)) ? $id : wp_die('invalid_post_id')]+$vars;
+				$vars	= ['p'=>($type && (get_post_type($id) == $type)) ? $id : wpjam_invalid('post_id')]+$vars;
 			}
 
 			$vars['post_type']	= $type;
@@ -819,13 +819,13 @@ class WPJAM_JSON extends WPJAM_Register{
 			$wp->query_posts();
 
 			if(empty($id) && !$status && !$query->have_posts()){
-				$id	= apply_filters('old_slug_redirect_post_id', null) ?: wp_die('invalid_post_id');
+				$id	= apply_filters('old_slug_redirect_post_id', null) ?: wpjam_invalid('post_id');
 
 				$wp->query_vars	= ['post_type'=>'any', 'p'=>$id]+wpjam_except($vars, ['name', 'pagename']);
 				$wp->query_posts();
 			}
 
-			$parsed	= $query->have_posts() ? array_first(wpjam_get_posts($query, $args)) : wp_die('invalid_parameter');
+			$parsed	= $query->have_posts() ? array_first(wpjam_get_posts($query, $args)) : wpjam_invalid('parameter');
 			$output	= $output ?: $parsed['post_type'];
 
 			return wpjam_pull($parsed, ['share_title', 'share_image', 'share_data'])+[$output => $parsed];
@@ -833,7 +833,7 @@ class WPJAM_JSON extends WPJAM_Register{
 	}
 
 	public static function taxonomy($args){
-		$object		= wpjam_get_taxonomy(wpjam_get($args, 'taxonomy')) ?: wpjam_throw('invalid_taxonomy');
+		$object		= wpjam_get_taxonomy(wpjam_get($args, 'taxonomy')) ?: wpjam_invalid('taxonomy');
 		$mapping	= wpjam_array(wp_parse_args(wpjam_pull($args, 'mapping') ?: []), fn($k, $v)=> [$k, wpjam_param($v)], true);
 
 		return [(wpjam_pull($args, 'output') ?: $object->plural) => array_values(wpjam_query('term', array_merge($args, $mapping)))];
@@ -1467,7 +1467,7 @@ class WPJAM_Meta_Option extends WPJAM_Args{
 			if($callback = $this->callback ?: $this->update_callback){
 				$res	= is_callable($callback) ? call_user_func($callback, $id, $data, $fields) : false;
 
-				return $res === false ? new WP_Error('invalid_callback') : $res;
+				return $res === false ? wpjam_invalid('callback') : $res;
 			}
 
 			return wpjam_update_metadata($this->meta_type, $id, $data, $object->get_defaults());

@@ -343,18 +343,15 @@ jQuery(function($){
 
 		let show_if	= this.data('show_if');
 
-		if(!show_if){
-			return this;
-		}
-
 		if(!args.length){
-			let key	= show_if.key;
-			let sk	= show_if.current?.includes('__') && show_if.current.split('__').slice(0,-1).concat(key).join('__');
+			let key	= show_if ? show_if.key : this.data('filter_key');
+			let sk	= show_if ? show_if.current?.includes('__') && show_if.current.split('__').slice(0,-1).concat(key).join('__') : '';
 			let sib	= sk && this.closest('form').find('.field-key-'+sk)[0];
 			let dep	= sib || this.closest('form').find('.field-key-'+key)[0] || $('.field-key-'+key)[0] || $('#'+key)[0];
-			let $el	= dep ? $(dep).wpjam_control() : '';
 
 			if(dep){
+				let $el	= $(dep).wpjam_control();
+
 				this.addClass('dep-on-'+($el.data('dep-id') || $el.attr('data-dep-id', 'dep-'+$.guid++).data('dep-id')));
 
 				if(sib){
@@ -368,15 +365,15 @@ jQuery(function($){
 		}
 
 		let val		= args[0];
-		let show	= val === null ? false : wpjam.compare(val, show_if);
+		let show	= show_if ? (val === null ? false : wpjam.compare(val, show_if)) : null;
 
-		this.add(this.nextUntil(':not(br, .after, p.description)')).add(this.prev('.before')).toggleClass('hidden', !show);
+		show_if && this.add(this.nextUntil(':not(br, .after, p.description)')).add(this.prev('.before')).toggleClass('hidden', !show);
 
 		if(this.is('option')){
-			this.prop('disabled', !show).is(':selected') && !show && this.closest('select').prop('selectedIndex', 0).wpjam_depend();
+			show_if && this.prop('disabled', !show).is(':selected') && !show && this.closest('select').prop('selectedIndex', 0).wpjam_depend();
 		}else{
 			(this.is(':input') ? this : this.find(':input')).wpjam_each($el => {
-				$el.closest('.disabled')[0] || $el.prop('disabled', !show);
+				show_if && ($el.closest('.disabled')[0] || $el.prop('disabled', !show));
 
 				if($el.is(this) || $el.parent().is(this)){
 					let {filter_key: fk, query_args: qv}	= $el.data() || {};
@@ -401,7 +398,7 @@ jQuery(function($){
 		return this;
 	};
 
-	$.fn.wpjam_show_if.selector	= '[data-show_if]';
+	$.fn.wpjam_show_if.selector	= '[data-show_if], [data-filter_key]';
 
 	$.fn.wpjam_data_type = function(){
 		let $mu		= this.closest('.mu-text');
@@ -1011,9 +1008,15 @@ jQuery(function($){
 		let {type, options}	= _.isObject(chart) ? chart : {};
 
 		if(type && !_.isEmpty(options)){
-			type == 'Donut' && this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
+			if(type == 'Donut'){
+				this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
+			}else if(type == 'Line' || type == 'Bar'){
+				options.yLabelFormat	??= y =>isNaN(y) ? y : Number(y).toFixed(y > 1 ? 2 : 4);
+			}else{
+				return;
+			}
 
-			['Line', 'Bar', 'Donut'].includes(type) && Morris[type]({...options, element: this.prop('id')});
+			Morris[type]({...options, element: this.prop('id')});
 
 			this.removeAttr('data-chart');
 		}
@@ -1762,6 +1765,16 @@ jQuery(function($){
 
 			if(e.type == 'click'){
 				if($el.hasClass('list-table-action')){
+					if($el.data('action') == 'add_item'){
+						let max	= parseInt($el.closest('[data-field]').data('max_items'));
+
+						if(max && $el.prevAll('[data-i]').length >= max){
+							alert('最多只能添加'+max+'个');
+
+							return false;
+						}
+					}
+
 					return;
 				}
 
@@ -1783,7 +1796,7 @@ jQuery(function($){
 					return;
 				}
 
-				if($el.closest('td, th')[0] && (wpjam.plugin_page || !$el.attr('href').startsWith($('#adminmenu a.current').attr('href')))){
+				if($el.closest('tbody')[0] && (wpjam.plugin_page || !$el.attr('href').startsWith($('#adminmenu a.current').attr('href')))){
 					return;
 				}
 
