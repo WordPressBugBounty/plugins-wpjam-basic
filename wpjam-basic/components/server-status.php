@@ -18,7 +18,7 @@ class WPJAM_Server_Status{
 				$unit	= wpjam_pull($item[1], 'unit') ?: 1;
 				$data	= wpjam_map(wpjam_pull($item[1], 'labels'), fn($v, $k) => ['label'=>$v, 'count'=>round($item[0][$k]/$unit, 2)]);
 
-				echo wpjam_chart('donut', $data, $item[1]+['total'=>true, 'chart_width'=>150, 'table_width'=>320]);
+				echo wpjam_chart('donut', $data, $item[1]+['total'=>true, 'legend'=>false, 'show_line_num'=>false, 'chart_width'=>150, 'table_width'=>320]);
 			}
 		}else{
 			?>

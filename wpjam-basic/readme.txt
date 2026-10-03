@@ -53,12 +53,18 @@ WPJAM Basic 主要功能，就是去掉 WordPress 当中一些不常用的功能
 
 == Changelog ==
 
+= 7.1.2 = 
+* 新增函数 wpjam_contains，在数组中搜索指定关键字，并支持指定搜索字段。
+* 新增函数 wpjam_invalid，wpjam_throw 的快捷方式，抛出 invalid_ 类型的异常
+* 新增函数 wpjam_get_post_cache / wpjam_update_post_cache 基于最后修改时间进行缓存
+* 新增函数 wpjam_get_or_create 先获取如无则创建（并通过锁防止重复创建）
+* 新增函数 wpjam_table 用于渲染表格
+* 新增函数 wpjam_loop 通过生成器方式解析post（支持 callback）
+
 = 7.1 =
 * 新增函数 wpjam_cookie 实现 Cookie 的获取和设置，并支持数组方式。
 * 新增函数 wpjam_columnar，将关联数组转换为列式存储格式（列名+索引数组），并支持字典压缩重复值。
 * 新增函数 wpjam_records，将列式存储格式（列名+索引数组）还原为关联数组，自动解码字典值。
-* 新增函数 wpjam_contains，在数组中搜索指定关键字，并支持指定搜索字段。
-* 新增函数 wpjam_invalid，wpjam_throw 的快捷方式，抛出 invalid_ 类型的异常
 * 新增函数 wpjam_once 实现一次的 Hook
 * 新增函数 wpjam_visitor 获取当前访客的唯一标识
 * 新增函数 wpjam_remainin 访客频率限制，返回当前访客在剩余次数，0 表示超限

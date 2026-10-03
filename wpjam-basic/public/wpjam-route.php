@@ -335,6 +335,45 @@ function wpjam_retry($times, $cb, ...$args){
 	return $result;
 }
 
+function wpjam_get_or_create($get, $create, $args=[]){
+	if($result = $get()){
+		return $result;
+	}
+
+	$lock	= $args['lock'] ?? '';
+
+	if(!$lock){
+		return $create();
+	}
+
+	$group	= $args['group'] ?? false;
+	$retry	= $args['retry'] ??= 10;
+
+	while(wpjam_lock($lock, ($args['expires'] ?? 60), $group)){
+		$retry--;
+
+		sleep(1);
+
+		if($result = $get()){
+			return $result;
+		}
+
+		if($retry <= 0){
+			return;
+		}
+	}
+
+	if($retry < $args['retry'] && ($result = $get())){
+		return $result;
+	}
+
+	try{
+		return $create();
+	}finally{
+		wpjam_lock($lock, -1, $group);
+	}	
+}
+
 function wpjam_value_callback($args, $name){
 	return wpjam_get($args, ['data', ...(array)$name]) ?? wpjam_callback('value_callback', $args, $name);
 }
@@ -474,9 +513,7 @@ function wpjam_die_handler($msg, $title='', $args=[]){
 		$item	= $msg;
 	}else{
 		$code	= $args['code'] ?? '';
-		$data	= $code && $title ? ['modal'=>['title'=>$title, 'content'=>$msg]] : [];
-		$item	= !$code && !$title && is_string($msg) ? wpjam_error($msg) : [];
-		$item	= $item ?: ['errcode'=>(($code ?: $title) ?: 'error'), 'errmsg'=>$msg]+$data;
+		$item	= (!$code && !$title && is_string($msg) ? wpjam_error($msg) : []) ?: ['errcode'=>($code ?: $title) ?: 'error', 'errmsg'=>$msg]+($code && $title ? ['modal'=>['title'=>$title, 'content'=>$msg]] : []);
 	}
 
 	wpjam_send_json($item);
@@ -591,13 +628,9 @@ function wpjam_activation(...$args){
 	return $args ? $result : wpjam_call_multiple('add_action', $result);
 }
 
-function wpjam_loaded($action='', ...$args){
-	if($action){
-		return wpjam_load('wp_loaded', fn()=> do_action($action, ...$args));
-	}
-
-	if(!did_action('plugins_loaded')){
-		return add_action('plugins_loaded', 'wpjam_loaded', 0);
+function wpjam_loaded(...$args){
+	if($args && $args[0]){
+		return wpjam_load('wp_loaded', fn()=> do_action(...$args));
 	}
 
 	wpjam_activation();
@@ -613,8 +646,8 @@ function wpjam_loaded($action='', ...$args){
 
 	add_filter('request',	'wpjam_parse_query_vars', 11);
 
-	add_action('loop_start',	'wpjam_loop', 1);
-	add_action('loop_end',		'wpjam_loop', 999);
+	add_action('loop_start',	'wpjam_queries', 1);
+	add_action('loop_end',		'wpjam_queries', 999);
 
 	wpjam_hook('pre_do_shortcode_tag',	'wpjam_shortcode', 1, 2);
 	wpjam_hook('do_shortcode_tag',		'wpjam_shortcode', 999, 2);
@@ -625,7 +658,7 @@ function wpjam_loaded($action='', ...$args){
 	wpjam_hooks('gettext, gettext_with_context', fn($trans, $text, ...$args)=> wpjam_translate([$trans, $text], ...$args), 10, 4);
 }
 
-function wpjam_loop(...$args){
+function wpjam_queries(...$args){
 	static $object;
 	$object ??= wpjam_hook([
 		'bind'		=> true,
@@ -637,9 +670,17 @@ function wpjam_loop(...$args){
 }
 
 function wpjam_is(...$args){
-	$query	= ($args && is_object($args[0])) ? array_shift($args) : array_last(wpjam_loop());
+	$query	= ($args && is_object($args[0])) ? array_shift($args) : array_last(wpjam_queries());
 
-	return $query && ($query instanceof WP_Query) ? wpjam_query('is', $query, ...$args) : false;
+	if($query && ($query instanceof WP_Query) && $query->is_main_query()){
+		if($args){
+			return array_any(wp_parse_list(array_shift($args)), fn($t)=> [$query, 'is_'.$t](...$args));
+		}
+
+		return $query->is_front_page() ? 'home' : (array_find(['feed', 'author', 'category', 'tag', 'tax', 'post_type_archive', 'search', 'date', 'archive', '404', 'page', 'single', 'attachment'], fn($t)=> [$query, 'is_'.$t]()) ?: true);
+	}
+
+	return false;
 }
 
 function wpjam_shortcode(...$args){
@@ -686,7 +727,7 @@ function wpjam_can($cap, ...$args){
 
 // Extend
 function wpjam_load_extends($dir, $args=[]){
-	is_dir($dir) && (new WPJAM_Extend($dir, $args))->load();
+	return is_dir($dir) ? new WPJAM_Extend($dir, $args) : null;
 }
 
 // Admin
@@ -813,8 +854,6 @@ if(is_admin()){
 
 wpjam();
 
-wpjam_loaded();
-
 is_admin() && wpjam_admin();
 
 load_textdomain('wpjam', dirname(__DIR__).'/template/wpjam-'.get_locale().'.l10n.php');
@@ -837,4 +876,5 @@ wpjam_style('remixicon',	['src'=>'/remixicon/4.2.0/remixicon.min.css', 'method'=
 
 wpjam_load_extends(dirname(__DIR__).'/components');
 
+wpjam_load('plugins_loaded', 'wpjam_loaded', 0);
 

@@ -187,10 +187,7 @@ function wpjam_timer($cb, ...$args){
 }
 
 function wpjam_timer_hook($value){
-	$name	= current_filter();
-	$object	= $GLOBALS['wp_filter'][$name] ?? null;
-
-	if($object){
+	if($object = $GLOBALS['wp_filter'][current_filter()] ?? null){
 		foreach($object->callbacks as &$hooks){
 			foreach($hooks as &$hook){
 				$hook['function']	= fn(...$args)=> wpjam_timer($hook['function'], ...$args);
@@ -206,11 +203,11 @@ function wpjam_get_filter_name($name, $type){
 }
 
 function wpjam_parse_query($query, $args=[], $parse=true){
-	return wpjam_query($parse, $query, $args);
+	return wpjam_get_posts($query, $args, $parse ?: 'render');
 }
 
 function wpjam_render_query($query, $args=[]){
-	return wpjam_query('render', $query, $args);
+	return wpjam_get_posts($query, $args, 'render');
 }
 
 function wpjam_register_config(...$args){
@@ -820,7 +817,7 @@ function wpjam_is_over($name, $max, $time, $group=false, $action='increment'){
 }
 
 function wpjam_related_posts($args=[]){
-	echo wpjam_get_related_posts(null, $args, false);
+	echo wpjam_get_related_posts(null, $args);
 }
 
 function wpjam_new_posts($args=[]){
@@ -1163,11 +1160,12 @@ function_alias('wpjam_add_admin_error', 'wpjam_admin_add_error');
 
 function_alias('wpjam_map_meta_cap', 'wpjam_register_capability');
 function_alias('wpjam_setting', 'wpjam_get_setting_object');
-function_alias('wpjam_get_post_excerpt', 'get_post_excerpt');
+
 function_alias('wpjam_attr', 'wpjam_attribute_string');
 function_alias('wpjam_download_url', 'wpjam_download_image');
 function_alias('wpjam_is_external_url', 'wpjam_is_external_image');
 
+function_alias('wpjam_get_post_excerpt', 'get_post_excerpt');
 function_alias('wpjam_get_post_option_fields', 'wpjam_get_post_fields');
 
 function_alias('wpjam_get_items', 'wpjam_get_current_items');
@@ -1570,11 +1568,5 @@ trait WPJAM_Meta_Trait{
 
 	public static function get_meta_table(){
 		return self::get_meta_type_object()->get_table();
-	}
-}
-
-class WPJAM_Posts{
-	public static function __callStatic($method, $args){
-		return wpjam_query($method, ...$args);
 	}
 }

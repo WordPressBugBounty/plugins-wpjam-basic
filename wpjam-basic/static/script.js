@@ -1003,26 +1003,82 @@ jQuery(function($){
 	$.fn.wpjam_modal.selector	= '.notice-modal:first';
 	$.fn.wpjam_modal.events		= [{name: 'click',	selector: '.show-modal, .is-dismissible .notice-dismiss'}];
 
-	$.fn.wpjam_chart = function(){
-		let chart	= this.data('chart');
-		let {type, options}	= _.isObject(chart) ? chart : {};
+	$.fn.wpjam_chart = function () {
+		const {type, data, options = {}}	= this.data('chart') || {};
 
-		if(type && !_.isEmpty(options)){
-			if(type == 'Donut'){
-				this.height(Math.max(160, Math.min(240, this.next('table').height() || 240))).width(this.height());
-			}else if(type == 'Line' || type == 'Bar'){
-				options.yLabelFormat	??= y =>isNaN(y) ? y : Number(y).toFixed(y > 1 ? 2 : 4);
-			}else{
-				return;
-			}
-
-			Morris[type]({...options, element: this.prop('id')});
-
-			this.removeAttr('data-chart');
+		if(!type || !data || !this.find('canvas')[0]){
+			return;
 		}
-	}
+
+		let aspect	= 1;
+
+		if(['doughnut', 'pie'].includes(type)){
+			if(!options?.plugins?.legend?.display){
+				this.width(180).height(180);
+			}else{
+				aspect	= 0.8;
+			}
+		}else{
+			aspect	= 3;
+		}
+
+		this.css({'aspect-ratio': aspect});
+
+		new Chart(this.find('canvas')[0], {type, data, options: {
+			scales: type === 'bar' ? {y: {beginAtZero: true}} : {},
+			aspectRatio: aspect,
+		...options}});
+
+		this.removeAttr('data-chart');
+	};
 
 	$.fn.wpjam_chart.selector	= '[data-chart]';
+
+	$.fn.wpjam_format = function(data){
+		if(data){
+			let value	= this.text();
+			let number	= Number(value);
+
+			if(value !== '' && !isNaN(number)){
+				_.some(data.conditional_styles, rule => wpjam.compare(number, rule) && this.css(_.reduce({
+					bold: {'font-weight': 'bold'},
+					strikethrough: {'text-decoration': 'line-through'},
+					color: '',
+					'background-color': ''
+				}, (acc, prop, key)=> rule[key] ? {...acc, ...(prop || _.pick(rule, key))} : acc, {})));
+
+				if(data.format || data.precision){
+					if(data.format == '%'){
+						number	= parseFloat((number*100).toFixed(data.precision || 2))+'%';
+					}else{
+						number	= data.precision ? parseFloat(number.toFixed(data.precision)) : number;
+						number	= data.format == ',' ? number.toLocaleString() : number;
+					}
+
+					return this.text(number).attr('value', value);
+				}	
+			}
+		}else{
+			data	= _.pick(this.data(), ['format', 'precision', 'conditional_styles']);
+
+			if(this.is('th') || (this.is('i') && this.closest('th')[0])){
+				let index	= (this.is('th') ? this : this.closest('th')).index();
+				this.closest('table').find('tbody tr').wpjam_each($tr => $tr.find('td').eq(index).wpjam_each($td => $td.wpjam_format(data)));
+			}else{
+				this.wpjam_format(data)
+			}
+		}
+
+		return this;
+	};
+
+	$.fn.wpjam_format.selector	= '[data-format], [data-precision], [data-conditional_styles]';
+
+	$.fn.wpjam_table = function(){
+		$(this).append($('<tfoot>').html($(this).find('thead').html()));
+	};
+
+	$.fn.wpjam_table.selector	= 'table[data-foot]';
 
 	$.fn.wpjam_tabs = function(hash){
 		hash	= window.location.hash = hash || window.location.hash;
@@ -1628,51 +1684,15 @@ jQuery(function($){
 		},
 
 		render: function($el){
-			$el.is('td, th') || _.each(this.columns, (column, sel)=> {
-				let {sticky, left, nowrap, description, ...data}	= column;
+			$el.is('td, th') || _.each(this.columns, (data, sel)=> {
 				let $col	= $('.'+sel);
 
-				sticky && $col.addClass('sticky-column').css('left', left);
-				nowrap && $col.addClass('nowrap');
-
-				if(_.isEmpty(data)){
-					return;
-				}
-
-				$col.wpjam_each($td => {
-					if(data.check){
-						let $input	= $td.find('input');
-
-						return $input[0] ? $input.attr('title', '选择'+($td.nextAll('.column-primary')[0].childNodes[0].textContent.trim() || $input.val())) : ($td.find('span')[0] || $td.append('<span class="dashicons dashicons-minus"></span>'));
-					}
-
-					let value	= $td.text();
-					let number	= Number(value);
-
-					if(value === '' || isNaN(number)){
-						return;
-					}
-
-					_.some(data.conditional_styles, rule => wpjam.compare(number, rule) && $td.css(_.reduce({
-						bold: {'font-weight': 'bold'},
-						strikethrough: {'text-decoration': 'line-through'},
-						color: '',
-						'background-color': ''
-					}, (acc, prop, key)=> rule[key] ? {...acc, ...(prop || _.pick(rule, key))} : acc, {})));
-
-					let {format, precision}	= data;
-
-					if(format || precision){
-						if(format == '%'){
-							number	= parseFloat((number*100).toFixed(precision || 2))+'%';
-						}else{
-							number	= precision ? parseFloat(number.toFixed(precision)) : number;
-							number	= format == ',' ? number.toLocaleString() : number;
-						}
-
-						$td.text(number).attr('value', value);
-					}
-				});
+				data.sticky	&& $col.addClass('sticky-column').css('left', data.left);
+				data.nowrap	&& $col.addClass('nowrap');
+				data.check	&& $col.wpjam_each($td => $td.find('input')[0]
+					? $td.find('input').attr('title', '选择'+($td.nextAll('.column-primary')[0].childNodes[0].textContent.trim() || $td.find('input').val()))
+					: ($td.find('span')[0] || $td.append('<span class="dashicons dashicons-minus"></span>'))
+				);
 			});
 
 			$el.find('.items.sortable').add($el.is('table') && this.sortable && this.$tbody).wpjam_each($s => {

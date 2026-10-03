@@ -347,6 +347,15 @@ class WPJAM_DB extends WPJAM_Args{
 					$wpdb->field_types	= array_merge(($types = $wpdb->field_types), $this->field_types);
 				}
 			}elseif(in_array($method, ['get_results', 'get_ids', 'get_row', 'get_col', 'get_var'])){
+				static $tz;
+
+				if(!isset($tz)){
+					$tz	= (float)get_option('gmt_offset');
+					$tz	= sprintf('%+03d:%02d', (int)$tz, abs(($tz - (int)$tz) * 60));
+
+					$GLOBALS['wpdb']->query("SET time_zone = '{$tz}';");
+				}
+
 				if($method == 'get_ids'){
 					$args[0]['fields']	= $this->table.'.'.$this->primary_key;
 
