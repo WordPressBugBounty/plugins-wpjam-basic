@@ -39,30 +39,39 @@ class WPJAM_Server_Status{
 			$items[]	= ['服务器IP',	'内网：'.gethostbyname(gethostname())];
 			$items[]	= ['系统',		php_uname('s')];
 
-			if(strpos(ini_get('open_basedir'), ':/proc') !== false){
-				if(@is_readable('/proc/cpuinfo')){
-					$cpus	= wpjam_lines(file_get_contents('/proc/cpuinfo'), "\n\n");
+			if(@is_readable('/proc/cpuinfo')){
+				if($cpus = wpjam_lines(file_get_contents('/proc/cpuinfo'), "\n\n")){
 					$base[]	= count($cpus).'核';
 				}
-				
-				if(@is_readable('/proc/meminfo')){
-					$mems	= wpjam_lines(file_get_contents('/proc/meminfo'));
-					$mem	= (int)substr(array_find($mems, fn($m) => str_starts_with($m, 'MemTotal:')), 9);
+			}
+			
+			if(@is_readable('/proc/meminfo')){
+				$mems	= wpjam_lines(file_get_contents('/proc/meminfo'));
+				$line	= array_find($mems, fn($m)=> str_starts_with($m, 'MemTotal:'));
+
+				if($line && ($mem = (int)substr($line, 9))) {
 					$base[]	= round($mem/1024/1024).'G';
 				}
+			}
 
-				if(!empty($base)){
-					$items[]	= ['配置',	'<strong>'.implode('&nbsp;/&nbsp;', $base).'</strong>'];
-				}
-			
-				if(@is_readable('/proc/meminfo')){
-					$uptime		= wpjam_lines(file_get_contents('/proc/uptime'), ' ');
+			if(!empty($base)){
+				$items[]	= ['配置',	'<strong>'.implode('&nbsp;/&nbsp;', $base).'</strong>'];
+			}
+		
+			if(@is_readable('/proc/uptime')){
+				$uptime		= wpjam_lines(file_get_contents('/proc/uptime'), ' ');
+
+				if(($uptime[0] ?? 0) > 0){
 					$items[]	= ['运行时间',	human_time_diff(time()-$uptime[0])];
-				}
 
-				
-				$items[]	= ['空闲率',		round($uptime[1]*100/($uptime[0]*count($cpus)), 2).'%'];
-				$items[]	= ['系统负载',	'<strong>'.implode('&nbsp;&nbsp;',sys_getloadavg()).'</strong>'];
+					if(!empty($cpus) && isset($uptime[1])){
+						$items[]	= ['空闲率',		round($uptime[1]*100/($uptime[0]*count($cpus)), 2).'%'];
+					}
+				}
+			}
+
+			if($load = function_exists('sys_getloadavg') ? sys_getloadavg() : []){
+				$items[]	= ['系统负载',	'<strong>'.implode('&nbsp;&nbsp;', $load).'</strong>'];
 			}
 
 			$items[]	= ['文档根目录',	$_SERVER['DOCUMENT_ROOT']];
@@ -146,10 +155,10 @@ class WPJAM_Server_Status{
 					['总未命中次数',		$stats['get_misses']],
 					['总获求次数',		$stats['cmd_get']],
 					['总请求次数',		$stats['cmd_set']],
-					['Item平均大小',		size_format($stats['bytes']/$stats['curr_items'])],
+					['Item平均大小',		size_format($stats['curr_items'] ? $stats['bytes']/$stats['curr_items'] : 0)],
 				];
 			}elseif($id == 'efficiency'){
-				return wpjam_map(['get_hits'=>'命中', 'get_misses'=>'未命中', 'cmd_get'=>'获取', 'cmd_set'=>'设置'], fn($v, $k)=> ['每秒'.$v.'次数', round($stats[$k]/$stats['uptime'])]);
+				return wpjam_map(['get_hits'=>'命中', 'get_misses'=>'未命中', 'cmd_get'=>'获取', 'cmd_set'=>'设置'], fn($v, $k)=> ['每秒'.$v.'次数', round($stats['uptime'] ? $stats[$k]/$stats['uptime'] : 0)]);
 			}elseif($id == 'options'){
 				return wpjam_array(wpjam_get_reflection('class', 'Memcached', 'Constants'), fn($k, $v)=> str_starts_with($k, 'OPT_') ? [$k, [$k, $GLOBALS['wp_object_cache']->get_mc()->getOption($v)]] : null);
 			}
@@ -168,7 +177,7 @@ class WPJAM_Server_Status{
 			]+((!$GLOBALS['is_apache'] || !function_exists('apache_get_modules')) ? [] : [
 				'apache'	=> ['title'=>'Apache模块',	'context'=>'side']
 			])
-		]]+(function_exists('opcache_get_status') ? ['opcache'=>[
+		]]+(function_exists('opcache_get_status') && opcache_get_status() ? ['opcache'=>[
 			'title'		=> 'Opcache',
 			'function'	=> 'dashboard',
 			'widgets'	=> [

@@ -30,21 +30,19 @@ class WPJAM_Shortcode{
 
 			return '<'.$tag.($attr['class'] ? ' class="'.$attr['class'].'"' : '').">\n".implode($items)."</".$tag.">\n";
 		}elseif($tag == 'table'){
-			$attr	= shortcode_atts(['cellpading'=>0, 'cellspacing'=>0, 'class'=>'', 'caption'=>'', 'th'=>0], $attr);
+			$attr	= shortcode_atts(['cellpadding'=>0, 'cellspacing'=>0, 'caption'=>'', 'th'=>0], $attr);
 			$render	= $attr['caption'] ? '<caption>'.$attr['caption'].'</caption>' : '';
 			$rows	= wpjam_lines(str_replace(["\r\n", "<br />\n", "\n<p>", "</p>\n"], ["\n", "\n", "\n", "\n\n"], $text), "\n\n");		
 
-			if($attr['th'] == 1 || $attr['th'] == 4){	// 1-横向，4-横向并且有 footer 
+			if($rows && ($attr['th'] == 1 || $attr['th'] == 4)){	// 1-横向，4-横向并且有 footer
 				$thead	= '<tr>'."\n".implode(wpjam_lines(array_shift($rows), fn($v)=> '<th>'.$v.'</th>'."\n")).'</tr>'."\n";
 				$render .= '<thead>'."\n".$thead.'</thead>'."\n";
 				$render .= $attr['th'] == 4 ? '<tfoot>'."\n".$thead.'</tfoot>'."\n" : '';
 			}
 
-			$tag	= $attr['th'] == 2 && $i == 0 ? 'th' : 'td';	// 2-纵向
-			$rows	= array_map(fn($tr)=> '<tr>'."\n".implode(wpjam_lines($tr, fn($v)=> '<'.$tag.'>'.$v.'</'.$tag.'>'."\n")), $rows);
-			$render	.= '<tbody>'."\n".implode($rows).'</tbody>'."\n";
+			$rows	= array_map(fn($tr)=> '<tr>'."\n".implode(wpjam_map(wpjam_lines($tr), fn($v, $i)=> '<'.($tag = $attr['th'] == 2 && $i == 0 ? 'th' : 'td').'>'.$v.'</'.$tag.'>'."\n")).'</tr>'."\n", $rows);
 			
-			return wpjam_tag('table', wpjam_pick($attr, ['border', 'cellpading', 'cellspacing', 'width', 'class']), $render);
+			return wpjam_tag('table', wpjam_pick($attr, ['border', 'cellpadding', 'cellspacing', 'width', 'class']), $render.'<tbody>'."\n".implode($rows).'</tbody>'."\n");
 		}
 	}
 
@@ -58,8 +56,8 @@ class WPJAM_Shortcode{
 
 	public static function get_fields($action_key='', $id=0){
 		return [
-			'tag'		=> ['title'=>'简码',		'type'=>'view',	'show_admin_column'=>true],
-			'callback'	=> ['title'=>'回调函数',	'type'=>'view',	'show_admin_column'=>true]
+			'tag'		=> ['title'=>'简码',		'type'=>'view',	'column'=>['show'=>true]],
+			'callback'	=> ['title'=>'回调函数',	'type'=>'view',	'column'=>['show'=>true]]
 		];
 	}
 
@@ -92,7 +90,7 @@ function wpjam_add_video_parser($args){
 	static $object;
 	$object ??= wpjam_hook('wp_video_shortcode_override', 'bind', function($override, $attr, $content){
 		$src	= $attr['src'] ?? $content;
-		$src	= $src ? wpjam_find($this->parsers ?: [], fn($v)=> $v, fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : '') : '';
+		$src	= $src ? wpjam_find($this->parsers ?: [], fn($v)=> preg_match('#'.$v[0].'#i', $src, $matches) ? $v[1]($matches) : null) : '';
 
 		if($src){
 			$attr	= shortcode_atts(['width'=>0, 'height'=>0], $attr);

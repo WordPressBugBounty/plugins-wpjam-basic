@@ -37,7 +37,7 @@ class WPJAM_Related_Posts{
 	}
 
 	public static function get_options(){
-		return ['post'=>__('Post')]+wpjam_reduce(get_post_types(['_builtin'=>false]), fn($c, $v, $k)=> is_post_type_viewable($v) && get_object_taxonomies($v) ? wpjam_set($c, $v, wpjam_get_post_type_setting($v, 'title')) : $c, []);
+		return ['post'=>__('Post')]+wpjam_reduce(get_post_types(['_builtin'=>false]), fn($c, $v, $k)=> is_post_type_viewable($v) && get_object_taxonomies($v) ? wpjam_set($c, $v, wpjam_post_type($v, 'title')) : $c, []);
 	}
 
 	public static function on_the_post($post, $query){
@@ -62,9 +62,9 @@ class WPJAM_Related_Posts{
 				$args['size']	= wpjam_parse_size($args['size'], 2);
 			}
 
-			empty($args['rendered']) && wpjam_once('wpjam_post_json', '+', fn($json, $id, $args)=> wpjam_is(wpjam_get($args, 'query'), 'single', $id) ? ['related'=>wpjam_get_related_posts($id, $args, true)] : [], 10, 3);
+			empty($args['rendered']) && wpjam_once('wpjam_post_json', '+', fn($id, $context)=> wpjam_query($context['query'], 'single', $id) ? ['related'=>wpjam_get_related_posts($id, $args, true)] : [], 10, 3);
 		}else{
-			!empty($args['auto']) && wpjam_once('the_content', '.', fn()=> wpjam_is('single', get_the_ID()) ? wpjam_get_related_posts(get_the_ID(), $args, false) : '', 11);
+			!empty($args['auto']) && wpjam_once('the_content', '.', fn()=> wpjam_query('is', 'single', get_the_ID()) ? wpjam_get_related_posts(get_the_ID(), $args, false) : '', 11);
 		}
 	}
 
@@ -84,7 +84,7 @@ class WPJAM_Related_Posts{
 	}
 
 	public static function add_hooks(){
-		is_admin() || wpjam_once('the_post', fn($post, $query)=> wpjam_is($query, 'single', $post->ID) && self::on_the_post($post, $query), 10, 2);
+		is_admin() || wpjam_once('the_post', fn($post, $query)=> wpjam_query($query, 'single', $post->ID) && self::on_the_post($post, $query), 10, 2);
 
 		add_shortcode('related', [self::class, 'shortcode']);
 	}

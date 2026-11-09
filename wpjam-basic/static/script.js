@@ -3,6 +3,22 @@ jQuery(function($){
 		return this.each((i, el) => cb($(el), i));
 	};
 
+	$.fn.wpjam_filter = function(attr, value){
+		let cb;
+
+		if(typeof attr === 'function'){
+			cb	= attr;
+		}else if(!attr || value == null){
+			cb	= ()=> false;
+		}else {
+			let values	= _.map(_.filter([].concat(value), v=> v != null), String);
+
+			cb	= ($el) => values.includes($el.attr(attr));
+		}
+
+		return this.filter((i, el) => cb.call(el, $(el), i));
+	};
+
 	$.fn.wpjam_on = function(name, selector, callback, options){
 		let cb	= !_.isFunction(callback) && $.fn[callback] ? (e, ...args) => $(e.currentTarget)[callback](e, ...args) : callback;
 
@@ -102,7 +118,15 @@ jQuery(function($){
 
 			if(type == 'img'){
 				this.prevAll('img, a.del-img')[value ? 'remove' : 'wpjam_remove']();
-				this.val(value ? value.value : '').before(value ? '<img src="'+value.url+data.thumb_args+'" /><a class="del-img dashicons dashicons-no-alt"></a>' : '');
+
+				if(value){
+					this.val(value.value).before(
+						$('<img>', {src:value.url+data.thumb_args}),
+						$('<a>', {class:'del-img dashicons dashicons-no-alt'})
+					);
+				}else{
+					this.val('');
+				}
 			}else{
 				this.val(value);
 			}
@@ -182,7 +206,7 @@ jQuery(function($){
 			}
 
 			if(this.is('select')){
-				this.val(value != null && this.find(`option[value="${value}"]`)[0] ? value : this.find('option:first').val());
+				this.val(value != null && this.find('option').wpjam_filter('value', value)[0] ? value : this.find('option:first').val());
 			}else{
 				let $btn	= type === 'select' && $('<button>', {type: 'button', text: data.show_option_all || '请选择'}).prop('popoverTargetElement', this[0]).insertBefore(this.attr('popover', 'auto').wrap('<div class="mu-select"></div>'));
 
@@ -215,7 +239,7 @@ jQuery(function($){
 					});
 				});
 
-				this.attr('id', id+'_options').find([].concat(value === null ? [] : value).map(v => `input[value="${v}"]`).join(',')).trigger("click");
+				value != null && this.attr('id', id+'_options').find('input').wpjam_filter('value', value).trigger("click");
 			}
 		}else{
 			this.is('.tiny-text, .small-text') && this.addClass('expandable');
@@ -291,8 +315,17 @@ jQuery(function($){
 
 		this.after('<div class="media-item"><div class="progress"><div class="percent">0%</div><div class="bar"></div></div></div>').prev('span').remove();
 
+		let $media	= this.next('.media-item');
 		let data	= new FormData();
 		let xhr		= new XMLHttpRequest();
+		let fail	= message => {
+			$media.remove();
+			alert(message || '文件上传失败，请稍后重试。');
+		};
+
+		xhr.onerror		= ()=> fail();
+		xhr.onabort		= xhr.onerror;
+		xhr.ontimeout	= xhr.onerror;
 
 		_.each(wpjam.with_page({
 			name,
@@ -305,19 +338,37 @@ jQuery(function($){
 		xhr.upload.onprogress	= e => { 
 			let p = Math.round(e.loaded/e.total*100);
 
-			this.next('.media-item').find('.bar').width(p*2).end().find('.percent').text(p+'%');
+			$media.find('.bar').width(p*2).end().find('.percent').text(p+'%');
 		};
 
 		xhr.onload	= ()=> {
-			let res = JSON.parse(xhr.responseText);
+			let res;
 
-			res.errcode ? alert(res.errmsg) : this.val(res.path).wpjam_label();
+			try{
+				res	= JSON.parse(xhr.responseText);
+			}catch(e){
+				return fail();
+			}
 
-			this.next('.media-item').remove();
+			if(!res || typeof res !== 'object'){
+				return fail();
+			}
+
+			if(xhr.status < 200 || xhr.status >= 300 || res.errcode){
+				return fail(res.errmsg);
+			}
+
+			this.val(res.path).wpjam_label();
+			$media.remove();
 		};
 
 		xhr.open('POST', ajaxurl);
-		xhr.send(data);
+
+		try{
+			xhr.send(data);
+		}catch(e){
+			fail();
+		}
 	}
 
 	$.fn.wpjam_label = function(){
@@ -327,11 +378,12 @@ jQuery(function($){
 			$label.next('input').val('').change().end().wpjam_remove();
 		}else{
 			let tag		= this.hasClass('tag-input');
-			let label	= this.data('label') || (this.data('type') === 'uploader' ? this.val().split('/').pop() : tag && this.val());
+			let custom	= this.data('label');
+			let label	= custom || (this.data('type') === 'uploader' ? this.val().split('/').pop() : tag && this.val());
 
 			label && this.before($('<span>', {class:'query-label'}).append([
 				$('<span>', {class:'dashicons del-item'}).on('click', ()=> this.wpjam_label()),
-				tag ? label : $('<span>', {class:'truncate-text', text: label}),
+				tag ? (custom || document.createTextNode(label)) : $('<span>', {class:'truncate-text', text: label}),
 			]).addClass(!tag && this.data('class'))).removeData('label').removeAttr('data-label');
 		}
 	};
@@ -344,10 +396,12 @@ jQuery(function($){
 		let show_if	= this.data('show_if');
 
 		if(!args.length){
+			let $fields	= this.closest('form').find('[class*="field-key-"]');
+
 			let key	= show_if ? show_if.key : this.data('filter_key');
 			let sk	= show_if ? show_if.current?.includes('__') && show_if.current.split('__').slice(0,-1).concat(key).join('__') : '';
-			let sib	= sk && this.closest('form').find('.field-key-'+sk)[0];
-			let dep	= sib || this.closest('form').find('.field-key-'+key)[0] || $('.field-key-'+key)[0] || $('#'+key)[0];
+			let sib	= sk && $fields.wpjam_filter($el=> $el.hasClass('field-key-'+sk))[0];
+			let dep	= sib || $fields.wpjam_filter($el=> $el.hasClass('field-key-'+key))[0] || $('[class*="field-key-"]').wpjam_filter($el=> $el.hasClass('field-key-'+key))[0] || $('#'+key)[0];
 
 			if(dep){
 				let $el	= $(dep).wpjam_control();
@@ -597,7 +651,7 @@ jQuery(function($){
 			}
 
 			if(action == 'add'){
-				let $tag	= $('<span class="query-label" contenteditable="false" data-value="'+args[0].value+'">'+args[0].label+'</span>');
+				let $tag	= $('<span>', {class:'query-label', contenteditable:'false', 'data-value':args[0].value, text:args[0].label});
 				let blank	= document.createTextNode(' ');
 
 				if(word){
@@ -645,7 +699,7 @@ jQuery(function($){
 
 		value && value.forEach(item => {
 			if(typeof item === 'object'){
-				$('<span class="query-label" contenteditable="false" data-value="'+item.value+'">'+item.label+'</span>').appendTo($editor);
+				$('<span>', {class:'query-label', contenteditable:'false', 'data-value':item.value, text:item.label}).appendTo($editor);
 			}else{
 				$editor.append(document.createTextNode(item));
 			}
@@ -784,9 +838,9 @@ jQuery(function($){
 				prefix	= prefix.endsWith('[]') ? prefix.slice(0, -2) : prefix;
 				prefix	= prefix.substring(0, prefix.lastIndexOf('['));
 				label	= label.replace(/\${(.*?)}/g, (match, name) => {
-					let $field	= this.find('[name="'+prefix+'['+name+']"]');
+					let $field	= this.find(':input').wpjam_filter('name', prefix+'['+name+']');
 
-					return $field.is('select') ? $field.find('option:selected').text().trim() : $field.val();
+					return _.escape($field.is('select') ? $field.find('option:selected').text().trim() : $field.val());
 				});
 
 				$('<span class="tag-label">'+label+'</span>').append(this.find('.del-item').clone()).prependTo(this).on('dblclick', (e)=>$(e.target).remove());
@@ -951,17 +1005,21 @@ jQuery(function($){
 		let src		= this.data('preview') || this.attr('href');
 		let rel		= this.attr('rel');
 		let $btn	= $('<button type="button" class="dashicons dashicons-no-alt del-icon"></button>');
-		let $modal	= $('<dialog class="wpjam-lightbox"></dialog>').append([$btn.one('click', ()=> $modal.remove()), $('<img src="'+src+'">')]).appendTo($('body'));
+		let $modal	= $('<dialog class="wpjam-lightbox"></dialog>').append([$btn.one('click', ()=> $modal.remove()), $('<img>', {src})]).appendTo($('body'));
 
 		$modal[0].showModal();
 
-		let images	= rel ? $(`[rel="${rel}"]`).toArray().map(el => $(el).data('preview') || el.href) : [];
+		let images	= rel ? $('[rel]').wpjam_filter('rel', rel).toArray().map(el => $(el).data('preview') || el.href) : [];
 		let length	= images.length;
 
 		if(length > 1){
 			let index	= images.indexOf(src);
 
-			$modal.wrapInner('<div>').prepend('<a rel="'+rel+'" data-preview="'+images.at(index - 1)+'" class="dashicons dashicons-arrow-left-alt2"></a>').append('<a rel="'+rel+'" data-preview="'+images.at((index + 1) % length)+'" class="dashicons dashicons-arrow-right-alt2"></a>')
+			$modal.wrapInner('<div>').prepend(
+				$('<a>', {rel, 'data-preview':images.at(index - 1), class:'dashicons dashicons-arrow-left-alt2'})
+			).append(
+				$('<a>', {rel, 'data-preview':images.at((index + 1) % length), class:'dashicons dashicons-arrow-right-alt2'})
+			);
 		}
 
 		return e ? false : this;
@@ -974,7 +1032,15 @@ jQuery(function($){
 		let $tip	= $('div.wpjam-tooltip');
 
 		if(action === 'mouseenter'){
-			($tip[0] ? $tip : $('<div popover="manual" class="wpjam-tooltip"></div>')).stop(true).fadeIn(100).html(this.is('.preview') ? '<img src="'+this.find('img:visible').attr('src')+'" />' : (this.data('description') || this.data('tooltip'))).appendTo(this)[0].showPopover();
+			$tip	= ($tip[0] ? $tip : $('<div>', {popover:'manual', class:'wpjam-tooltip'})).stop(true).fadeIn(100);
+
+			if(this.is('.preview')){
+				$tip.empty().append($('<img>', {src:this.find('img:visible').attr('src')}));
+			}else{
+				$tip.html(this.data('description') || this.data('tooltip'));
+			}
+
+			$tip.appendTo(this)[0].showPopover();
 		}else if(action === 'mouseleave'){
 			$tip.fadeOut(300);
 		}else{
@@ -1063,16 +1129,19 @@ jQuery(function($){
 
 			if(this.is('th') || (this.is('i') && this.closest('th')[0])){
 				let index	= (this.is('th') ? this : this.closest('th')).index();
-				this.closest('table').find('tbody tr').wpjam_each($tr => $tr.find('td').eq(index).wpjam_each($td => $td.wpjam_format(data)));
+
+				this.closest('table').find('tbody tr').wpjam_each($tr => $tr.find('td').eq(index).wpjam_each($td => $td.wpjam_format(
+					$tr.hasClass('avg-row') && !data.precision ? {...data, precision: 2} : data
+				)));
 			}else{
-				this.wpjam_format(data)
+				this.wpjam_format(this.closest('tr').hasClass('avg-row') && !data.precision ? {...data, precision: 2} : data)
 			}
 		}
 
 		return this;
 	};
 
-	$.fn.wpjam_format.selector	= '[data-format], [data-precision], [data-conditional_styles]';
+	$.fn.wpjam_format.selector	= '[data-format], [data-precision], [data-conditional_styles], .avg-row td';
 
 	$.fn.wpjam_table = function(){
 		$(this).append($('<tfoot>').html($(this).find('thead').html()));
@@ -1083,8 +1152,10 @@ jQuery(function($){
 	$.fn.wpjam_tabs = function(hash){
 		hash	= window.location.hash = hash || window.location.hash;
 
-		this.find('.tab').hide().filter(hash || ':first').show();
-		this.find('.nav-tab').removeClass('nav-tab-active').filter(hash ? '[href="'+hash+'"]' : ':first').addClass('nav-tab-active');
+		let $tabs	= this.find('.tab').hide();
+		let $tab	= $(hash && hash.charAt(0) === '#' && $tabs.wpjam_filter('id', hash.substring(1))[0] || $tabs[0]).show();
+
+		this.find('.nav-tab').removeClass('nav-tab-active').eq($tabs.index($tab)).addClass('nav-tab-active');
 	};
 
 	$.fn.wpjam_place = function(content, replace, placement){
@@ -1136,7 +1207,7 @@ jQuery(function($){
 
 			$('a[href*="/wp-admin/page="]').attr('href', (_, v)=> v.replace('/wp-admin/page=', 'admin/admin.php?page='));
 
-			_.each(this.query_url, pair => $('a[href="'+pair[0]+'"]').attr('href', pair[1]));
+			_.each(this.query_url, pair => $('a[href]').wpjam_filter('href', pair[0]).attr('href', pair[1]));
 
 			$('body').on('click', 'input[type=submit]', e => $(document.activeElement).attr('id') || $(e.target).focus());
 
@@ -1160,6 +1231,8 @@ jQuery(function($){
 				this.dialog('close');
 				this.params	= params;
 			}
+
+			this.params	= _.omit(this.params, 'page_title');
 
 			let args	= {...this.params, action_type: 'form'};
 
@@ -1303,11 +1376,7 @@ jQuery(function($){
 
 			$('.spinner.is-active')[0] || $('<div class="wpjam-loading"><img src="'+this.loading+'" /></div>').appendTo('body').show();
 
-			return this.post({..._.omit(args, ['$ae', 'state']), action: 'wpjam-'+type+'-action'}).then(data => {
-				args.$ae && args.$ae.prop('disabled', false);
-
-				$('.spinner.is-active, .wpjam-loading').remove();
-
+			let result	= this.post({..._.omit(args, ['$ae', 'state']), action: 'wpjam-'+type+'-action'}).then(data => {
 				if(data.errcode){
 					this.notice((args.page_title ? args.page_title+'失败：' : '')+(data.errmsg || ''), 'error');
 				}else{
@@ -1341,7 +1410,23 @@ jQuery(function($){
 
 					$('body').wpjam_init().trigger(type+'_action_success', data);
 				}
+			}, error => {
+				this.notice('请求失败，请稍后重试。', 'error');
+
+				throw error;
 			});
+
+			let cleanup	= () => {
+				args.$ae && args.$ae.prop('disabled', false);
+
+				$('.spinner.is-active, .wpjam-loading').remove();
+			};
+
+			result	= result.finally ? result.finally(cleanup) : result.always(cleanup);
+
+			result.then(null, ()=>{});
+
+			return result;
 		}, {
 			page: {
 				before: function(args){
@@ -1401,27 +1486,46 @@ jQuery(function($){
 		parse_params: function(params, clean){
 			if(_.isString(params)){
 				let obj	= {};
-				params	= params ? params.replace(/^\?|\+/g, ' ').trim() : '';
+				let decode	= v => {
+					try{
+						return decodeURIComponent(v);
+					}catch(e){
+						return v;
+					}
+				};
 
-				params && params.replace(/^\?|\+/g, ' ').trim().split('&').forEach(v => {
-					let	param	= v.split('=');
-					let key		= decodeURIComponent(param[0]);
-					let val		= param.length === 2 ? decodeURIComponent(param[1]) : '';
+				params	= params && params.replace(/^\?|\+/g, ' ').trim();
+
+				params && params.split('&').forEach(v => {
+					let pos		= v.indexOf('=');
+					let key		= decode(pos < 0 ? v : v.slice(0, pos));
+					let val		= pos < 0 ? '' : decode(v.slice(pos + 1));
 					let keys	= key.split('][');
 
 					if(keys[0].includes('[') && _.last(keys).endsWith(']')){
 						keys	= keys.shift().split('[').concat(keys);
 						keys	= [...keys.slice(0, -1), keys.pop().slice(0, -1)];
-
-						keys.reduce((cur, k, i)=> {
-							k		= (k === '') ? cur.length : k;
-							cur[k] = keys.length - 1 > i ? (cur[k] || (isNaN(Number(keys[i + 1])) ? {} : [])) : val;
-
-							return cur[k];
-						}, obj);
 					}else{
-						obj[key]	= val;
+						keys	= [key];
 					}
+
+					if(keys.some(k => ['__proto__', 'constructor', 'prototype'].includes(k))){
+						return;
+					}
+
+					keys.reduce((cur, k, i)=> {
+						k	= (k === '') ? cur.length : k;
+
+						if(i < keys.length - 1){
+							if(!_.has(cur, k) || !_.isObject(cur[k])){
+								cur[k]	= isNaN(Number(keys[i + 1])) ? {} : [];
+							}
+						}else{
+							cur[k]	= val;
+						}
+
+						return cur[k];
+					}, obj);
 				});
 
 				params	= obj;
@@ -1432,6 +1536,10 @@ jQuery(function($){
 				this.query_data ? Object.keys(this.query_data) : [],
 				this.builtin_page ? ['post_type', 'taxonomy'] : ['page', 'tab']
 			)) : params;
+		},
+
+		try_number: function(v){
+			return (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v))) ? Number(v) : v;
 		},
 
 		compare: function(a, compare, b){
@@ -1465,13 +1573,7 @@ jQuery(function($){
 			}
 
 			if(cmp === 'IN' || cmp === 'BETWEEN'){
-				b	= _.isArray(b) ? b : b.split(/[\s,]+/);
-
-				if(!_.isArray(a) && b.length === 1) {
-					return a == b[0];
-				}
-
-				b	= b.map(String);
+				b	= _.isArray(b) ? b : (_.isString(b) ? b.split(/[\s,]+/) : [b]);
 			}else{
 				b	= _.isString(b) ? b.trim() : b;
 			}
@@ -1480,8 +1582,8 @@ jQuery(function($){
 				case '=': return a == b;
 				case '>': return a > b;
 				case '<': return a < b;
-				case 'IN': return b.includes(a);
-				case 'BETWEEN': return a >= b[0] && a <= b[1];
+				case 'IN': return b.some(v => a == v);
+				case 'BETWEEN': return wpjam.try_number(a) >= wpjam.try_number(b[0]) && wpjam.try_number(a) <= wpjam.try_number(b[1]);
 				default: return false;
 			}
 		},
@@ -1619,7 +1721,7 @@ jQuery(function($){
 
 				$views.empty().append($(data.views).html());
 
-				data.type != 'list' && $views.find('a').removeClass('current').end().find('li.'+this.view+' a').addClass('current');
+				data.type != 'list' && $views.find('a').removeClass('current').end().find('li').filter((_, el)=> $(el).hasClass(this.view)).find('a').addClass('current');
 			}else{
 				$views.wpjam_on('click', 'a', e => this.callback(e));
 			}
@@ -1676,7 +1778,7 @@ jQuery(function($){
 			$left.find('a.prev-page').addClass('button').addClass(paged <= 1 && 'disabled');
 			$left.find('a.next-page').addClass('button').addClass(paged >= parseInt($paged.attr('max')) && 'disabled');
 
-			$items[0] && $left.find('[data-id='+(wpjam.params[key] = wpjam.params[key] || $items.first().data('id'))+']').addClass('left-current');
+			$items[0] && $items.wpjam_filter('data-id', wpjam.params[key] = wpjam.params[key] || $items.first().data('id')).addClass('left-current');
 
 			this.$form.find('.sticky-columns').css('--left-height', $('#col-left table').height()+'px');
 
@@ -1759,9 +1861,9 @@ jQuery(function($){
 		},
 
 		get_row: function(id){
-			id	= typeof id == "string" ? id.replace(/(:|\.|\[|\]|,|=|@)/g, "\\$1") : id;
+			let $rows	= this.$tbody.find('tr');
 
-			return $('.tr-'+id)[0] ? $('.tr-'+id) : $('#'+this.name+'-'+id);
+			return $($rows.wpjam_filter('data-id', id)[0] || $rows.wpjam_filter($el=> $el.hasClass('tr-'+id) || $el[0].id  === this.name+'-'+id)[0]);
 		},
 
 		action: function(args){
@@ -1965,16 +2067,16 @@ jQuery(function($){
 				this.update_row(data).$form.find('tr.no-items').remove();
 			}else if(['add_item', 'edit_item', 'del_item', 'move_item'].includes(type)){
 				let params	= wpjam.parse_params(['add_item', 'edit_item'].includes(type) ? args.defaults : args.data);
-				let $items	= (type == 'del_item' ? this : this.update_row(data, false)).get_row(data.id).find('[data-field="'+params._field+'"]');
+				let $items	= (type == 'del_item' ? this : this.update_row(data, false)).get_row(data.id).find('[data-field]').wpjam_filter('data-field', params._field).find('[data-i]');
 
 				if(type == 'add_item'){
-					$items.find('[data-i]:last').wpjam_highlight('add');
+					$items.last().wpjam_highlight('add');
 				}else if(type == 'edit_item'){
-					$items.find('[data-i="'+params.i+'"]').wpjam_highlight('update');
+					$items.wpjam_filter('data-i', params.i).wpjam_highlight('update');
 				}else if(type == 'move_item'){
-					$items.find('[data-i="'+params.pos+'"]').wpjam_highlight('move');
+					$items.wpjam_filter('data-i', params.pos).wpjam_highlight('move');
 				}else if(type == 'del_item'){
-					$items.find('[data-i="'+params.i+'"]').wpjam_highlight('delete').wpjam_remove();
+					$items.wpjam_filter('data-i', params.i).wpjam_highlight('delete').wpjam_remove();
 				}
 			}else if(type == 'delete'){
 				_.each(data.bulk ? data.ids : [data.id], id => this.delete_row(id));

@@ -13,6 +13,10 @@ class WPJAM_Cron extends WPJAM_Args{
 
 		$jobs	= $this->get_jobs();
 
+		if(!$jobs){
+			return;
+		}
+
 		if($this->weight){
 			$queue	= $jobs;
 			$i		= 0;
@@ -20,7 +24,7 @@ class WPJAM_Cron extends WPJAM_Args{
 			while($queue){
 				$i++;
 
-				$queue	= array_filter($queue, fn($job)=> is_array($job) && wpjam_get($job, 'weight') >= $i);
+				$queue	= wpjam_filter($queue, ['weight'=>['>'=>$i]]);
 				$jobs	= array_merge($jobs, $queue);
 			}
 		}
@@ -75,7 +79,7 @@ class WPJAM_Cron extends WPJAM_Args{
 	public static function insert($data){
 		!has_filter($data['hook']) && wp_die('无效的 Hook');
 
-		return wpjam_schedule($data['hook'], $data);
+		return wpjam_schedule_event($data['hook'], $data);
 	}
 
 	public static function do($id){
@@ -105,7 +109,7 @@ class WPJAM_Cron extends WPJAM_Args{
 				}
 			}
 
-			return $items;
+			return $items ?? [];
 		}
 
 		return wpjam_map(wpjam_get_cron('wpjam_scheduled')->get_jobs(), fn($item)=> $item+wpjam_map([
@@ -124,12 +128,12 @@ class WPJAM_Cron extends WPJAM_Args{
 
 	public static function get_fields($action_key='', $id=0){
 		return $GLOBALS['current_tab'] == 'crons' ? [
-			'hook'		=> ['title'=>'Hook',	'type'=>'text',		'show_admin_column'=>true],
-			'time'		=> ['title'=>'运行时间',	'type'=>'timestamp','show_admin_column'=>true,	'value'=>time()],
-			'schedule'	=> ['title'=>'频率',		'type'=>'select',	'show_admin_column'=>true,	'options'=>[''=>'只执行一次']+wp_list_pluck(wp_get_schedules(), 'display')],
+			'hook'		=> ['title'=>'Hook',	'type'=>'text',		'column'=>['show'=>true]],
+			'time'		=> ['title'=>'运行时间',	'type'=>'timestamp','column'=>['show'=>true],	'value'=>time()],
+			'schedule'	=> ['title'=>'频率',		'type'=>'select',	'column'=>['show'=>true],	'options'=>[''=>'只执行一次']+wp_list_pluck(wp_get_schedules(), 'display')],
 		] : [
-			'function'	=> ['title'=>'回调函数',	'type'=>'view',	'show_admin_column'=>true],
-			'weight'	=> ['title'=>'作业权重',	'type'=>'view',	'show_admin_column'=>true],
+			'function'	=> ['title'=>'回调函数',	'type'=>'view',	'column'=>['show'=>true]],
+			'weight'	=> ['title'=>'作业权重',	'type'=>'view',	'column'=>['show'=>true]],
 		];
 	}
 
@@ -197,10 +201,10 @@ function wpjam_get_cron($hook){
 }
 
 function wpjam_schedule_event($hook, $data){
-	$args	= array_filter([$data['recurrence'] ?? '']);
+	$args	= array_filter([$data['recurrence'] ?? ($data['schedule'] ?? '')]);
 	$cb		= 'wp_schedule_'.($args ? '' : 'single_').'event';
 
-	return $cb($data['timestamp'] ?? time(), ...[...$args, $hook, $data['args'] ?? []]);
+	return $cb($data['timestamp'] ?? ($data['time'] ?? time()), ...[...$args, $hook, $data['args'] ?? []]);
 }
 
 function wpjam_is_scheduled_event($hook){	// 不用判断参数

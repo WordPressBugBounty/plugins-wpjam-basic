@@ -76,7 +76,8 @@ add_action('init', function(){
 			$img_url	= $matches[1][$i];
 
 			if($img_url && wpjam_is_external_url($img_url, false)){
-				$img_type	= $img_type == 'png' ? 'png' : 'jpg';
+				$path		= parse_url($img_url, PHP_URL_PATH);
+				$img_type	= strtolower(pathinfo($path, PATHINFO_EXTENSION)) == 'png' ? 'png' : 'jpg';
 				$img_replace	= CDN_HOST.'/'.CDN_NAME.'/'.get_the_ID().'/image/'.md5($img_url).'.'.$img_type;
 				$search[]	= $img_tag;
 				$replace[]	= str_replace($img_url, $img_replace, $img_tag);

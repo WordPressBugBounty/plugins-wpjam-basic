@@ -99,7 +99,7 @@ class WPJAM_Toc{
 			'widget'	=> fn()=> self::output(false)
 		]);
 
-		wpjam_once('maybe', 'the_content', fn($content)=> !doing_filter('get_the_excerpt') && wpjam_is('single', get_the_ID()) ? self::filter_content($content) : null, 11);
+		wpjam_once('maybe', 'the_content', fn($content)=> !doing_filter('get_the_excerpt') && wpjam_query('is', 'single', get_the_ID()) ? self::filter_content($content) : null, 11);
 
 		if($css = self::get_setting('css')){
 			wpjam_hook('wp_head', fn()=> is_singular() && !current_theme_supports('style', 'toc') && wpjam_echo('<style type="text/css">'."\n".$css."\n".'</style>'));

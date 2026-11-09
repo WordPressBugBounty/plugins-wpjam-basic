@@ -11,7 +11,7 @@ is_admin() && wpjam_register_list_table_action('quick_duplicate', [
 	'direct'	=> true,
 	'data_type'	=> 'post_type',
 	'callback'	=> 'wpjam_duplicate_post',
-	'post_type'	=> fn($v) => $v != 'attachment' && wpjam_get_post_type_setting($v, 'duplicatable') !== false,
+	'post_type'	=> fn($v) => $v != 'attachment' && wpjam_post_type($v, 'duplicatable') !== false,
 ]);
 
 function wpjam_duplicate_post($post_id){

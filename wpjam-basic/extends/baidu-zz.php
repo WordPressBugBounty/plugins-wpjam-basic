@@ -51,21 +51,21 @@ class WPJAM_Baidu_ZZ{
 			return;
 		}
 
-		$site	= self::get_setting('baidu_zz_site');
+		$site	= untrailingslashit(self::get_setting('baidu_zz_site'));
 		$token	= self::get_setting('baidu_zz_token');
-		$args	= array_merge(compact('site', 'token'), $type ? ['type'=>$type] : []);
+		$urls	= is_array($urls) ? implode("\n", ($current = untrailingslashit(site_url())) != $site ? wpjam_map($urls, fn($url)=> str_replace($current, $site, $url)) : $urls) : $urls;
 
-		if(is_array($urls)){
-			$current	= parse_url(site_url(), PHP_URL_HOST);
-			$urls		= $current != $site ? wpjam_map($urls, fn($url)=> str_replace($current, $site, $url)) : $urls;
-			$urls		= implode("\n", $urls);
-		}
-
-		return wpjam_remote_request(add_query_arg($args, 'http://data.zz.baidu.com/urls'), [
-			'headers'	=> ['Accept-Encoding'=>'', 'Content-Type'=>'text/plain'],
-			'sslverify'	=> false,
-			'body'		=> $urls
-		]);
+		return wpjam_remote_request(
+			add_query_arg(compact('site', 'token')+($type ? ['type'=>$type] : []), 'http://data.zz.baidu.com/urls'),
+			[
+				'headers'	=> ['Accept-Encoding'=>'', 'Content-Type'=>'text/plain'],
+				'body'		=> $urls
+			],
+			[
+				'errcode'	=> 'error',
+				'errmsg'	=> 'message'
+			]
+		);
 	}
 
 	public static function submit_post($post_id, $type=''){
@@ -73,27 +73,32 @@ class WPJAM_Baidu_ZZ{
 			return;
 		}
 
-		if(is_array($post_id)){
-			$wp_error	= false;
-			$post_ids	= $post_id;
-		}else{
-			$wp_error	= wp_doing_ajax();
-			$post_ids	= [$post_id];
-		}
+		$wp_error	= is_array($post_id) ? false : wp_doing_ajax();
+		$post_ids	= (array)$post_id;
 
 		foreach($post_ids as $post_id){
 			if(get_post_status($post_id) == 'publish'){
-				if(wpjam_lock('baidu_zz_notified:'.$post_id)){
+				if(wpjam_locked('baidu_zz_notified:'.$post_id, HOUR_IN_SECONDS)){
 					$wp_error && wp_die('一小时内已经提交过了');
+
+					continue;
 				}
 
-				$urls[]	= get_permalink($post_id);
+				$urls[]		= get_permalink($post_id);
+				$pending[]	= $post_id;
 			}else{
 				$wp_error && wp_die('未发布的文章不能同步到百度站长');
 			}
 		}
 
-		return $urls ? self::submit($urls, $type) : ($wp_error ? wp_die('没有需要提交到百度站长的链接') : true);
+		if(empty($urls)){
+			return $wp_error ? wp_die('没有需要提交到百度站长的链接') : true;
+		}
+
+		return wpjam_if_error(
+			self::submit($urls, $type),
+			fn($error)=> [array_map(fn($post_id)=> wpjam_unlock('baidu_zz_notified:'.$post_id), $pending), $error][1]
+		);
 	}
 
 	public static function batch_submit(){
@@ -108,24 +113,30 @@ class WPJAM_Baidu_ZZ{
 		}
 
 		$per_page	= 500;
-		$offset		= (int)wpjam_param('offset', 'data');
+		$offset		= max(0, (int)wpjam_param('offset', 'data'));
 		$query		= new WP_Query([
 			'post_type'			=> 'any',
 			'post_status'		=> 'publish',
+			'orderby'			=> 'ID',
 			'order'				=> 'ASC',
 			'fields'			=> 'ids',
 			'posts_per_page'	=> $per_page,
-			'offset'			=> $offset
+			'offset'			=> $submited+$offset
 		]);
 
 		if($query->have_posts()){
 			$result	= self::submit_post($query->posts);
+
+			if(is_wp_error($result)){
+				return $result;
+			}
+
 			$count	= count($query->posts);
 			$number	= $offset+$count;
 
-			if(is_array($result) && $result['remain'] <= 500){
+			if(is_array($result) && isset($result['remain']) && $result['remain'] <= $per_page){
 				self::update_setting('baidu_zz_last', time());
-				self::update_setting('baidu_zz_submited', $submited+$offset-$per_page);
+				self::update_setting('baidu_zz_submited', $submited+$number);
 
 				wp_die('今日提交了'.$number.'个页面，批量提交的配额已用完，请明日接着提交');
 			}

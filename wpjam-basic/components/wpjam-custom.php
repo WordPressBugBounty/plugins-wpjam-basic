@@ -74,6 +74,8 @@ class WPJAM_Custom{
 		add_action('admin_bar_menu',	[self::class, 'on_admin_bar_menu'], 1);
 
 		if(is_admin()){
+			wpjam_hook('is_protected_meta', 'maybe', fn($key, $type)=> $type == 'post' && in_array($key, ['custom_head', 'custom_footer'], true) ? true : null, 10, 3);
+
 			wpjam_hooks([
 				['admin_title', 		fn($title)=> str_replace(' &#8212; WordPress', '', $title)],
 				['admin_head',			fn()=> self::echo('admin_head')],
@@ -96,12 +98,14 @@ class WPJAM_Custom{
 			]);
 		}
 
-		self::get_setting('custom_post') && wpjam_register_post_option('custom-post', [
+		self::get_setting('custom_post') && current_user_can('unfiltered_html') && wpjam_register_post_option('custom-post', [
 			'title'			=> '文章页代码',
+			'capability'	=> 'unfiltered_html',
 			'modal'			=> true,
 			'post_type'		=> fn($post_type)=> is_post_type_viewable($post_type) && post_type_supports($post_type, 'editor'),
 			'summary'		=> '自定义文章代码可以让你在当前文章插入独有的 JS，CSS，iFrame 等类型的代码，让你可以对具体一篇文章设置不同样式和功能，展示不同的内容。',
 			'list_table'	=> self::get_setting('list_table'),
+			'callback'		=> fn($id, $data)=> current_user_can('unfiltered_html') ? wpjam_update_metadata('post', $id, $data) : new WP_Error('access_denied', '无权限'),
 			'fields'		=> [
 				'custom_head'	=>['title'=>'头部代码',	'type'=>'textarea',	'default'=>''],
 				'custom_footer'	=>['title'=>'底部代码',	'type'=>'textarea',	'default'=>'']

@@ -5,7 +5,7 @@ body{
 	--line-height:40px;
 	--border-radius:2px;
 
-	&.version-6-9, &.version-6-8, &.version-6-7, &.version-6-6{
+	&[class*="version-6-9"], &[class*="version-6-8"], &[class*="version-6-7"]{
 		--line-height:30px;
 		--border-radius:4px;
 	}
@@ -1510,10 +1510,18 @@ table.wp-list-table{
 
 		tfoot{bottom:0px;}
 
-		tr.summary-row{
+		tr.sum-row, tr.avg-row{
 			position:sticky;
 			z-index:3;
 			top:36px;
+
+			> *{background-color:#dbeaf5;}
+		}
+
+		tr.sum-row + tr.avg-row{
+			top:71px;
+
+			> *{background-color:#e7f1f9;}
 		}
 	}
 }

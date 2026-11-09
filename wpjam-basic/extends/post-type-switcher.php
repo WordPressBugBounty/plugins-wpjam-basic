@@ -10,7 +10,7 @@ class WPJAM_Post_Type_Switcher{
 	public static function get_options(){
 		foreach(get_post_types(['show_ui'=>true], 'objects') as $ptype => $pt_object){
 			if($ptype != 'attachment' && !str_starts_with($ptype, 'wp_') && current_user_can($pt_object->cap->publish_posts)){
-				$options[$ptype]	= wpjam_get_post_type_setting($ptype, 'title');
+				$options[$ptype]	= wpjam_post_type($ptype, 'title');
 			}
 		}
 
@@ -48,7 +48,7 @@ class WPJAM_Post_Type_Switcher{
 
 		<div class="misc-pub-section post-type-switcher">
 			<label for="ptype">文章类型：</label>
-			<strong id="post_type_display"><?php echo esc_html(wpjam_get_post_type_setting($current, 'title')); ?></strong>
+			<strong id="post_type_display"><?php echo esc_html(wpjam_post_type($current, 'title')); ?></strong>
 
 			<?php if(current_user_can($pt_object->cap->publish_posts)){ ?>
 
@@ -72,6 +72,8 @@ class WPJAM_Post_Type_Switcher{
 		?>
 		<script type="text/javascript">
 		jQuery(function($){
+			let ptype = $('#ptype').val();
+
 			$('#edit_post_type_switcher').on('click', function(e) {
 				$(this).hide();
 				$('#post_type_select').slideDown();
@@ -81,9 +83,11 @@ class WPJAM_Post_Type_Switcher{
 				$('#post_type_select').slideUp();
 				$('#edit_post_type_switcher').show();
 				$('#post_type_display').text($('#ptype :selected').text());
+				ptype = $('#ptype').val();
 			});
 
 			$('#cancel_post_type_switcher').on('click',  function(e) {
+				$('#ptype').val(ptype);
 				$('#post_type_select').slideUp();
 				$('#edit_post_type_switcher').show();
 			});

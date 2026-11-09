@@ -11,7 +11,7 @@ class WPJAM_Posts_Per_Page{
 	}
 
 	public static function sanitize_callback($value){
-		wpjam_map(wpjam_pull($value, ['posts_per_page', 'posts_per_rss']), fn($v, $k)=> $v ? update_option($k, $v) : null);
+		wpjam_each(wpjam_pull($value, ['posts_per_page', 'posts_per_rss']), fn($v, $k)=> $v ? update_option($k, $v) : null);
 
 		return $value;
 	}
@@ -45,7 +45,7 @@ class WPJAM_Posts_Per_Page{
 				continue;
 			}
 
-			$title	= wpjam_get_taxonomy_setting($tax, 'title');
+			$title	= wpjam_taxonomy($tax, 'title');
 
 			$tax_fields[$tax]	= ['title'=>$title,	'group'=>'tax']+$field;
 
@@ -59,11 +59,11 @@ class WPJAM_Posts_Per_Page{
 		$fields['tax']		= ['title'=>'分类模式',	'wrap_tag'=>'fieldset',	'fields'=>$tax_fields+(empty($individual) ? [] : $individual)];
 
 		foreach(get_post_types(['public'=>true, 'has_archive'=>true]) as $post_type){
-			if(wpjam_get_post_type_setting($post_type, 'posts_per_page')){
+			if(wpjam_post_type($post_type, 'posts_per_page')){
 				continue;
 			}
 
-			$pt_field[$post_type]	= $field+['title'=>wpjam_get_post_type_setting($post_type, 'title')];
+			$pt_field[$post_type]	= $field+['title'=>wpjam_post_type($post_type, 'title')];
 		}
 
 		if(!empty($pt_field)){
@@ -96,7 +96,7 @@ class WPJAM_Posts_Per_Page{
 			return;
 		}
 
-		$is			= wpjam_is($wp_query);
+		$is			= wpjam_query($wp_query);
 		$queried	= $wp_query->get_queried_object();
 
 		if(in_array($is, ['home', 'author', 'search', 'archive'], true)){
@@ -104,15 +104,12 @@ class WPJAM_Posts_Per_Page{
 		}elseif(in_array($is, ['category', 'tag', 'tax'], true)){
 			if($queried){
 				$tax	= $queried->taxonomy;
-				$number	= wpjam_get_taxonomy_setting($tax, 'posts_per_page') ?: self::get_setting($tax);
-
-				if(self::get_setting($tax.'_individual')){
-					$number	= get_term_meta($queried->term_id, 'posts_per_page', true) ?: $number;
-				}
+				$number	= wpjam_taxonomy($tax, 'posts_per_page') ?: self::get_setting($tax);
+				$number	= (self::get_setting($tax.'_individual') ? get_term_meta($queried->term_id, 'posts_per_page', true) : 0) ?: $number;
 			}
 		}elseif($is === 'post_type_archive'){
 			if($queried){
-				$number	= wpjam_get_post_type_setting($queried->name, 'posts_per_page') ?: self::get_setting($queried->name);
+				$number	= wpjam_post_type($queried->name, 'posts_per_page') ?: self::get_setting($queried->name);
 			}
 		}
 

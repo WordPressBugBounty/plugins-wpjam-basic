@@ -124,13 +124,13 @@ class WPJAM_SEO{
 				$item	= [get_term_link($item), str_replace(' ', 'T', get_lastpostmodified('GMT')).'+00:00', 'daily', $item->taxonomy == 'category' ? 0.6 : 0.4];
 			}
 
-			return "\t<url>\n".implode(wpjam_map(['loc', 'lastmod', 'changefreq', 'priority'], fn($k, $i)=> "\t\t<{$k}>{$item[$i]}</{$k}>\n"))."\t</url>\n";
+			return "\t<url>\n".implode(wpjam_map(['loc', 'lastmod', 'changefreq', 'priority'], fn($k, $i)=> "\t\t<{$k}>".htmlspecialchars((string)$item[$i], ENT_XML1 | ENT_QUOTES, 'UTF-8')."</{$k}>\n"))."\t</url>\n";
 		}));
 
 		header("Content-Type:text/xml");
 
 		echo '<?xml version="1.0" encoding="UTF-8"?>
-		<?xml-stylesheet type="text/xsl" href="'.(new WP_Sitemaps_Renderer())->get_sitemap_stylesheet_url().'"?>
+		<?xml-stylesheet type="text/xsl" href="'.htmlspecialchars((new WP_Sitemaps_Renderer())->get_sitemap_stylesheet_url(), ENT_XML1 | ENT_QUOTES, 'UTF-8').'"?>
 		<!-- generated-on="'.date('d. F Y').'" -->
 		<urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'."\n".$sitemap."\n".'</urlset>'."\n";
 
@@ -139,14 +139,18 @@ class WPJAM_SEO{
 
 	public static function filter_html($html){
 		$title	= self::get_value('title');
-		$title	= $title ? '<title>'.$title.'</title>' : '';
+		$meta	= self::get_value('meta');
+		$html	= $meta ? wpjam_preg_replace(
+			'/<meta\b(?:[^>\'"]+|"[^"]*"|\'[^\']*\')*>/i',
+			fn($m)=> ($proc = wpjam_html_tag_processor($m[0], 'meta')) && is_string($name = $proc->get_attribute('name')) && isset($meta[strtolower($name)]) ? '' : $m[0],
+			$html
+		) : $html;
 
-		if($meta	= self::get_value('meta')){
-			$title	= ($title ?: '\1')."\n".implode($meta);
-			$html	= wpjam_preg_replace('#<meta\s+name=([\'"])('.implode('|', array_keys($meta)).')\1(.*?)\/>#is', '', $html);
-		}
-
-		return $title ? wpjam_preg_replace('#(<title>[^<]*<\/title>)#is', $title, $html) : $html;
+		return ($title || $meta) ? wpjam_preg_replace(
+			'#(<title\b[^>]*>.*?</title>)#is',
+			fn($m)=> ($title ? '<title>'.$title.'</title>' : $m[1]).($meta ? "\n".implode($meta) : ''),
+			$html
+		) : $html;
 	}
 
 	public static function add_hooks(){
@@ -162,7 +166,7 @@ class WPJAM_SEO{
 		self::get_setting('sitemap') || wpjam_route('sitemap', self::class);
 
 		if(self::get_setting('individual')){
-			wpjam_map([
+			wpjam_each([
 				'post'	=> ['context'=>'side',	'post_type'=>fn($v)=> $v != 'attachment' && is_post_type_viewable($v)],
 				'term'	=> ['action'=>'edit',	'taxonomy'=>fn($v)=> is_taxonomy_viewable($v)]
 			], fn($v, $t)=> wpjam_register_meta_option($t, 'seo', $v+[

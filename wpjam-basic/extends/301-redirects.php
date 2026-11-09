@@ -25,9 +25,17 @@ class WPJAM_Redirect extends WPJAM_Model{
 
 		return [
 			'type'			=> ['title'=>'匹配设置',	'class'=>'switch',	'label'=>'使用正则匹配'],
-			'request'		=> ['title'=>'原地址',	'type'=>'url',	'required',	'show_admin_column'=>true],
-			'destination'	=> ['title'=>'目标地址',	'type'=>'url',	'required',	'show_admin_column'=>true],
+			'request'		=> ['title'=>'原地址',	'type'=>'url',	'required',	'column'=>['show'=>true]],
+			'destination'	=> ['title'=>'目标地址',	'type'=>'url',	'required',	'column'=>['show'=>true]],
 		];
+	}
+
+	protected static function validate_data($data, $id=0){
+		if(!empty($data['type']) && @preg_match('#'.set_url_scheme($data['request']).'#', '') === false){
+			return new WP_Error('invalid_regex', '正则表达式无效，请检查语法并将 # 写为 \\#。');
+		}
+
+		return true;
 	}
 
 	public static function add_hooks(){
@@ -48,7 +56,7 @@ class WPJAM_Redirect extends WPJAM_Model{
 
 					if($r && $d){
 						$r = set_url_scheme($r);
-						$d	= !empty($redirect['type']) ? preg_replace('#'.$r.'#', $d, $url) : ($r == $url ? $d : '');
+						$d	= !empty($redirect['type']) ? @preg_replace('#'.$r.'#', $d, $url) : ($r == $url ? $d : '');
 
 						$d && $d != $url && wp_redirect($d, 301) && exit;
 					}

@@ -66,8 +66,6 @@ class WPJAM_Bing_Webmaster{
 
 		return wpjam_remote_request($api_url, [
 			'json_encode'	=> true,
-			'sslverify'		=> false,
-			'blocking'		=> false,
 			'body'			=> ['siteUrl'=>$site_url, 'urlList'=>$urls]
 		], $err_args);
 	}
@@ -77,37 +75,32 @@ class WPJAM_Bing_Webmaster{
 			return;
 		}
 
-		if(is_array($post_id)){
-			$wp_error	= false;
-			$post_ids	= $post_id;
-		}else{
-			$wp_error	= wp_doing_ajax();
-			$post_ids	= [$post_id];
-		}
-		
-		$urls	= [];
+		$wp_error	= is_array($post_id) ? false : wp_doing_ajax();
+		$post_ids	= (array)$post_id;
 
 		foreach($post_ids as $post_id){
 			if(get_post_status($post_id) == 'publish'){
-				if(wp_cache_get($post_id, 'bing_webmaster_notified') === false){
-					wp_cache_set($post_id, true, 'bing_webmaster_notified', HOUR_IN_SECONDS);
-
-					$urls[]	= get_permalink($post_id);
-				}else{
+				if(wpjam_locked('bing_webmaster_notified:'.$post_id, HOUR_IN_SECONDS)){
 					$wp_error && wp_die('一小时内已经提交过了');
+
+					continue;
 				}
+
+				$urls[]		= get_permalink($post_id);
+				$pending[]	= $post_id;
 			}else{
 				$wp_error && wp_die('未发布的文章不能同步到 Bing');
 			}
 		}
 
-		if(!$urls){
-			$wp_error && wp_die('没有需要提交到 Bing 的链接');
-
-			return true;
+		if(empty($urls)){
+			return $wp_error ? wp_die('没有需要提交到 Bing 的链接') : true;
 		}
 
-		return self::submit($urls);
+		return wpjam_if_error(
+			self::submit($urls),
+			fn($error)=> [array_map(fn($post_id)=> wpjam_unlock('bing_webmaster_notified:'.$post_id), $pending), $error][1]
+		);
 	}
 
 	public static function batch_submit(){
@@ -127,11 +120,11 @@ class WPJAM_Bing_Webmaster{
 
 		$per_page	= 500;
 		$per_day	= 9000;
-		$offset		= (int)wpjam_param('offset', 'data');
+		$offset		= max(0, (int)wpjam_param('offset', 'data'));
 
 		if($offset >= $per_day){
 			self::update_setting('last', time());
-			self::update_setting('submited', $submited+$offset-$per_page);
+			self::update_setting('submited', $submited+$offset);
 
 			wp_die('今日批量提交的配额已用完，请明日接着提交');
 		}
@@ -139,14 +132,19 @@ class WPJAM_Bing_Webmaster{
 		$query		= new WP_Query([
 			'post_type'			=> 'any',
 			'post_status'		=> 'publish',
+			'orderby'			=> 'ID',
 			'order'				=> 'ASC',
-			'posts_per_page'	=> 500,
+			'posts_per_page'	=> $per_page,
 			'fields'			=> 'ids',
 			'offset'			=> $offset+$submited
 		]);
 
 		if($query->have_posts()){
-			self::submit_post($query->posts);
+			$result	= self::submit_post($query->posts);
+
+			if(is_wp_error($result)){
+				return $result;
+			}
 
 			$count	= count($query->posts);
 		}else{

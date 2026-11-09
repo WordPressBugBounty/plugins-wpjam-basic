@@ -23,7 +23,9 @@ wpjam_add_admin_load([
 				JS);
 			}
 
-			isset($_POST['the_excerpt']) && wpjam_hook('wp_insert_post_data', '+', ['post_excerpt'=>$_POST['the_excerpt']]);
+			if(($_POST['action'] ?? '') === 'inline-save' && isset($_POST['the_excerpt'], $_POST['post_ID'])){
+				wpjam_hook('wp_insert_post_data', '+', fn($postarr)=> ($postarr['ID'] ?? 0) == $_POST['post_ID'] ? ['post_excerpt'=>sanitize_post_field('post_excerpt', $_POST['the_excerpt'], $postarr['ID'], 'db')] : [], 10, 2);
+			}
 
 			wpjam_hook('add_inline_data', 'echo', fn($post)=> '<div class="post_excerpt">'.esc_textarea(trim($post->post_excerpt)).'</div>');
 		}

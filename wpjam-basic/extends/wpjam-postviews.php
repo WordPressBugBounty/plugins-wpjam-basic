@@ -16,6 +16,13 @@ class WPJAM_Postviews{
 	}
 
 	public static function redirect(){
+		if(!function_exists('imagepng')){
+			wpjam_update_post_views($GLOBALS['wp']->query_vars['p']);
+			status_header(204);
+
+			exit;
+		}
+
 		if(isset($_SERVER['HTTP_ACCEPT_ENCODING']) && substr_count($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip')){
 			ob_start('ob_gzhandler'); 
 		}
@@ -53,7 +60,7 @@ class WPJAM_Postviews{
 	}
 
 	public static function update_views($post_id, $data){
-		!empty($data['views']) && update_post_meta($post_id, 'views', $data['views']);
+		isset($data['views']) && update_post_meta($post_id, 'views', $data['views']);
 
 		return true;
 	}
@@ -84,7 +91,7 @@ class WPJAM_Postviews{
 	}
 
 	public static function get_rewrite_rule(){
-		return ['postviews/([0-9]+)\.png?$',	'index.php?module=postviews&p=$matches[1]', 'top'];
+		return ['postviews/([0-9]+)\.png?$',	'index.php?module=postviews&post_type=any&p=$matches[1]', 'top'];
 	}
 
 	public static function init(){
@@ -139,16 +146,13 @@ class WPJAM_Postviews{
 
 		wpjam_hook('the_content', '.', fn()=> is_feed() ? "\n".'<p><img src="'.home_url('postviews/'.get_the_ID().'.png').'" /></p>'."\n" : '', 999);
 
-		// 不指定 post_type ，默认查询 post，这样custom post type 的文章页面就会显示 404
-		// add_action('pre_get_posts',	fn($query)=> $query->get('module') == 'postviews' && $query->set('post_type', 'any'));
-
 		$begin	= (int)wpjam_basic_get_setting('views_begin');
 		$end	= (int)wpjam_basic_get_setting('views_end');
 		$views	= ($begin && $end) ? rand(min($begin, $end), max($begin, $end)) : 0;
 		
 		$views && add_action('wp_after_insert_post', fn($post_id, $post, $update)=> (!$update && $post->post_type != 'attachment' && is_post_type_viewable($post->post_type)) && update_post_meta($post_id, 'views', $views), 999, 3);
 
-		wpjam_once('wpjam_post_json', '+', fn($id, $args)=> wpjam_is(wpjam_get($args, 'query'), 'single, page', $id) ? ['views'=>wpjam_update_post_views($id)] : [], 10, 3);
+		wpjam_once('wpjam_post_json', '+', fn($id, $args)=> wpjam_query($args['query'], 'single, page', $id) ? ['views'=>wpjam_update_post_views($id)] : [], 10, 3);
 	}
 }
 

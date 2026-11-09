@@ -11,9 +11,7 @@ class WPJAM_Rewrite{
 	}
 
 	public static function update_setting(...$args){
-		flush_rewrite_rules();
-
-		return WPJAM_Basic::update_setting(...array_slice($args, 0, 2));
+		return wpjam_tap(WPJAM_Basic::update_setting(...array_slice($args, 0, 2)), fn($v)=> $v !== false && flush_rewrite_rules());
 	}
 
 	public static function query_items($args){
@@ -34,7 +32,7 @@ class WPJAM_Rewrite{
 			return wpjam_array(['date'=>'日期', 'comment'=>'留言', 'feed='=>'分类 Feed'], fn($k, $v)=> ['remove_'.$k.'_rewrite', ['label'=>'移除'.$v.' Rewrite 规则']]);
 		}
 
-		return wpjam_map(['regex'=>'正则', 'query'=>'查询'], fn($v)=> ['title'=>$v, 'type'=>'text', 'show_admin_column'=>true, 'required']);
+		return wpjam_map(['regex'=>'正则', 'query'=>'查询'], fn($v)=> ['title'=>$v, 'type'=>'text', 'column'=>['show'=>true], 'required']);
 	}
 
 	public static function cleanup(&$rules){
@@ -62,14 +60,11 @@ class WPJAM_Rewrite{
 	}
 
 	public static function add_hooks(){
-		self::get_setting('remove_comment_rewrite') && wpjam_hook('comments_rewrite_rules', []);
-		self::get_setting('remove_date_rewrite') && wpjam_hook('date_rewrite_rules', []) && add_action('init', fn()=> array_map('remove_rewrite_tag', ['%year%', '%monthnum%', '%day%', '%hour%', '%minute%', '%second%']));
-
-		$custom	= wpjam_array(self::get_setting('rewrites') ?: [], fn($k, $v)=> $v['regex'] && !is_numeric($v['regex']) ? [$v['regex'], $v['query']] : null);
-
 		return [
-			['generate_rewrite_rules', fn($wp_rewrite)=> wpjam_map(['rules', 'extra_rules_top'], fn($k)=> self::cleanup($wp_rewrite->$k))],
-			$custom ? ['rewrite_rules_array', '+', $custom] : []
+			['comments_rewrite_rules',	fn($rules)=> self::get_setting('remove_comment_rewrite') ? [] : $rules],
+			['date_rewrite_rules',		fn($rules)=> self::get_setting('remove_date_rewrite') ? [] : $rules],
+			['generate_rewrite_rules',	fn($wp_rewrite)=> wpjam_each(['rules', 'extra_rules_top'], fn($k)=> self::cleanup($wp_rewrite->$k))],
+			['rewrite_rules_array',		fn($rules)=> wpjam_array(self::get_setting('rewrites') ?: [], fn($k, $v)=> $v['regex'] && !is_numeric($v['regex']) ? [$v['regex'], $v['query']] : null)+$rules]
 		];
 	}
 }

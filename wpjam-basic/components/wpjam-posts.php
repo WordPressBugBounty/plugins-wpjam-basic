@@ -57,7 +57,7 @@ class WPJAM_Basic_Posts{
 			'classname'		=> 'widget_posts',
 			'widget'		=> fn($instance)=> ('wpjam_get_'.(wpjam_pull($instance, 'type') ?: 'new').'_posts')(wpjam_except($instance, 'title')),
 			'fields'		=> function(){
-				$types	= ['post'=>__('Post')]+array_reduce(get_post_types(['_builtin'=>false]), fn($c, $k)=> is_post_type_viewable($k) && get_object_taxonomies($k) ? $c+[$k=>wpjam_get_post_type_setting($k, 'title')] : $c, []);
+				$types	= ['post'=>__('Post')]+array_reduce(get_post_types(['_builtin'=>false]), fn($c, $k)=> is_post_type_viewable($k) && get_object_taxonomies($k) ? $c+[$k=>wpjam_post_type($k, 'title')] : $c, []);
 
 				$fields	= [
 					'title'		=> ['type'=>'text',		'before'=>'列表标题：',	'class'=>'medium-text'],
@@ -75,23 +75,32 @@ class WPJAM_Basic_Posts{
 
 	// 解决文章类型改变之后跳转错误的问题，原始函数：'wp_old_slug_redirect' 和 'redirect_canonical'
 	public static function find_by_name($post_name, $post_type='', $post_status='publish'){
-		$args		= array_filter(['post_status'=> $post_status]);
-		$with_type	= $post_type ? $args+['post_type'=>$post_type] : [];
-		$meta		= wpjam_get_by_meta('post', '_wp_old_slug', $post_name);
-		$posts		= $meta ? WPJAM_Post::get_by_ids(array_column($meta, 'post_id')) : [];
-		$for_meta	= $args+['post_type'=>array_values(array_diff(get_post_types(['public'=>true, 'exclude_from_search'=>false]), ['attachment']))];
-		$post		= $posts ? wpjam_find([$with_type, $for_meta], fn($v)=>$v, fn($v)=> $v ? wpjam_find($posts, $v) : '') : null;
-
-		if(!$post){
-			$wpdb	= $GLOBALS['wpdb'];
-			$types	= array_map('esc_sql', array_diff(get_post_types(['public'=>true, 'hierarchical'=>false, 'exclude_from_search'=>false]), ['attachment']));
-			$where	= "post_type in ('".implode( "', '", $types)."') AND ".$wpdb->prepare("post_name LIKE %s", $wpdb->esc_like($post_name).'%');
-			$ids	= $wpdb->get_col("SELECT ID FROM $wpdb->posts WHERE $where");
-			$posts	= $ids ? WPJAM_Post::get_by_ids($ids) : [];
-			$post	= $posts ? wpjam_find([$with_type, $args], fn($v)=>$v, fn($v)=> $v ? wpjam_find($posts, $v) : '') ?: array_first($posts) : null;
+		$args	= array_filter(['post_status'=> $post_status]);
+		$rules	= $post_type ? [$args+['post_type'=>$post_type]] : [];
+		$meta	= wpjam_get_by_meta('post', '_wp_old_slug', $post_name);
+		$vars	= ['public'=>true, 'exclude_from_search'=>false];
+		
+		if($meta && ($posts = WPJAM_Post::get_by_ids(array_column($meta, 'post_id')))){
+			if($post = wpjam_find(
+				[...$rules, $args+['post_type'=>array_values(array_diff(get_post_types($vars), ['attachment']))]],
+				fn($v)=> wpjam_find($posts, $v))
+			){
+				return $post->ID;
+			}
 		}
 
-		return $post ? $post->ID : null;
+		$wpdb	= $GLOBALS['wpdb'];
+		$types	= array_diff(get_post_types($vars+['hierarchical'=>false]), ['attachment']);
+		$ids	= $wpdb->get_col("SELECT ID FROM $wpdb->posts WHERE ".implode(' AND ', [
+			"post_type in ('".implode( "', '", array_map('esc_sql', $types))."')",
+			$wpdb->prepare("post_name LIKE %s", $wpdb->esc_like($post_name).'%')
+		]));
+
+		if($ids && ($posts = WPJAM_Post::get_by_ids($ids))){
+			$post = wpjam_find($args ? [...$rules, $args] : $rules, fn($v)=> wpjam_find($posts, $v)) ?: array_first($posts);
+
+			return $post->ID;
+		}
 	}
 
 	public static function upload_external_images($id){

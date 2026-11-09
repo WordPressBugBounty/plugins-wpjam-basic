@@ -5,7 +5,7 @@ URI: https://mp.weixin.qq.com/s/DAqil-PxyL8rxzWBiwlA3A
 Description: 给当前站点设置移动设备设置上使用单独的主题。
 Version: 2.0
 */
-class WPJAM_Mobile_Stylesheetl{
+class WPJAM_Mobile_Stylesheet{
 	public static function __callStatic($method, $args){
 		return wpjam_call_option(static::class, $method, ...$args);
 	}
@@ -45,10 +45,10 @@ class WPJAM_Mobile_Stylesheetl{
 
 	public static function add_hooks(){
 		$name	= wp_is_mobile() ? self::get_setting('mobile_stylesheet') : null;
-		$name	= $name ?: ($_GET['wpjam_theme'] ?? null);
+		$name	= $name ?: (current_user_can('manage_options') ? ($_GET['wpjam_theme'] ?? null) : null);
 		$theme	= $name ? wp_get_theme($name) : null;
 
-		$theme && wpjam_map(['stylesheet', 'template'], fn($k)=> add_filter($k, fn()=> $theme->{'get_'.$k}()));
+		$theme && $theme->exists() && wpjam_each(['stylesheet', 'template'], fn($k)=> add_filter($k, fn()=> $theme->{'get_'.$k}()));
 	}
 }
 

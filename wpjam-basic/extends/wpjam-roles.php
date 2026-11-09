@@ -26,19 +26,15 @@ class WPJAM_Role{
 	}
 
 	public static function set($data, $role=''){
-		$data['capabilities']	= array_filter($data['capabilities']);
-		$data['capabilities']	= array_fill_keys($data['capabilities'], 1);
+		$caps	= array_fill_keys(array_filter($data['capabilities']), 1);
+		$label	= $role ? '修改' : '新建';
+		$role	= $role ?: $data['role'];
+		$default= get_option('default_role');
+		$result	= [remove_role($role), add_role($role, $data['name'], $caps)][1];
 
-		if($role){
-			remove_role($role);
-
-			$label	= '修改';
-		}else{
-			$role	= $data['role'];
-			$label	= '新建';
+		if($result && $default === $role){
+			update_option('default_role', $default);
 		}
-		
-		$result	= add_role($role, $data['name'], $data['capabilities']);
 
 		return is_null($result) ? new WP_Error('error', $label.'失败，可能重名或者其他原因。') : $role;
 	}
@@ -60,7 +56,7 @@ class WPJAM_Role{
 	public static function reset(){
 		require_once ABSPATH . 'wp-admin/includes/schema.php';
 
-		wpjam_map(self::get_all(), fn($v, $k)=> remove_role($k));
+		wpjam_each(self::get_all(), fn($v, $k)=> remove_role($k));
 
 		populate_roles();
 	}
@@ -86,11 +82,11 @@ class WPJAM_Role{
 
 	public static function get_fields($action_key='', $id=0){
 		return [
-			'role'			=> ['title'=>'角色',		'type'=>'text',		'show_admin_column'=>true],
-			'name'			=> ['title'=>'名称',		'type'=>'text',		'show_admin_column'=>true],
+			'role'			=> ['title'=>'角色',		'type'=>'text',		'column'=>['show'=>true]],
+			'name'			=> ['title'=>'名称',		'type'=>'text',		'column'=>['show'=>true]],
 			'capabilities'	=> ['title'=>'权限',		'type'=>'mu-text'],
-			'user_count'	=> ['title'=>'用户数',	'type'=>'view',		'show_admin_column'=>'only'],
-			'cap_count'		=> ['title'=>'权限',		'type'=>'view',		'show_admin_column'=>'only'],
+			'user_count'	=> ['title'=>'用户数',	'type'=>'view',		'column'=>['show'=>'only']],
+			'cap_count'		=> ['title'=>'权限',		'type'=>'view',		'column'=>['show'=>'only']],
 		];
 	}
 
@@ -105,7 +101,7 @@ class WPJAM_Role{
 
 	public static function get_additional($user, $output=''){
 		$user	= is_object($user) ? $user : get_userdata($user);
-		$caps	= array_keys(wpjam_filter($user->caps, fn($v, $k)=> $v && !$GLOBALS['wp_roles']->is_role($k)));
+		$caps	= wpjam_array($user->caps, fn($k, $v)=> [null, $v && !$GLOBALS['wp_roles']->is_role($k) ? $k : null], true);
 
 		return $output == 'fields' ? wpjam_fields(['capabilities'=>['title'=>'权限', 'type'=>'mu-text', 'value'=>$caps]]) : $caps;
 	}
@@ -115,8 +111,13 @@ class WPJAM_Role{
 		$exists	= self::get_additional($user);
 		$caps	= array_diff($caps, ['manage_sites', 'manage_options']);
 
-		wpjam_map(array_diff($exists, $caps), fn($cap)=> $user->remove_cap($cap));
-		wpjam_map(array_diff($caps, $exists), fn($cap)=> $user->add_cap($cap));
+		foreach(array_diff($exists, $caps) as $cap){
+			$user->remove_cap($cap);
+		}
+
+		foreach(array_diff($caps, $exists) as $cap){
+			$user->add_cap($cap);
+		}
 	}
 
 	public static function builtin_page_load(){

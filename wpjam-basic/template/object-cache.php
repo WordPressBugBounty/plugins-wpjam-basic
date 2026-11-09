@@ -1,7 +1,8 @@
 <?php
-if(
-	// (isset($_POST['action']) && $_POST['action'] == 'query-attachments') ||
-	(isset($_GET['debug']) && $_GET['debug'] == 'sql')
+if(($_GET['debug'] ?? '') === 'sql'
+	&& defined('WPJAM_CACHE_DEBUG_KEY')
+	&& is_string($key = $_GET['debug_key'] ?? null)
+	&& hash_equals(WPJAM_CACHE_DEBUG_KEY, $key)
 ){
 	return;
 }
@@ -45,7 +46,7 @@ if(class_exists('Memcached')){
 		global $wp_object_cache;
 		return $wp_object_cache->get($key, $group, $force, $found);
 	}
-
+	
 	function wp_cache_get_multiple($keys, $group='', $force=false){
 		global $wp_object_cache;
 		return $wp_object_cache->get_multiple($keys, $group, $force);
@@ -79,10 +80,8 @@ if(class_exists('Memcached')){
 		return $wp_object_cache->incr($key, $offset, $group, $initial_value, $expire);
 	}
 
-	if(!isset($_GET['debug']) || $_GET['debug'] != 'sql'){
-		function wp_cache_init(){
-			$GLOBALS['wp_object_cache']	= new WP_Object_Cache();
-		}
+	function wp_cache_init(){
+		$GLOBALS['wp_object_cache']	= new WP_Object_Cache();
 	}
 
 	function wp_cache_replace($key, $data, $group='', $expire=0){
@@ -127,19 +126,17 @@ if(class_exists('Memcached')){
 
 		protected function action($action, $id, $group, $data, $expire=0){
 			if($this->is_non_persistent_group($group)){
-				$internal	= $this->internal('get', $id, $group);
-
 				if($action == 'add'){
-					if($internal !== false){
+					if($this->internal('exists', $id, $group)){
 						return false;
 					}
 				}elseif($action == 'replace'){
-					if($internal === false){
+					if(!$this->internal('exists', $id, $group)){
 						return false;
 					}
 				}elseif($action == 'increment' || $action == 'decrement'){
 					$data	= $action == 'increment' ? $data : (0-$data);
-					$data	= (int)$internal+$data;
+					$data	= (int)$this->internal('get', $id, $group)+$data;
 					$data	= $data < 0 ? 0 : $data;
 				}
 
@@ -168,19 +165,25 @@ if(class_exists('Memcached')){
 					$this->internal('del', $id, $group);
 
 					if($code != Memcached::RES_NOTSTORED){
-						// trigger_error($code.' '.var_export($result, true).' '.var_export($key, true));
+						trigger_error(var_export([$code, $id, $group, $result], true));
 					}
 				}
-
+				
 				return $result;
 			}
+		}
+
+		public function get_internal(){
+			return $this->cache;
 		}
 
 		protected function internal($action, $id, $group, $data=null){
 			$group	= $this->parse_group($group);
 
-			if($action == 'get'){
-				$data	= $this->cache[$group][$id] ?? false;
+			if($action == 'exists'){
+				return array_key_exists($id, $this->cache[$group] ?? []);
+			}elseif($action == 'get'){
+				$data	= array_key_exists($id, $this->cache[$group] ?? []) ? $this->cache[$group][$id] : false;
 
 				return is_object($data) ? clone $data : $data;
 			}elseif($action == 'add'){
@@ -197,34 +200,62 @@ if(class_exists('Memcached')){
 				return false;
 			}
 
+			if(!$this->is_valid($id, $group)){
+				return false;
+			}
+
 			return $this->action('add', $id, $group, $data, $expire);
 		}
 
 		public function replace($id, $data, $group='default', $expire=0){
+			if(!$this->is_valid($id, $group)){
+				return false;
+			}
+
 			return $this->action('replace', $id, $group, $data, $expire);
 		}
 
 		public function set($id, $data, $group='default', $expire=0){
+			if(!$this->is_valid($id, $group)){
+				return false;
+			}
+
 			return $this->action('set', $id, $group, $data, $expire);
 		}
 
 		public function incr($id, $offset=1, $group='default', $initial_value=0, $expire=0){
+			if(!$this->is_valid($id, $group)){
+				return false;
+			}
+
 			$this->action('add', $id, $group, $initial_value, $expire);
 			return $this->action('increment', $id, $group, $offset);
 		}
 
 		public function decr($id, $offset=1, $group='default', $initial_value=0, $expire=0){
+			if(!$this->is_valid($id, $group)){
+				return false;
+			}
+
 			$this->action('add', $id, $group, $initial_value, $expire);
 			return $this->action('decrement', $id, $group, $offset);
 		}
 
 		public function cas($cas_token, $id, $data, $group='default', $expire=0){
+			if(!$this->is_valid($id, $group)){
+				return false;
+			}
+
 			$this->internal('del', $id, $group);
 
 			return $this->mc->cas($cas_token, $this->build_key($id, $group), $data, $expire);
 		}
 
 		public function delete($id, $group='default'){
+			if(!$this->is_valid($id, $group)){
+				return false;
+			}
+
 			$this->internal('del', $id, $group);
 
 			return $this->is_non_persistent_group($group) ? true : $this->mc->delete($this->build_key($id, $group));
@@ -233,24 +264,41 @@ if(class_exists('Memcached')){
 		public function flush(){
 			$this->cache	= [];
 
+			// return true;
+
 			return $this->mc->flush();
 		}
 
-		public function get($id, $group='default', $force=false, &$found=null){
-			$value	= $force ? false : $this->internal('get', $id, $group);
-			$found	= $value !== false;
+		public function is_valid($id, $group='default'){
+			if(!is_int($id) && !(is_string($id) && trim($id) !== '')){
+				trigger_error('Invalid cache key: '.var_export(['id'=>$id, 'group'=>$group], true));
 
-			if(!$found && !$this->is_non_persistent_group($group)){
+				return false;
+			}
+
+			return true;
+		}
+
+		public function get($id, $group='default', $force=false, &$found=null){
+			if(!$this->is_valid($id, $group)){
+				$found	= false;
+
+				return false;
+			}
+
+			$np		= $this->is_non_persistent_group($group);
+			$found	= (!$force || $np) && $this->internal('exists', $id, $group);
+			$value	= $found ? $this->internal('get', $id, $group) : false;
+
+			if(!$found && !$np){
 				$value	= $this->mc->get($this->build_key($id, $group));
 				$code	= $this->mc->getResultCode();
-				$found	= $code !== Memcached::RES_NOTFOUND;
+				$found	= $code === Memcached::RES_SUCCESS;
 
 				if($found){
-					if($code !== Memcached::RES_SUCCESS){
-						trigger_error($code.' '.var_export([$id, $group, $value], true));
-					}
-
 					$this->internal('add', $id, $group, $value);
+				}elseif($code !== Memcached::RES_NOTFOUND){
+					trigger_error($code.' '.var_export([$id, $group, $value], true));
 				}
 			}
 
@@ -258,6 +306,10 @@ if(class_exists('Memcached')){
 		}
 
 		public function get_with_cas($id, $group='default'){
+			if(!$this->is_valid($id, $group)){
+				return false;
+			}
+
 			$key	= $this->build_key($id, $group);
 
 			if(defined('Memcached::GET_EXTENDED')){
@@ -271,46 +323,56 @@ if(class_exists('Memcached')){
 		}
 
 		public function get_multiple($ids, $group='default', $force=false){
+			if(!$ids || !($ids = array_filter($ids, fn($id)=> $this->is_valid($id, $group)))){
+				return [];
+			}
+
 			$caches	= [];
 			$keys	= [];
+			$np		= $this->is_non_persistent_group($group);
 
-			$non_persistent	= $this->is_non_persistent_group($group);
+			foreach($ids as $id){
+				$keys[$id]	= $this->build_key($id, $group);
 
-			if($non_persistent || !$force){
-				foreach($ids as $id){
-					$caches[$id]	= $this->internal('get', $id, $group);
-					$keys[$id]		= $this->build_key($id, $group);
-
-					if(!$non_persistent && $caches[$id] === false){
+				if($np || !$force){
+					if(!$np && !$this->internal('exists', $id, $group)){
 						$force	= true;
+					}else{
+						$caches[$id]	= $this->internal('get', $id, $group);
 					}
 				}
+			}
 
-				if($non_persistent || !$force){
-					return $caches;
-				}
+			if($np || !$force){
+				return $caches;
 			}
 
 			$results	= $this->mc->getMulti(array_values($keys)) ?: [];
 
 			foreach($keys as $id => $key){
-				$caches[$id]	= $results[$key] ?? false;
+				if(array_key_exists($key, $results)){
+					$caches[$id]	= $results[$key];
 
-				$this->internal('add', $id, $group, $caches[$id]);
+					$this->internal('add', $id, $group, $caches[$id]);	
+				}else{
+					$caches[$id]	= false;
+
+					$this->internal('del', $id, $group);
+				}
 			}
 
 			return $caches;
 		}
 
 		public function set_multiple($data, $group='default', $expire=0){
-			$items	= [];
+			if(!$data){
+				return [];
+			}
 
 			foreach($data as $id => $value){
 				$this->internal('add', $id, $group, $value);
 
-				$key = $this->build_key($id, $group);
-
-				$items[$key]	= $value;
+				$items[$this->build_key($id, $group)]	= $value;
 			}
 
 			if($this->is_non_persistent_group($group)){
@@ -327,22 +389,30 @@ if(class_exists('Memcached')){
 					foreach($data as $id => $value){
 						$this->internal('del', $id, $group);
 					}
-
-					return $result;
 				}
 			}
 
-			return $result;
+			return array_fill_keys(array_keys($data), $result);
 		}
 
 		public function delete_multiple($ids, $group='default'){
+			if(!$ids || !($ids = array_filter($ids, fn($id)=> $this->is_valid($id, $group)))){
+				return [];
+			}
+
 			foreach($ids as $id){
 				$this->internal('del', $id, $group);
 
-				$keys[]	= $this->build_key($id, $group);
+				$keys[$id]	= $this->build_key($id, $group);
 			}
 
-			return (empty($keys) || $this->is_non_persistent_group($group)) ? true : $this->mc->deleteMulti($keys);
+			if($this->is_non_persistent_group($group)){
+				return array_fill_keys($ids, true);
+			}
+
+			$results	= $this->mc->deleteMulti(array_values($keys)) ?: [];
+
+			return array_map(fn($key)=> ($results[$key] ?? false) === true, $keys);
 		}
 
 		public function add_global_groups($groups){

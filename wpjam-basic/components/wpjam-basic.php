@@ -131,10 +131,14 @@ class WPJAM_Basic{
 			return ['found_avatar'=>true, 'url'=>wpjam_get_thumbnail($avatarurl, $args)];
 		}
 
-		$name	= self::get_setting('gravatar');
-		$value	= $name == 'custom' ? self::get_setting('gravatar_custom') : ($name ? self::get_item($name.'[url]', 'gravatar') : '');
+		static $filter;
 
-		$value && add_filter('get_avatar_url', fn($url)=> str_replace(array_map(fn($v)=>$v.'gravatar.com/avatar/', ['https://secure.', 'http://0.', 'http://1.', 'http://2.']), $value, $url));
+		$filter	??= add_filter('get_avatar_url', function($url){
+			$name	= self::get_setting('gravatar');
+			$value	= $name == 'custom' ? self::get_setting('gravatar_custom') : ($name ? self::get_item($name.'[url]', 'gravatar') : '');
+
+			return $value ? str_replace(array_map(fn($v)=> $v.'gravatar.com/avatar/', ['https://secure.', 'http://0.', 'http://1.', 'http://2.']), $value, $url) : $url;
+		});
 
 		return ['user_id'=>$user_id, 'email'=>$email];
 	}
@@ -144,9 +148,9 @@ class WPJAM_Basic{
 	}
 
 	public static function init(){
-		wpjam_map(['trackbacks'=>'tb', 'embed'=>'embed'], fn($v, $k)=> self::disabled($k) && $GLOBALS['wp']->remove_query_var($v));
+		wpjam_each(['trackbacks'=>'tb', 'embed'=>'embed'], fn($v, $k)=> self::disabled($k) && $GLOBALS['wp']->remove_query_var($v));
 
-		wpjam_map(['trackbacks', 'revisions'], fn($v)=> self::disabled($v, 1) && wpjam_map(['post', 'page'], fn($pt)=> remove_post_type_support($pt, $v)));
+		wpjam_each(['trackbacks', 'revisions'], fn($v)=> self::disabled($v, 1) && wpjam_each(['post', 'page'], fn($pt)=> remove_post_type_support($pt, $v)));
 	}
 
 	public static function add_hooks(){

@@ -15,7 +15,7 @@ class WPJAM_Basic_Admin{
 			'wpjam-about'	=> ['menu_title'=>'关于WPJAM',	'order'=>1,	'function'=>[self::class, 'about_page']],
 			'wpjam-icons'	=> ['menu_title'=>'图标列表',		'order'=>9,	'tabs'=>['dashicons'=>['title'=>'Dashicons', 'function'=>[self::class, 'dashicons_page']]]],
 		] as $slug => $args){
-			if($args['order'] < 10 || wpjam_filter(wpjam_admin('tabs[]'), fn($v)=> wpjam_get($v, 'plugin_page') == $slug)){
+			if($args['order'] < 10 || wpjam_filter(wpjam_admin('tabs[]'), ['plugin_page'=>$slug])){
 				wpjam_add_menu_page($slug, $args+['parent'=>'wpjam-basic', 'function'=>'tab', 'network'=>false]);
 			}
 		}
@@ -206,7 +206,7 @@ class WPJAM_Verify{
 		$response	= self::request(['openid'=>$openid, 'hash'=>$hash]);
 
 		if(is_wp_error($response) && $response->get_error_code() != 'invalid_openid'){
-			$failed_times	= (int)get_user_meta($user_id, 'wpjam_weixin_user_failed_times');
+			$failed_times	= (int)get_user_meta($user_id, 'wpjam_weixin_user_failed_times', true);
 			$failed_times ++;
 
 			if($failed_times >= 3){	// 重复三次

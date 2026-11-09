@@ -314,11 +314,13 @@
 					setUploading(false);
 					alert('文件读取失败');
 				};
+				reader.onabort = reader.onerror;
 
 				reader.onload = ()=> {
 					wpjam.post({
 						action: 'wpjam-upload',
 						name: field.name,
+						accept: field.accept,
 						filename: file.name,
 						bits: reader.result,
 						_ajax_nonce: field.nonce
@@ -330,6 +332,9 @@
 						}else{
 							alert(data.errmsg || '上传失败');
 						}
+					}, ()=> {
+						setUploading(false);
+						alert('上传失败，请稍后重试。');
 					});
 				};
 
@@ -426,7 +431,7 @@
 
 		const getLabel		= (v)=> labels.current[String(v)] || String(v);
 		const queryItems	= ({search, include, exclude})=> {
-			const query_args = field.query_args || {};
+			const query_args = {...(field.query_args || {})};
 
 			if(search){
 				query_args[field.data_type === 'post_type' ? 's' : 'search'] = search;
@@ -436,17 +441,20 @@
 				query_args.exclude = exclude;
 			}
 
-			wpjam.post({
+			return wpjam.post({
 				action: 'wpjam-query',
 				data_type: field.data_type,
 				query_args: query_args,
-				...(include ? {include} : {})
+				...(include ? {include} : {}),
+				_ajax_nonce: field.query_nonce
 			}).then(data => {
 				if(data.errcode === 0){
 					data.items.forEach(o => labels.current[String(o.value)] = o.label);
 
 					setOptions(data.items);
 				}
+			}, ()=> {
+				setOptions([]);
 			});
 		};
 

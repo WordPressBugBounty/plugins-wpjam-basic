@@ -61,7 +61,7 @@ class WPJAM_CDN{
 			'format'	=> ['title'=>'格式质量',	'fields'=>[
 				'webp'		=> ['label'=>'将图片转换成 WebP 格式。',	'show_if'=>['cdn_name', self::get_by_support('webp')]],
 				'interlace'	=> ['label'=>'JPEG格式图片渐进显示。',	'show_if'=>['cdn_name', self::get_by_support('quality')]],
-				'quality'	=> ['type'=>'number',	'before'=>'图片质量：',	'class'=>'small-text',	'mim'=>0,	'max'=>100,	'show_if'=>['cdn_name', self::get_by_support('quality')]]
+				'quality'	=> ['type'=>'number',	'before'=>'图片质量：',	'class'=>'small-text',	'min'=>0,	'max'=>100,	'show_if'=>['cdn_name', self::get_by_support('quality')]]
 			]],
 			'wm'	=> ['title'=>'水印设置',	'show_if'=>['cdn_name', self::get_by_support('wm')],	'fields'=>[
 				'view'		=> ['type'=>'view',		'title'=>'使用说明：',	'value'=>'请使用云存储域名下的图片，水印设置仅应用于文章内容中的图片'],
@@ -82,11 +82,11 @@ class WPJAM_CDN{
 	}
 
 	public static function get_by_support($feature=null){
-		return array_keys(array_filter(self::get_items(), fn($item)=> $feature ? in_array($feature, $item['supports'] ?? []) : true));
+		return array_keys(wpjam_filter(self::get_items(), $feature ? ['supports'=>['IN'=>[$feature]]] : []));
 	}
 
 	public static function is($url){
-		$host	= '//'.explode('//', CDN_HOST, 2)[1];
+		$host	= trailingslashit('//'.explode('//', CDN_HOST, 2)[1]);
 
 		return apply_filters('wpjam_is_cdn_url', array_any(['http:', 'https:', ''], fn($v)=> str_starts_with($url, $v.$host)), $url);
 	}
@@ -128,14 +128,14 @@ class WPJAM_CDN{
 	public static function filter_metadata($meta, $id){
 		if(is_array($meta) && empty($meta['sizes']) && wp_attachment_is_image($id)){
 			$args	= ['url'=>wp_get_attachment_url($id)]+$meta;
-			$orient	= $meta['width'] > $meta['height'] ? 'portrait' : 'landscape';
+			$orient	= $meta['width'] > $meta['height'] ? 'landscape' : 'portrait';
 
 			foreach(wp_get_registered_image_subsizes() as $name => $size){
 				if($size	= self::downsize($size, $args)){
 					$arr	= explode('?', $size[0]);
 					$file	= implode('?', [wp_basename(array_shift($arr)), ...$arr]);
 
-					$meta['size'][$name]	= ['file'=>$file, 'url'=>$size[0], 'width'=>$size[1], 'height'=>$size[2], 'orientation'=>$orient];
+					$meta['sizes'][$name]	= ['file'=>$file, 'url'=>$size[0], 'width'=>$size[1], 'height'=>$size[2], 'orientation'=>$orient];
 				}
 			}
 		}
@@ -144,7 +144,7 @@ class WPJAM_CDN{
 	}
 
 	public static function filter_image_block($content, $parsed){
-		return str_replace('<img', '<img'.array_reduce(['sizeSlug', 'width', 'height'], fn($c, $k)=> $c.(($v = $parsed['attrs'][$k] ?? '') ? ' data-'.$k.'="'.$v.'"' : ''), ''), $content);
+		return str_replace('<img', '<img'.array_reduce(['sizeSlug', 'width', 'height'], fn($c, $k)=> $c.(($v = $parsed['attrs'][$k] ?? '') ? ' data-'.$k.'="'.esc_attr($v).'"' : ''), ''), $content);
 	}
 
 	public static function filter_img_tag($tag, $context, $id){
@@ -230,7 +230,8 @@ class WPJAM_CDN{
 		if($exts && !is_admin() && !wpjam_is_json_request()){
 			$local	= '(?:https?\://|//)'.preg_quote(explode('//', LOCAL_HOST, 2)[1]);
 			$dirs	= wpjam_join('|', wpjam_map(self::get_setting('dirs') ?: [], fn($v)=> preg_quote(trim($v))));
-			$regex	= '#(?:'.$local.')/('.($dirs ? '(?:'.$dirs.')/' : '').'[^;"\'\s\?\>\<]+\.(?:'.wpjam_join('|', $exts).')["\'\)\s\]\?])#';
+			$exts	= wpjam_join('|', wpjam_map($exts, fn($v)=> preg_quote($v, '#')));
+			$regex	= '#(?:'.$local.')/('.($dirs ? '(?:'.$dirs.')/' : '').'[^;"\'\s\?\>\<]+\.(?:'.$exts.')["\'\)\s\]\?])#';
 
 			add_filter('wpjam_html', fn($html)=> wpjam_preg_replace($regex, CDN_HOST.'/$1', self::replace($html, false, true)), 5);
 		}
