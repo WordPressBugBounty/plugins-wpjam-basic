@@ -1181,6 +1181,18 @@ form table.form-table{
 	}
 }
 
+table.numberable{
+	counter-reset:row-no var(--offset, 0);
+
+	> tbody > tr:not(.sum-row, .avg-row, .no-items, .ui-sortable-placeholder, [data-highlight="delete"]) > .column-no:empty{
+		counter-increment:row-no;
+
+		&::before{
+			content:counter(row-no);
+		}
+	}
+}
+
 table.wp-list-table{
 	thead th,
 	tfoot th{
@@ -1194,9 +1206,7 @@ table.wp-list-table{
 				i{padding-right:4px;}
 			}
 		}
-	}
-
-		
+	}	
 
 	tbody tr{
 		&:nth-child(1 of tr:has(span.move)) span.up,
@@ -1489,6 +1499,14 @@ table.wp-list-table{
 
 	.column-no{width:42px;}
 
+	tr.sum-row, tr.avg-row{
+		> *{background-color:#dbeaf5;}
+	}
+
+	tr.sum-row + tr.avg-row{
+		> *{background-color:#e7f1f9;}
+	}
+
 	&.sticky-columns{
 		display:block;
 		max-height:min(var(--left-height, calc(100vh - 160px)), calc(100vh - 160px));
@@ -1497,6 +1515,9 @@ table.wp-list-table{
 		.sticky-column{
 			position:sticky;
 			z-index:2;
+		}
+
+		:where(.sticky-column){
 			background-color:inherit;
 		}
 
@@ -1514,14 +1535,10 @@ table.wp-list-table{
 			position:sticky;
 			z-index:3;
 			top:36px;
-
-			> *{background-color:#dbeaf5;}
 		}
 
 		tr.sum-row + tr.avg-row{
 			top:71px;
-
-			> *{background-color:#e7f1f9;}
 		}
 	}
 }
@@ -1539,6 +1556,12 @@ table.wp-list-table{
 		}
 
 		> .overall-action{margin:0 10px 8px 0px;}
+
+		> label{line-height:var(--line-height);}
+
+		> .chart-compare{
+			clear:left;
+		}
 
 		&:not(.alignleft) > #filter_action{margin-right:16px;}
 
@@ -1693,6 +1716,15 @@ div#col-left{
 		&:has(table){width:25%;}
 
 		&:has(table) ~ #col-right{width:75%}
+	}
+}
+
+.wpjam-chart-tabs{
+	clear:both;
+	margin-bottom:12px;
+
+	.nav-tab-wrapper{
+		margin-bottom:12px;
 	}
 }
 

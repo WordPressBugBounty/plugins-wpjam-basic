@@ -789,8 +789,8 @@ if(is_admin()){
 			return wpjam_admin('chart', WPJAM_Chart::create($type));
 		}
 
-		if(in_array($type, ['line', 'bar', 'donut'], true)){
-			return ['WPJAM_Chart', $type](...$args);
+		if(in_array($type, ['line', 'bar', 'donut', 'compare'], true)){
+			return (wpjam_admin('chart') ?: wpjam_chart([]))->render($type, ...$args);
 		}
 
 		if(($object = wpjam_admin('chart')) && $type){

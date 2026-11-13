@@ -36,6 +36,7 @@ jQuery(function($){
 	$.fn.wpjam_init = function(){
 		let filter	= this.is('body') ? ':not(form *)' : '';
 		let rules	= $.fn.wpjam_init.rules = $.fn.wpjam_init.rules || [
+			['wpjam_tabs', '.tabs'],
 			[null, '[data-indeterminate]',	$el => $el.prop('indeterminate', true).removeAttr('data-indeterminate')]
 		];
 
@@ -1069,10 +1070,51 @@ jQuery(function($){
 	$.fn.wpjam_modal.selector	= '.notice-modal:first';
 	$.fn.wpjam_modal.events		= [{name: 'click',	selector: '.show-modal, .is-dismissible .notice-dismiss'}];
 
+	$.fn.wpjam_date_span = function(e){
+		let $form	= this.closest('form');
+		let start	= $form.find('[name="start_date"]').val();
+		let end		= $form.find('[name="end_date"]').val();
+
+		if(e && start && end && start > end){
+			wpjam.notice('开始日期不能大于结束日期', 'error');
+
+			return this;
+		}
+
+		let days	= (Date.parse(end)-Date.parse(start))/86400000+1;
+		let $format	= $form.find('select[name="date_format"]');
+
+		if(!$format[0] || !Number.isFinite(days) || days < 1){
+			return this;
+		}
+
+		$format.find('option').wpjam_each($option => {
+			let show	= {
+				'%Y-%m':			days >= 45,
+				'%Y-%U':				days >= 12,
+				'%Y-%m-%d %H:00':	days <= 10,
+				'%Y-%m-%d %H:%i':	days <= 10
+			}[$option.val()];
+
+			if(show !== undefined){
+				$option.toggleClass('hidden', !show).prop('disabled', !show);
+			}
+		});
+
+		if($format.find('option:selected').prop('disabled')){
+			$format.val('%Y-%m-%d');
+		}
+
+		return this;
+	};
+
+	$.fn.wpjam_date_span.selector	= 'select[name="date_format"]';
+	$.fn.wpjam_date_span.events		= [{name: 'change', selector: '[name="start_date"], [name="end_date"]'}];
+
 	$.fn.wpjam_chart = function () {
 		const {type, data, options = {}}	= this.data('chart') || {};
 
-		if(!type || !data || !this.find('canvas')[0]){
+		if(!type || !data || !this.find('canvas')[0] || this.closest('.tab').is(':hidden')){
 			return;
 		}
 
@@ -1088,12 +1130,30 @@ jQuery(function($){
 			aspect	= 3;
 		}
 
-		this.css({'aspect-ratio': aspect});
+		options.aspectRatio	= aspect;
 
-		new Chart(this.find('canvas')[0], {type, data, options: {
-			scales: type === 'bar' ? {y: {beginAtZero: true}} : {},
-			aspectRatio: aspect,
-		...options}});
+		if(options.plugins?.tooltip?.multiLabel){
+			options.plugins.tooltip.callbacks	= {
+				title:	()=> '',
+				label:	({dataIndex, datasetIndex, formattedValue})=> (data.labels[dataIndex]?.[datasetIndex] ?? '')+'：'+formattedValue,
+				...options.plugins.tooltip.callbacks
+			};
+		}
+
+		new Chart(this.css({'aspect-ratio': aspect}).find('canvas')[0], {type, data, options, plugins: [{
+			id: 'xLabel',
+			afterDraw(chart, args, label){
+				const x		= chart.scales.x;
+				const tick	= x?.isHorizontal() && x.options.display !== false && x.options.ticks.display ? x.getLabelItems()[0] : null;
+
+				if(label.text && tick){
+					Chart.helpers.renderText(chart.ctx, label.text, 0, tick.textOffset, tick.font, {
+						...tick.options,
+						translation:	[x.left-26, tick.options.translation[1]],
+					});	
+				}
+			}
+		}]});
 
 		this.removeAttr('data-chart');
 	};
@@ -1152,11 +1212,15 @@ jQuery(function($){
 	$.fn.wpjam_tabs = function(hash){
 		hash	= window.location.hash = hash || window.location.hash;
 
-		let $tabs	= this.find('.tab').hide();
+		let $tabs	= this.find('.tab').hide().removeAttr('hidden');
 		let $tab	= $(hash && hash.charAt(0) === '#' && $tabs.wpjam_filter('id', hash.substring(1))[0] || $tabs[0]).show();
 
-		this.find('.nav-tab').removeClass('nav-tab-active').eq($tabs.index($tab)).addClass('nav-tab-active');
+		this.find('.nav-tab').removeClass('nav-tab-active').attr('aria-selected', 'false').eq($tabs.index($tab)).addClass('nav-tab-active').attr('aria-selected', 'true');
+
+		$tab.find('[data-chart]').wpjam_each($el => $el.wpjam_chart());
 	};
+
+	$.fn.wpjam_tabs.selector	= '.tabs';
 
 	$.fn.wpjam_place = function(content, replace, placement){
 		let $content	= $(content);
@@ -1542,12 +1606,28 @@ jQuery(function($){
 			return (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v))) ? Number(v) : v;
 		},
 
+		aggregates: {
+			count: v => v.length,
+			max: v => Math.max(...v),
+			min: v => Math.min(...v),
+			sum: v => v.reduce((sum, n) => sum+Number(n), 0),
+			avg: v => wpjam.aggregates.sum(v)/v.length
+		},
+
 		compare: function(a, compare, b){
 			let cmp	= compare;
 
 			if(_.isObject(compare)){
 				b	= compare.value;
 				cmp	= compare.compare;
+
+				if(_.isArray(a) && compare.aggregate){
+					if(!_.has(wpjam.aggregates, compare.aggregate)){
+						return false;
+					}
+
+					a	= wpjam.aggregates[compare.aggregate](a);
+				}
 			}
 
 			if(_.isArray(a) || (_.isObject(compare) && compare.swap)){
@@ -1969,10 +2049,6 @@ jQuery(function($){
 			}else if(e.type == 'change'){
 				if($el.is('[name="date"]')){
 					this.query();
-				}else if($el.is('[name="end_date"]')){
-					let dates	= _.map(['start_date', 'end_date'], k => $('.tablenav [name="'+k+'"]').val());
-
-					dates[0] && dates[1] && dates[0] > dates[1] && wpjam.notice('开始日期不能大于结束日期', 'error');
 				}
 			}
 		},

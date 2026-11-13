@@ -988,18 +988,26 @@ function wpjam_field($field, $args=[]){
 	}
 
 	if(is_string($field)){
-		if(post_type_exists($field)){
+		if(try_prefix($field, '-', 'post_type:') || wpjam_get_post_type_object($field) || get_post_type_object($field)){
 			return WPJAM_Post::get_field(['post_type'=>$field]+$args);
-		}elseif(taxonomy_exists($field)){
+		}elseif(try_prefix($field, '-', 'taxonomy:') || wpjam_get_taxonomy($field) || get_taxonomy($field)){
 			return WPJAM_Term::get_field(['taxonomy'=>$field]+$args);
 		}
+
+		return [];
 	}
 }
 
 function wpjam_parse_show_if($if){
-	return wp_is_numeric_array($if) && count($if) >= 2
+	$if	= wp_is_numeric_array($if) && count($if) >= 2
 	? array_combine(count($if) == 2 ? ['key', 'value'] : ['key', 'compare', 'value'], array_slice($if, 0, 3))
 	: (is_array($if) && !empty($if['key']) ? $if : null);
+
+	if($if && ($agg = wpjam_pull($if, 'agg'))){
+		$if	+= ['aggregate'=>$agg];
+	}
+
+	return $if;
 }
 
 function wpjam_form($fields, ...$args){

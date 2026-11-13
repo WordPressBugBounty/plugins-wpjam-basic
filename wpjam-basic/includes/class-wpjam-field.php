@@ -506,19 +506,22 @@ class WPJAM_Field extends WPJAM_Attr{
 		$field	= $this->render($args);
 		$sep	= $args['sep'] ?? '';
 		$for	= $this->is('view, mu, fieldset, img, uploader, radio, editor') || $this->multiple ? [] : ['for'=>$this->id];
+		$inner	= !$tag && !$for;
 		$before	= $this->before;
 		$after	= $this->after;
 		$buttons= wpjam_join(' ', array_values(wpjam_map($this->buttons ?: [], [self::class, 'create'])));
 
 		foreach(compact('before', 'after') as $k => $v){
-			$t	= $this->is('textarea, editor, img, mu, fieldset', true) || ($v && strip_tags($v) !== $v) ? 'p' : 'span';
+			$t	= ($this->is('textarea, editor, img, mu, fieldset', true) && $tag) || ($v && strip_tags($v) !== $v) ? 'p' : 'span';
 
 			if($v = wpjam_filter([$v, $k == 'after' ? $buttons : ''], '!blank')){
-				$field->$k($t, [$k], implode(' ', $v));
+				[$field, $inner ? ($k == 'before' ? 'prepend' : 'append') : $k]($t, [$k], implode(' ', $v));
 			}
 		}
 
-		$for && ($this->label || $before || $after || $buttons) && $field->wrap('label', $for);
+		if($for && ($this->label || $before || $after || $buttons)){
+			$field->wrap('label', $for);
+		}
 
 		$title	= $this->title ? wpjam_tag('label', $for, $this->title) : '';
 		$desc	= (array)$this->description+['', []];
@@ -537,8 +540,13 @@ class WPJAM_Field extends WPJAM_Attr{
 			$field->wrap('td', $title && $title->wrap('th', ['scope'=>'row']) ? [] : ['colspan'=>2]);
 		}
 
-		$title	&& $field->before($title->after($sep));
-		$tag	&& $field->wrap($tag, ['id'=>$tag.'_'.$this->id, 'class'=>$class ?? '']);
+		if($title){
+			[$field, $inner ? 'prepend' : 'before']($title->after($sep));
+		}
+
+		if($tag){
+			$field->wrap($tag, ['id'=>$tag.'_'.$this->id, 'class'=>$class ?? '']);
+		}
 
 		return $field->data('show_if', $this->show_if())->add_class([$args['wrap_class'] ?? '', $this->wrap_class, $this->disabled, $this->readonly, ($this->is('hidden') ? 'hidden' : '')]);
 	}
@@ -828,10 +836,10 @@ class WPJAM_Fields extends WPJAM_Attr{
 
 		foreach($items as $id => &$item){
 			$item	= $cb ? $cb($item, $id) : $item;
-			$item	= wpjam_tag('tr', wpjam_pick($args, ['class'])+['data'=>wpjam_pick($item, ['id'])])->append(wpjam_map($this->fields, fn($k)=> wpjam_tag('td', [], $item[$k] ?? ''), 'k'));
+			$item	= wpjam_tag('tr', wpjam_pick($args, ['class'])+['data'=>wpjam_pick($item, ['id'])])->append(wpjam_map($this->fields, fn($k)=> wpjam_tag('td', ['class'=>'column-'.$k], $item[$k] ?? ''), 'k'));
 		}
 
-		return wpjam_tag('table', ['class'=>['widefat', 'striped'], 'data'=>array_filter(wpjam_pick($args, ['foot']))])->append([
+		return wpjam_tag('table', ['class'=>array_merge(['widefat', 'striped'], isset($this->fields['no']) ? ['numberable'] : []), 'data'=>array_filter(wpjam_pick($args, ['foot']))])->append([
 			wpjam_tag('thead')->append(wpjam_tag('tr')->append(wpjam_map($this->fields, fn($v)=> wpjam_tag('th', ['data'=>$v->pick(['format', 'precision', 'conditional_styles'])], $v->title)))),
 			wpjam_tag('tbody')->append($items ?: wpjam_tag('tr', ['no-items'], '找不到'.array_first($this->fields)->title))
 		]);
@@ -1189,15 +1197,32 @@ class WPJAM_Processor extends WPJAM_Args{
 		$items	= ($args['orderby'] ?? '') ? wpjam_sort($items, $args['orderby'], $args['order'] ?? '') : $items;
 		$number	= (int)($args['number'] ?? 0);
 		$offset	= (int)($args['offset'] ?? 0);
-		$chart	= ($chart = $args['chart'] ?? '') ? [
-			$chart['type'],
-			array_slice($items, 0, ['donut'=>10, 'bar'=>30][$chart['type']] ?? null),
-			$chart['args']+($chart['type'] == 'donut' ? ['total'=>$acc[array_key_first($chart['args']['count'])] ?? 0] : [])
-		] : false;
+		$res	= ['sum'=>$sum, 'avg'=>$avg, 'items'=>$items];
+
+		if($chart = $args['chart'] ?? false){
+			$chart	= isset($chart['type']) ? ['chart'=>$chart] : $chart;
+
+			foreach($chart as $ck => &$cv){
+				$c_type	= $cv['type'];
+				$c_args	= $cv['args'] ?? [];
+				$c_data	= $res[($cv['source'] ?? 'items')] ?? $items;
+
+				if($c_type === 'donut'){
+					$c_args['total']	??= is_null($k = wpjam_at($c_args['fields'] ?? [], 1, 'key')) ? 0 : ($acc[$k] ?? 0);
+
+					$c_data	= wpjam_sort($c_data, 'ar');
+					$c_num	= 10;
+				}else{
+					$c_num	= $c_type === 'bar' ? 30 : null;
+				}
+
+				$cv	= ['title'=>$cv['title'] ?? '', 'args'=>[$c_type, array_slice($c_data, 0, $c_num), $c_args]];
+			}
+		}
 
 		$items	= $number > 0 && ($offset || $total > $number) ? array_slice($items, $offset, $number) : $items;
 
-		return array_filter(['sum'=>$sum, 'avg'=>$avg, 'chart'=>$chart], 'is_array')+['total'=>$total, 'items'=>$items];
+		return ['total'=>$total, 'items'=>$items]+array_filter($res+['chart'=>$chart], 'is_array');
 	}
 
 	public function calc($item, $vars=[], $type='row'){

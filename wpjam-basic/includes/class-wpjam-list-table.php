@@ -82,7 +82,11 @@ class WPJAM_List_Table extends WP_List_Table{
 
 			$data	= array_filter(array_merge(...array_values($data)), fn($v)=> isset($v) && $v !== []);
 
-			return $method == 'render' ? ($parts ? wpjam_tag('div', ['actions'])->append(array_map(fn($p)=> $p->render(['fields_type'=>'', 'data'=>$data]), $parts)) : '') : $data;
+			if($method == 'render'){
+				return $parts ? wpjam_tag('div', ['actions'])->append(wpjam_map($parts, fn($p, $k)=> $p->render(['fields_type'=>'', 'data'=>$data]))) : '';
+			}
+
+			return $data;
 		}elseif($this->mod($method, '_by_model')){
 			return ($cb = wpjam_callback([$this->model, $method])) ? wpjam_catch($cb, ...$args) : null;
 		}elseif($this->mod($method, '_shortcode')){
@@ -99,6 +103,10 @@ class WPJAM_List_Table extends WP_List_Table{
 			return wpjam_except($value+($this->builtin || $this->primary_key == 'id' ? ['id'=>'ID: '.$id] : []), wpjam_admin('removed_actions[]'));
 		}elseif($this->mod($method, 'ob_get_')){
 			$result = wpjam_ob([$this, ($this->builtin && $method != 'single_row' ? 'builtin_' : '').$method], ...$args);
+
+			if($method === 'display' && $this->numberable && $this->offset){
+				$result = str_replace('<table class="wp-list-table ', '<table style="--offset:'.$this->offset.'" class="wp-list-table ', $result);
+			}
 
 			return $this->builtin && in_array($method, ['single_row', 'display']) ? $this->filter_table($result) : $result;
 		}elseif($this->mod($method, 'builtin_')){
@@ -360,9 +368,7 @@ class WPJAM_List_Table extends WP_List_Table{
 		$method	= array_find(['render_row', 'render_item', 'item_callback'], fn($v)=> method_exists($this->model, $v));
 		$item	= $method ? [$this->model, $method]($item, $attr) : $item;
 
-		$this->numberable && ($this->no ??= $this->offset);
-
-		echo $item ? $this->filter_single_row(wpjam_tag('tr', $attr, $this->ob_get_single_row_columns($item+($this->numberable ? ['no'=>($this->no += 1)] : [])))->add_class($type ? $type.'-row' : '')->add_class($this->multi_rows ? 'tr-'.$id : ''), $id)."\n" : '';
+		echo $item ? $this->filter_single_row(wpjam_tag('tr', $attr, $this->ob_get_single_row_columns($item))->add_class($type ? $type.'-row' : '')->add_class($this->multi_rows ? 'tr-'.$id : ''), $id)."\n" : '';
 
 		$this->after_single_row_by_model($item, $raw);
 	}
@@ -530,10 +536,23 @@ class WPJAM_List_Table extends WP_List_Table{
 				$this->col_left('prepare');
 			}
 
+			$chart	= wpjam_chart();
 			$number	= (int)$this->per_page ?: 50;
 			$cb		= $this->model.'::query_items';
 			$params	= wpjam_get_reflection($cb, 'Parameters') ?: [];
 			$res	= wpjam_try($cb, ...(count($params) > 1 && $params[0]->name != 'args' ? [$number, $this->offset] : [['number'=>$number, 'offset'=>$this->offset]+$args]));
+
+			if(!isset($res['items']) && $chart && $chart->type){
+				$dsl	= ['@value'=>'$title'];
+				$fields	= wpjam_array($this->fields, $dsl+['@filter'=>['@key'=>$chart->key ?? []]]);
+				$fields	+= wpjam_array($this->fields, $dsl+['@filter'=>['column[chart]'=>true]]);
+				$fields	+= $fields ? wpjam_array($this->fields, $dsl+['@filter'=>['@key'=>$args['metrics'] ?? []]]) : [];
+
+				if(count($fields) > 1){
+					$pcn	= $this->get_primary_column_name();
+					$res	= wpjam_fields($this->fields)->process($res, ['sum'=>[$pcn=>'汇总'], 'avg'=>[$pcn=>'平均'], 'chart'=>['type'=>$chart->type, 'args'=>['fields'=>$fields]+$chart->pick(['options'])]]);
+				}
+			}
 
 			if(isset($res['items'])){
 				if($items = $res['items']){
@@ -542,7 +561,9 @@ class WPJAM_List_Table extends WP_List_Table{
 					}
 				}
 
-				$this->chart_args	= $res['chart'] ?? '';
+				if($chart){
+					$chart->chart	= $res['chart'] ?? [];
+				}
 
 				$total	= $res['total'] ?? null;
 			}else{
@@ -556,7 +577,7 @@ class WPJAM_List_Table extends WP_List_Table{
 	}
 
 	protected function get_table_classes(){
-		return array_merge(array_diff(parent::get_table_classes(), ($this->fixed ? [] : ['fixed'])), $this->nowrap ? ['nowrap'] : []);
+		return array_merge(array_diff(parent::get_table_classes(), ($this->fixed ? [] : ['fixed'])), $this->nowrap ? ['nowrap'] : [], $this->numberable ? ['numberable'] : []);
 	}
 
 	protected function handle_row_actions($item, $column, $primary){
@@ -582,9 +603,8 @@ class WPJAM_List_Table extends WP_List_Table{
 				echo $fields->append(get_submit_button('筛选', '', 'filter_action', false));
 			}
 
-			if($this->chart_args){
-				echo '<br class="clear" />';
-				echo wpjam_chart(...$this->chart_args);
+			if($chart = wpjam_chart('render')){
+				echo '<br class="clear" />'.$chart;
 			}
 		}
 

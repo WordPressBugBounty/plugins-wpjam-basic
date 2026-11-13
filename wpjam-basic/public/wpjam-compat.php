@@ -673,7 +673,7 @@ function wpjam_get_term_level($term){
 }
 
 function wpjam_get_term_id_field($tax='category', $args=[]){
-	return wpjam_field($tax, $args);
+	return wpjam_field('taxonomy:'.$tax, $args);
 }
 
 if(!function_exists('array_pulls')){
@@ -972,7 +972,7 @@ function wpjam_bit($bit=0){
 }
 
 function wpjam_get_post_id_field($type='post', $args=[]){
-	return wpjam_field($type, $args);
+	return wpjam_field('post_type:'.$type, $args);
 }
 
 function wpjam_get_post_image_url($image_id, $size='full'){
@@ -1070,13 +1070,32 @@ function wpjam_bar_chart($data, $labels, $args=[]){
 	echo wpjam_chart('bar', $data, ['labels'=>$labels]+$args);
 }
 
-function wpjam_donut_chart($data, ...$args){
-	echo wpjam_chart('donut', $data, (count($args) >= 2 ? ['labels'=>array_shift($args)] : [])+($args[0] ?? []));
+function wpjam_donut_chart($data, $args=[]){
+	echo wpjam_chart('donut', $data, $args);
 }
 
 function wpjam_get_chart_parameter(...$args){
 	return wpjam_chart(...$args);
 }
+
+function wpjam_stats_header($args=[]){
+	global $wpjam_stats_labels;
+
+	$wpjam_stats_labels	= [];
+
+	echo wpjam_chart($args)->render(true);
+
+	// do_action('wpjam_stats_header');
+
+	foreach(['start_date', 'start_timestamp', 'end_date', 'end_timestamp', 'date', 'timestamp', 'start_date_2', 'start_timestamp_2', 'end_date_2', 'end_timestamp_2', 'date_type', 'date_format', 'compare'] as $key){
+		$wpjam_stats_labels['wpjam_'.$key]	= wpjam_get_chart_parameter($key, $args);
+	}
+
+	$wpjam_stats_labels['compare_label']	= $wpjam_stats_labels['wpjam_start_date'].' '.$wpjam_stats_labels['wpjam_end_date'];
+	$wpjam_stats_labels['compare_label_2']	= $wpjam_stats_labels['wpjam_start_date_2'].' '.$wpjam_stats_labels['wpjam_end_date_2'];
+}
+
+function wpjam_sub_summary($tabs){}
 
 function wpjam_method_allow($method){
 	return ($m = $_SERVER['REQUEST_METHOD']) == strtoupper($method) ? true : wp_die('method_not_allow', '接口不支持 '.$m.' 方法，请使用 '.$method.' 方法！');
@@ -1110,25 +1129,6 @@ function wpjam_get_data_parameter($name='', $args=[]){
 function wpjam_get_request_parameter($name='', $args=[]){
 	return wpjam_get_parameter($name, $args, 'REQUEST');
 }
-
-function wpjam_stats_header($args=[]){
-	global $wpjam_stats_labels;
-
-	$wpjam_stats_labels	= [];
-
-	echo (WPJAM_Chart::get_instance($args))->render();
-
-	// do_action('wpjam_stats_header');
-
-	foreach(['start_date', 'start_timestamp', 'end_date', 'end_timestamp', 'date', 'timestamp', 'start_date_2', 'start_timestamp_2', 'end_date_2', 'end_timestamp_2', 'date_type', 'date_format', 'compare'] as $key){
-		$wpjam_stats_labels['wpjam_'.$key]	= wpjam_get_chart_parameter($key, $args);
-	}
-
-	$wpjam_stats_labels['compare_label']	= $wpjam_stats_labels['wpjam_start_date'].' '.$wpjam_stats_labels['wpjam_end_date'];
-	$wpjam_stats_labels['compare_label_2']	= $wpjam_stats_labels['wpjam_start_date_2'].' '.$wpjam_stats_labels['wpjam_end_date_2'];
-}
-
-function wpjam_sub_summary($tabs){}
 
 function wpjam_register_theme_upgrader(){}
 

@@ -761,6 +761,11 @@ function wpjam_match($item, $args=[]){
 	}
 	
 	$a	= isset($key) ? wpjam_entry($item, $key) : $item;
+
+	if(($agg = wpjam_pull($args, 'aggregate')) && is_array($a)){
+		$a	= $a ? (in_array($agg, ['avg', 'sum']) ? array_sum($a)/($agg == 'avg' ? count($a) : 1) : wpjam_call($agg, $a)) : 0;
+	}
+
 	$op	= wpjam_pull($args, 'compare');
 	$b	= wpjam_pull($args, 'value');
 	$b	??= is_null($op) && ($op = array_key_first(wpjam_except($args, ['if_null', 'is', 'strict']))) ? $args[$op] : $b;
@@ -969,8 +974,9 @@ function wpjam_nest($items, $options=[], $node=null, $depth=0){
 
 function wpjam_at($arr, ...$args){
 	$arr	= is_string($arr) && $args ? explode(array_shift($args), $arr) : $arr;
+	$arr	= is_array($arr) ? array_slice($arr, $args[0] ?? 0, 1, true) : [];
 
-	return is_array($arr) ? array_first(array_slice($arr, $args[0] ?? 0, 1)) : null;
+	return ($args[1] ?? '') === 'key' ? array_key_first($arr) : array_first($arr);
 }
 
 function wpjam_add_at($arr, $at, $data, ...$args){
